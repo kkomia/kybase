@@ -1,0 +1,53 @@
+# ---- 密钥与本地配置（工程规范 §6：任何 token/API key 禁止提交）----
+.env
+.env.*
+!.env.example
+
+# ---- 运行期数据（上传原文、Markdown 产物、图片、DuckDB 表格副本）----
+# 剥离后这些目录整体归本服务；除 `.env.example` 外一律不入库。
+data/
+*.duckdb
+*.duckdb.wal
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.trash/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ---- 本机跑测试/自检留下的产物（都能再生，且不属于仓库）----
+# jieba 的分词缓存：进程的工作目录在哪它就写在哪，跑一次检索用例就会冒出来
+jieba.cache
+# pytest 的临时目录（`tmp_path` 的落点）：本机 TEMP 指向仓库根时会留在仓库下
+pytest-of-*/
+# `gen_api_spec.py` / `gen_api_types.py` 那类脚本的 mkdtemp 落点：
+# TEMP 不可写时 tempfile 会静默回退到 cwd，于是每跑一次门禁就在仓库根漏一个
+kybase-openapi-*/
+# `tempfile.mkstemp()` 走同一条回退路径时留下的（tmpXXXXXXXX）
+tmp????????
+*.log
+
+# ---- 仓库内临时目录：脚本自己把 TEMP/TMP 指过去，别让临时文件落到仓库根 ----
+.tmp/
+
+# ---- 编辑器与系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
