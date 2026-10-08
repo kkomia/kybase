@@ -155,6 +155,11 @@ function ringStrokes(panel: HTMLElement, name: string): number {
   return within(panel).getByRole('img', { name }).querySelectorAll('circle').length
 }
 
+/** 某个带名字的图形里的元素（条 / 格子都靠它取）。 */
+function glyphOf(panel: HTMLElement, name: string): HTMLElement {
+  return within(panel).getByRole('img', { name })
+}
+
 /**
  * 页签当前态的抓手。
  *
@@ -572,7 +577,7 @@ describe('任务中心', () => {
     expect(await screen.findByText('8 核 · 采样中')).toBeInTheDocument()
   })
 
-  it('运行负载：五个读数是同一种控件，环里的读数进得了名字（评审 T4）', async () => {
+  it('运行负载：五格各有各的形，每格的读数都进得了名字（评审 T4 的下一版）', async () => {
     asAdmin()
     getTaskLoadMock.mockResolvedValue(systemLoad())
 
@@ -581,23 +586,42 @@ describe('任务中心', () => {
     // 面板先按骨架画出来，数据是异步到的：等一个"只有拿到数据才会有"的读数
     expect(await within(panel).findByRole('img', { name: 'CPU 使用率 12%' })).toBeInTheDocument()
 
-    // 五个读数一种控件：都是环（此前 3 个环 + 一个空环替身 + 一个纯数字）
+    // 五格一个带名字的图形：`role="img"` 会把图形里的数字当装饰，读数必须写进名字里
     expect(within(panel).getAllByRole('img')).toHaveLength(5)
-    // `role="img"` 会把环里的 `<text>` 当装饰，读数必须写进名字里才算数
-    expect(within(panel).getByRole('img', { name: '并发槽位占用 0 / 1' })).toBeInTheDocument()
-    expect(within(panel).getByRole('img', { name: '云端解析今日页数 0%' })).toBeInTheDocument()
-    expect(
-      within(panel).getByRole('img', { name: '本进程常驻内存占机器内存 6.3%' }),
-    ).toBeInTheDocument()
 
-    // 环里写了「在跑 / 槽位」，下面那行就只剩队列深度：同一个数不写两遍
+    // 1/5 CPU：唯一一个环——"满没满"最省地方的形
+    expect(panel.querySelectorAll('svg')).toHaveLength(1)
+    expect(ringStrokes(panel, 'CPU 使用率 12%')).toBe(2)
+
+    // 2/5 内存：水平条 + 右端读数（不是环，也没有第二根弧）
+    const memory = glyphOf(panel, '内存使用量 50%')
+    expect(memory.querySelector('.m-bar-fill')).toHaveStyle({ width: '50%' })
+    expect(memory.querySelector('.m-bar-reading')?.textContent).toBe('50%')
+
+    // 3/5 并发槽位：大号数字 + 一格一个槽位（默认档 slots=1、running=0）
+    const slots = glyphOf(panel, '并发槽位占用 0 / 1')
+    expect(slots.querySelector('.m-slots-figure')?.textContent).toBe('0 / 1')
+    expect(slots.querySelectorAll('.m-slot')).toHaveLength(1)
+    expect(slots.querySelectorAll('.m-slot-on')).toHaveLength(0)
+
+    // 4/5 云端解析额度：12 格的分格进度条（0 页 → 一格都不亮）
+    const quota = glyphOf(panel, '云端解析今日页数 0%')
+    expect(quota.querySelectorAll('.m-quota-cell')).toHaveLength(12)
+    expect(quota.querySelectorAll('.m-quota-cell-on')).toHaveLength(0)
+
+    // 5/5 本进程常驻内存：纯数字卡，一格刻度都不画
+    const rss = glyphOf(panel, '本进程常驻内存占机器内存 6.3%')
+    expect(rss).toHaveTextContent('6.3%')
+    expect(rss.querySelectorAll('.m-bar, .m-slot, .m-quota-cell, circle')).toHaveLength(0)
+
+    // 上面写了「在跑 / 槽位」，下面那行就只剩队列深度：同一个数不写两遍
     const details = [...panel.querySelectorAll('.m-gauge-detail')].map((cell) => cell.textContent)
     expect(details[2]).toBe('排队 2 条')
     // 本进程那格的原始值：分母写在明处，比例才读得出大小
     expect(details[4]).toBe('1.0 GB / 16.0 GB')
   })
 
-  it('0 值的环只留轨道，不画弧（评审 T5：0 / 1000 页 却有一段实心蓝弧）', async () => {
+  it('0 值只留空槽：环不画弧、条不画填充、格子不点亮（评审 T5 的口径覆盖三种形）', async () => {
     asAdmin()
     getTaskLoadMock.mockResolvedValue(
       systemLoad({
@@ -616,12 +640,18 @@ describe('任务中心', () => {
     const panel = await screen.findByLabelText('运行负载')
     expect(await within(panel).findByRole('img', { name: '内存使用量 50%' })).toBeInTheDocument()
 
-    // 0 / 1000 页：一段弧都没有（`strokeDasharray="0 C"` 配圆头会画成一个圆点）
-    expect(ringStrokes(panel, '云端解析今日页数 0%')).toBe(1)
-    // CPU 首次采样没有差值：一样只有轨道，环里写"—"，名字里就不带读数了
+    // CPU 首次采样没有差值：只有轨道，环里写"—"，名字里就不带读数了
     expect(ringStrokes(panel, 'CPU 使用率')).toBe(1)
-    // 有进度的仍是"轨道 + 弧"两笔（内存 50%）
-    expect(ringStrokes(panel, '内存使用量 50%')).toBe(2)
+    // 0 / 1000 页：一格都不点亮（`strokeDasharray="0 C"` 配圆头会画成一个圆点，
+    // 0 宽度的填充条同样会留下一小截——两种形都只留空槽）
+    const quota = glyphOf(panel, '云端解析今日页数 0%')
+    expect(quota.querySelectorAll('.m-quota-cell-on')).toHaveLength(0)
+    // 有进度的照旧画出来：内存 50% 的条占一半
+    expect(glyphOf(panel, '内存使用量 50%').querySelector('.m-bar-fill')).toHaveStyle({
+      width: '50%',
+    })
+    // 本进程那格拿不到 RSS：一样是"—"，名字里也不带读数
+    expect(glyphOf(panel, '本进程常驻内存占机器内存')).toHaveTextContent('—')
   })
 })
 

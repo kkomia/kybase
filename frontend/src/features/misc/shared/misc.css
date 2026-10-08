@@ -662,6 +662,125 @@
     color: var(--text-primary);
   }
 
+  /**
+ * 五格的形**刻意不一样**（评审 T4 之后的那一版：此前一列五个环）：每格的形对着它
+ * 真正要回答的问题——CPU 是"满没满"（环）、内存是"还剩多少体量"（条）、
+ * 槽位是"数得出来的几个位置"（方块）、额度是"余量"（分格）、
+ * 本进程常驻内存是"这个比例算不算大"（数字）。
+ *
+ * 所有进度元素都只有三种填充（`--accent` / `--status-warning` / `--status-danger`）+
+ * 一种空槽（`--meter-track`），色值由组件按语义色内联注入，这里不写第二个色板。
+ * 三类图形的空槽高度都在 12–14px 一档：五格排一行时"满"与"空"的体量要相当，
+ * 否则同一面板里会出现三种粗细，看起来像三种控件（正是这次要避免的事）。
+ */
+
+  /* 内存：条 + 右端读数同一行（读数的宽不参与分配，条吃掉剩下的全部宽度） */
+  .m-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .m-bar-track {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 12px;
+    overflow: hidden;
+    background: var(--meter-track);
+    border-radius: var(--radius-pill);
+  }
+
+  .m-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .m-bar-reading {
+    flex: none;
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+  }
+
+  /* 并发槽位：大号数字在上、槽位方块在下 */
+  .m-slots {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    width: 100%;
+  }
+
+  .m-slots-figure {
+    font-size: var(--text-figure-size);
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+
+  .m-slots-row {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-1);
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /**
+ * 一格一个槽位。少量槽位时是方块（`max-width` 封顶），槽位多起来自然收窄成细格，
+ * 不会撑破这一行——`KYLAB_WORKER_CONCURRENCY` 是个位数，那一档才是常态。
+ */
+  .m-slot {
+    flex: 1 1 0;
+    min-width: 2px;
+    max-width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--meter-track);
+  }
+
+  /* 云端解析额度：百分比 + 分格进度条 */
+  .m-quota {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    width: 100%;
+  }
+
+  .m-quota-reading {
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+  }
+
+  .m-quota-row {
+    display: flex;
+    gap: var(--space-0-5);
+    width: 100%;
+  }
+
+  .m-quota-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--meter-track);
+  }
+
+  /* 本进程常驻内存：纯数字卡（比环、条、格子都"安静"，它本来就没有刻度可看） */
+  .m-number-card {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+    font-size: var(--text-figure-size);
+    font-weight: 600;
+    line-height: 1;
+  }
+
   .m-load-note,
   .m-load-hint,
   .m-load-problem {
