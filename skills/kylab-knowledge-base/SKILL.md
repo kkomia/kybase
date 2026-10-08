@@ -95,7 +95,7 @@ This Skill drives the kylab MCP server, which runs beside the kylab backend.
 ```bash
 # from the kylab repository
 cd backend
-python -m app.mcp_server.server --list-tools          # confirm the 11 tools are visible
+python -m app.mcp_server.server --list-tools          # the tool names it exposes — read the list, don't match a remembered count (the set grows)
 python -m app.mcp_server.server --transport stdio      # what an MCP client launches
 ```
 
