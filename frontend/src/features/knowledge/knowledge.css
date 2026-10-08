@@ -1,0 +1,2656 @@
+/**
+ * 知识库域的样式（旧前端各页 `<style scoped>` 的合体）。
+ *
+ * 三条纪律与旧前端一致：
+ * 1. **颜色、间距、圆角一律引用 `tokens.css` 的变量**，这里不出现色值与裸像素
+ *    （结构常量如列宽、行高除外——它们属于布局骨架）；
+ * 2. 类名统一 `kb-` 前缀，避免与 `@/ui/*`（P2 域）的通用类名打架；
+ * 3. 全局已有的 `.panel` / `.panel-head` / `.panel-row` / `.field` / `.field-label` /
+ *    `.text-hint` / `.text-note` / `.text-meta` / `.text-micro` / `.tabular` / `.sep`
+ *    直接用，不在这里重写一遍。
+ *
+ * **按钮 / 输入框 / 下拉 / 弹窗 / 菜单 / 状态标签这几块已经不在这里**：
+ * 它们全部换成 `@/ui/*` 的原语（见各页面的 import），本文件只留**页面自己的排版**
+ * （卡片、表格、抽屉、目录树…）与 `compose.tsx` 里那几个组合件要用的少量类。
+ *
+ * **整份规则收在 `@layer components` 里（2026-09-24 第三批 C）**，理由与 `tokens.css`
+ * 那段元素重置、`misc.css` 那份 `.m-*` 完全相同：**未分层的声明永远压过
+ * `@layer utilities`**（分层规则与优先级无关），于是这里写的字号/文字色会静默盖掉
+ * `@/ui/*` 调用点上的工具类——同一个弹窗里混着两套写法，改哪一处都可能不生效
+ * （`.kb-switch` 原来那两行正是"有意压过 `@/ui/label`"的写法，收层时一并把字号/字重
+ * 挪到调用点的 utilities）。
+ *
+ * 两个例外，都在下面标了位置：
+ * - `@keyframes` 不进层（本文件有 3 个，已提到文件顶部，与 `misc.css` 做法一致）：
+ *   动画名是文档级的，放进层只会让"同名关键帧谁赢"多一条规则；
+ * - 收层后**工具类开始赢**：凡此前"靠层外赢过 utilities"才成立的地方都会跟着变，
+ *   所以这一批是**逐页重拍对照**过的（`.shots/round-d/` vs `.shots/round-c/`），
+ *   外加一份"同一时刻、层内 vs 层外"的结构探针（`.shots/batch3c-probe-layer.cjs`）。
+ *
+ * 两条与 `@/ui/*` 交接时必须知道的：
+ * - 要把原语的默认取值改成别样，**只有**调用点的 `cn()` 这一条路（同类冲突后写者胜，
+ *   判据确定、不靠源码顺序，如 `.kb-switch` 与文件名过滤框的调用点）。在这里写一条
+ *   同属性声明已经压不住工具类——**选择器写得更具体也没用**，层的先后与优先级无关
+ *   （`.kb-search-box [data-slot='input']` 就是栽在这上面的一条）。
+ * - 要**选中**原语内部的元素（加 hover 色、改定位），用它们的 `data-slot`
+ *   （`@/ui/*` 全部保留了它）：只要不与工具类撞属性就仍然有效。
+ */
+
+/* 动画定义留在层外（见文件头）：这三个原先分别住在骨架屏、抽屉遮罩、抽屉本体旁边，
+   收层时一并提到顶部——顺手证明"它们与层内的规则无关"。 */
+
+@keyframes kb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes kb-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.3;
+  }
+}
+
+@keyframes kb-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+/**
+ * **层级顺序：与 `tokens.css` / `misc.css` 顶部那句逐字相同，重复是故意的。**
+ *
+ * 层的顺序由"这个名字第一次出现的位置"决定，而本文件在真实加载里可能**先于**
+ * `tokens.css` 被浏览器看到（它挂在 `KnowledgeBaseView` 的依赖子树里）。
+ * 只写下面那个 `@layer components`、不写这一句的话，`components` 会拿到第 1 位，
+ * Tailwind 后来声明的 `base` 反而压在它上面——`* { margin: 0; padding: 0; border: 0 }`
+ * 这类 preflight 重置会静默吃掉整份 `.kb-*`（`misc.css` 那次实测：页标题字号退回
+ * 15px、卡片内边距归零）。
+ *
+ * 两句内容相同、幂等：谁先被浏览器看到，顺序都由它定死，不依赖 CSS 的加载顺序。
+ */
+@layer theme, base, components, utilities;
+
+@layer components {
+  /* ------------------------------------------------------------ 骨架与空态 */
+
+  /* 骨架屏的三种预设：高度是本域的排版，底色与呼吸由 `@/ui/skeleton` 给 */
+  .kb-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+  }
+
+  .kb-skeleton-row {
+    height: var(--row-height);
+  }
+
+  .kb-skeleton-card {
+    height: 132px;
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-skeleton-text {
+    height: 14px;
+  }
+
+  .kb-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-top: var(--space-8);
+  }
+
+  .kb-empty-title {
+    font-size: var(--text-section-size);
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .kb-empty-hint {
+    max-width: var(--measure);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+  }
+
+  .kb-error-line {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-meta-size);
+    color: var(--status-danger);
+  }
+
+  /**
+ * 「这是上次看到的内容」那一行（M4 阶段 5）：**不是错误**，所以用中性色——
+ * 它是内容的时间戳（在线"上次更新于 X" / 断连"现在连不上…"），内容本身还在屏幕上。
+ */
+  .kb-snapshot-line {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+  }
+
+  /**
+ * 检索失败：一句人话 + 一个重试按钮（原先只有一行红字，没有出路）。
+ * 说明在上、按钮在下，左对齐——它长在结果区里，与那条空态同一块位置。
+ */
+  .kb-failure {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  /* 这一行已经是容器的第一行：外边距由容器的 gap 管，别再叠一层 */
+  .kb-failure .kb-error-line {
+    margin-top: 0;
+  }
+
+  /* 缺前置条件时的常驻提示：不是错误，用中性底 */
+  .kb-blocked-note {
+    margin-top: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  /* ------------------------------------------------------------ 进度条 */
+
+  .kb-meter {
+    display: flex;
+    gap: var(--space-pair);
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .kb-meter-sm {
+    height: 4px;
+  }
+
+  .kb-meter-md {
+    height: 6px;
+  }
+
+  .kb-segment {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--meter-track);
+    border-radius: var(--radius-pill);
+  }
+
+  .kb-segment-fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-pill);
+    transition: width 240ms ease;
+  }
+
+  .kb-segment-accent .kb-segment-fill {
+    background: var(--accent);
+  }
+
+  .kb-segment-info .kb-segment-fill {
+    background: var(--status-info);
+  }
+
+  .kb-segment-success .kb-segment-fill {
+    background: var(--status-success);
+  }
+
+  .kb-segment-warning .kb-segment-fill {
+    background: var(--status-warning);
+  }
+
+  .kb-segment-danger .kb-segment-fill {
+    background: var(--status-danger);
+  }
+
+  .kb-segment-neutral .kb-segment-fill {
+    background: var(--text-tertiary);
+  }
+
+  .kb-segment-pulsing .kb-segment-fill {
+    animation: kb-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* ------------------------------------------------------------ 状态标签的圆点 */
+
+  /*
+ * 状态标签本身是 `@/ui/badge` 拼出来的（见 `compose.tsx`）：形状、底色、字色全部来自
+ * 原语与本仓令牌。这里只剩"还在动"那一条——圆点呼吸，旧 `.kb-tag-running .kb-tag-dot`
+ * 的同一条动画。
+ */
+  .kb-dot-running {
+    animation: kb-pulse 1.6s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kb-dot-running,
+    .kb-segment-pulsing .kb-segment-fill {
+      animation: none;
+    }
+  }
+
+  /* ------------------------------------------------------------ 弹窗 */
+
+  /*
+ * 弹窗壳（遮罩 / 表面 / 标题栏 / 底部）**不在本文件里**：它已经是 `@/ui/dialog`
+ * 与 `@/ui/alert-dialog`（组合方式见各页面，取值见 `src/ui/README.md` §2/§3）。
+ * 这里只留弹窗里那句导语与后果说明的排版。
+ */
+
+  /* 弹窗里的一句导语（规范 §5.1 保留项） */
+  .kb-lead {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+  }
+
+  .kb-modal-note {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-3);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-callout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  /* 参数刚改过：这一条从"说明"变成"下一步做什么"，加重一档 */
+  .kb-callout-strong {
+    background: var(--status-warning-soft);
+    border-color: transparent;
+  }
+
+  /* ------------------------------------------------------------ 行菜单 */
+
+  /*
+ * 行菜单（浮层表面 / 项高 / 悬停底色）**不在本文件里**：它已经是
+ * `@/ui/dropdown-menu`，取值见 `src/ui/README.md` §2（`--bg-menu` / `--menu-pad` /
+ * `--menu-item-height`）。这里只剩"菜单触发器在行里怎么摆"。
+ */
+
+  .kb-chunk-menu {
+    margin-left: auto;
+  }
+
+  /* ------------------------------------------------------------ 数值滑杆 */
+
+  .kb-range {
+    --kb-range-thumb: 14px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .kb-range-col {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 给刻度数值留一行高度：它们是绝对定位的 */
+  .kb-range-col-marked {
+    padding-bottom: 17px;
+  }
+
+  .kb-range-rail {
+    position: relative;
+    height: var(--kb-range-thumb);
+    cursor: pointer;
+  }
+
+  .kb-range-rail::before {
+    position: absolute;
+    top: 50%;
+    right: calc(var(--kb-range-thumb) / 2);
+    left: calc(var(--kb-range-thumb) / 2);
+    height: 3px;
+    margin-top: -1.5px;
+    content: '';
+    background: var(--border-strong);
+    border-radius: var(--radius-pill);
+  }
+
+  .kb-range-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .kb-range-input::-webkit-slider-thumb {
+    width: var(--kb-range-thumb);
+    height: var(--kb-range-thumb);
+    appearance: none;
+    background: var(--accent);
+    border: 2px solid var(--bg-surface);
+    border-radius: 50%;
+  }
+
+  .kb-range-input::-moz-range-thumb {
+    width: var(--kb-range-thumb);
+    height: var(--kb-range-thumb);
+    background: var(--accent);
+    border: 2px solid var(--bg-surface);
+    border-radius: 50%;
+  }
+
+  .kb-range-input::-webkit-slider-runnable-track,
+  .kb-range-input::-moz-range-track {
+    background: transparent;
+  }
+
+  /* 刻度点：空心圈，与实心滑块在形状上分得开 */
+  .kb-range-mark {
+    position: absolute;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    background: var(--bg-subtle);
+    border: 2px solid var(--text-tertiary);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  .kb-range-mark-primary {
+    border-color: var(--accent-text);
+  }
+
+  .kb-range-mark-label {
+    position: absolute;
+    bottom: 0;
+    font-size: var(--text-micro-size);
+    line-height: 1.2;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .kb-range-mark-label-primary {
+    color: var(--accent-text);
+  }
+
+  .kb-range-value {
+    flex: 0 0 auto;
+    min-width: 4ch;
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+    text-align: right;
+  }
+
+  .kb-range-number {
+    box-sizing: border-box;
+    width: 8ch;
+    height: var(--control-height);
+    padding: 0 var(--space-2);
+    font: inherit;
+    font-size: var(--text-meta-size);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    outline: none;
+  }
+
+  .kb-range-number:focus {
+    border-color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--text-primary);
+  }
+
+  /* ------------------------------------------------------------ 知识库列表（卡片 / 行） */
+
+  /* 知识库列表 / Wiki 的页头：标题 + 右侧的页面动作（`h1` 带 `flex: 1`，
+   于是动作被推到右端——那两页的动作确实是"页面级"的）。 */
+  .kb-head-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  /* 知识库**详情**的页头：标题与它的行内控件（设置齿轮）同处一行、**紧贴标题**。
+   旧 `PageHeader.vue` 的 `title-suffix` 槽就是这个语义——它那条 `.page-title-row`
+   也是 `display: flex; align-items: center; gap: var(--space-1)`（齿轮属于"这个库本身"，
+   摆到最右端会被读成"页面的动作"，见对照记录 §3 第 3 条）。 */
+  .kb-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  /* `auto-fit` 而不是 `auto-fill`：后者会保留空轨道，两个库时右边留一大片空白 */
+  .kb-cards {
+    display: grid;
+    gap: var(--space-3);
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-card-item {
+    position: relative;
+  }
+
+  .kb-card {
+    /* 左边那一列（字母块 36px + 间距）的宽度。主体与脚注都让出这一段，
+     全卡只剩**一条左基准**——原先标题在 337、正文与脚注在 291，差着那枚字母块。
+     分隔线仍是贯穿的（`border` 画在 border box 上，不受 padding 影响）。 */
+    --kb-card-indent: calc(36px + var(--space-3));
+
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    color: inherit;
+    text-decoration: none;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .kb-card:hover {
+    background: var(--bg-surface-raised);
+    border-color: var(--border-strong);
+  }
+
+  .kb-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .kb-mark {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    font-size: var(--text-section-size);
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+  }
+
+  /* 行首那枚字母块：**24px 里放的是 B2（14px）**，不是 C1——
+   旧 `KnowledgeBasesView.vue` 的 `.kb-mark-sm` 写的是 `--text-meta-size`
+   （对照记录 §3 第 2 条的"单元格字号"）。小一档在 24px 的方块里看着偏空。 */
+  .kb-mark-sm {
+    width: 24px;
+    height: 24px;
+    font-size: var(--text-meta-size);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-card-title {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .kb-name {
+    overflow: hidden;
+    font-size: var(--text-section-size);
+    font-weight: 500;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-model {
+    overflow: hidden;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    padding-left: var(--kb-card-indent);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-doc-count {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+  }
+
+  .kb-doc-value {
+    font-size: var(--text-figure-size);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .kb-doc-unit {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-description {
+    display: -webkit-box;
+    overflow: hidden;
+    min-height: calc(var(--text-meta-size) * 1.7 * 2);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .kb-card-foot {
+    margin-top: auto;
+    /* 右侧让出那颗菜单的体积，脚注文案长了也不会被压到它下面 */
+    padding-right: var(--control-height);
+    padding-left: var(--kb-card-indent);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  /* 卡片的管理入口：与脚注同一行的右手边（原先钉在右上角，压着标题那一行） */
+  .kb-menu-corner {
+    position: absolute;
+    right: var(--space-2);
+    bottom: var(--space-3);
+  }
+
+  .kb-rows {
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .kb-row-link {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-row);
+  }
+
+  .kb-row-link:hover {
+    background: var(--bg-hover);
+    text-decoration: none;
+  }
+
+  .kb-row-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .kb-row-text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-pair);
+  }
+
+  .kb-row-top {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .kb-description-one-line {
+    overflow: hidden;
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-col-num {
+    flex: 0 0 72px;
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: right;
+  }
+
+  .kb-col-time {
+    flex: 0 0 120px;
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
+  .kb-col-menu {
+    flex: 0 0 var(--control-height);
+    text-align: center;
+  }
+
+  /* ------------------------------------------------------------ 文档页：两栏 + 目录树 */
+
+  .kb-body {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-5);
+    margin-top: var(--space-4);
+  }
+
+  .kb-tree {
+    flex: 0 0 200px;
+    padding-right: var(--space-4);
+    border-right: 1px solid var(--border-hairline);
+  }
+
+  /**
+ * **还没有目录**时的形态：目录那一栏摊成列表上方的一行。
+ *
+ * 纵向栏（200px + 一条分隔线）在没有目录时只说得出一句"还没有目录"——「全部文档」
+ * 与「未归档」筛的是同一批文档，等于用一整栏换一句空态。摊平之后七列的表拿回这 216px，
+ * 「目录 / 还没有目录 / 新建目录」三件事还都在原位（建目录的入口不能因为"还没有目录"
+ * 而消失）。目录一旦建出来，这一栏立刻回到纵向形态。
+ */
+  .kb-body-flat {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .kb-tree-flat {
+    flex: 0 0 auto;
+    padding: 0;
+    border-right: none;
+  }
+
+  /* 摊平后头部自己就是整行：目录 / 状态 / 动作从左到右排开 */
+  .kb-tree-flat .kb-tree-head {
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0;
+  }
+
+  /* 摊平后这一行只有三件事，挨着排——不推开（1131px 宽的一行里，
+   把按钮甩到最右端会与"目录"隔着一千多像素，读起来像两个控件） */
+  .kb-tree-flat .kb-tree-empty {
+    flex: 0 1 auto;
+    padding: 0;
+  }
+
+  /* 摊平后表单是横的一行（纵向栏里那套列布局在这里会占掉半个屏幕） */
+  .kb-tree-flat .kb-tree-form {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) 0 0;
+  }
+
+  .kb-tree-flat .kb-tree-form > * {
+    flex: 0 1 260px;
+  }
+
+  .kb-tree-flat .kb-tree-form-actions {
+    flex: 0 0 auto;
+  }
+
+  .kb-doc-area {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .kb-tree-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-tree-list,
+  .kb-tree-children {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-tree-children {
+    margin-left: 10px;
+    border-left: 1px solid var(--border-hairline);
+  }
+
+  .kb-tree-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-pair);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-tree-row:hover {
+    background: var(--bg-hover);
+  }
+
+  .kb-tree-row-on {
+    background: var(--accent-soft);
+  }
+
+  .kb-tree-caret {
+    display: inline-flex;
+    flex: 0 0 20px;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 30px;
+    color: var(--text-tertiary);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-tree-node {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+    height: 30px;
+    padding-right: var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: left;
+    border-radius: var(--radius-control);
+  }
+
+  .kb-tree-node:hover {
+    color: var(--text-primary);
+  }
+
+  .kb-tree-row-on .kb-tree-node {
+    color: var(--accent-text);
+  }
+
+  .kb-tree-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-tree-count {
+    flex: 0 0 auto;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-tree-empty {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-tree-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .kb-tree-form-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  /* ------------------------------------------------------------ 工具栏 */
+
+  .kb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+
+  /**
+ * 筛选那一组：输入框与两个下拉**等距**，读完是"这几件是同一件事"。
+ *
+ * `flex: 1 1 auto` 不是为了好看：它是 wrap 容器，浏览器按"最大行"算它的基准宽度
+ * （实测 458px），而三个控件加起来 496px——差 38px 就会把「全部来源」折到第二行，
+ * 于是"等距"看着像"第三个走丢了"。给它富余宽度，折行只在真的放不下时发生。
+ */
+  .kb-filters {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .kb-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+  }
+
+  .kb-search-box {
+    position: relative;
+    flex: 0 1 260px;
+    min-width: 180px;
+  }
+
+  /* 搜索框是"输入框 + 前置图标"这一种排版，但**输入框本身那几条不再写在这里**：
+     收层之后原语的 utilities 赢过本文件，`[data-slot='input']` 里写多少条都会被
+     `px-3 / bg-surface / border-border` 吃掉（图标会压到文字上）。现在它们写在
+     `KnowledgeBaseView.tsx` 的调用点上（`rounded-row border-transparent bg-subtle
+     pl-[calc(var(--space-3)+24px)]`，左内边距与 `.kb-search-icon` 的 `left` 同一算式）。 */
+
+  .kb-search-icon {
+    position: absolute;
+    top: 50%;
+    left: var(--space-3);
+    z-index: 1;
+    color: var(--text-tertiary);
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  /* **按内容定宽**：原先写死 148px，而里面的下拉自己只占 ~116px，多出来的 32px
+   让"输入框→状态"看着 4px、"状态→来源"看着 33px——间距不均是那个空盒子造出来的 */
+  .kb-filter {
+    flex: 0 0 auto;
+  }
+
+  /* ------------------------------------------------------------ 批量动作条 */
+
+  .kb-batch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--accent-soft);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-batch-count {
+    margin-right: auto;
+    font-size: var(--text-meta-size);
+    color: var(--accent-text);
+  }
+
+  .kb-batch-offpage {
+    color: var(--text-tertiary);
+  }
+
+  /* ------------------------------------------------------------ 文档清单 */
+
+  /* ------------------------------------------------------------ 文档清单
+ *
+ * 行高与单元格字号**逐值对过旧 `KnowledgeBaseView.vue`**（对照记录 §3 第 2 条），
+ * 结论是这一块本来就已经一致，两处都写下来免得下次再对一遍：
+ *
+ * | 取值 | 旧（`KnowledgeBaseView.vue`） | 新 |
+ * | --- | --- | --- |
+ * | 数据行高 | `.doc-row.panel-row` → `.panel-row { min-height: var(--row-height) }` = **44px** | 同（`.kb-doc-row.panel-row`） |
+ * | 表头行高 / 字号 | `.panel-head` = **36px / C1 12px** | 同（tokens.css 的 `.panel-head`） |
+ * | 文件名 / 单元格 | `.row-name` 继承正文 **B1 15px（行高 22.05px）** | 同（`.kb-row-name-link`） |
+ * | 数字/问题/大小/时间列 | `.row-number` 等 = **B2 14px（行高 20.58px）** | 同（`.kb-col-*`） |
+ * | 上传者列 | `.row-uploader` = **C1 12px** | 同（`.kb-col-uploader`） |
+ * | 子文件行 | `.part-row { height: var(--row-height-compact) }` = **32px** | 同（`.kb-part`） |
+ *
+ * 逐条量过一遍（1440 与 1100 两个宽度、行高与单元格字号都取计算值）：**逐值相同**，
+ * 所以这一块没有改动——旧版这几处本来就走的是同一份令牌，没有写死的值。
+ */
+
+  .kb-doc-head,
+  .kb-doc-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    /* 窄窗兜底（2026-10-01，与任务表 `.m-task-row` 同款）：列放不下时由外层 `.panel`
+       横向滚动（tokens.css 那处 `overflow: auto`），而不是把「文件」列压到 0、
+       徽章与数字叠在一起。720 = 各固定列（<1200px 档隐藏上传者/大小）合计
+       ~510 + 文件名列至少 ~200。 */
+    min-width: 720px;
+  }
+
+  .kb-doc-head {
+    padding: 0 var(--space-4);
+  }
+
+  .kb-doc-row {
+    padding: 0 var(--space-4);
+  }
+
+  /* 抽屉里正开着的那一篇：与左栏当前项同一档底色（`--bg-selected` 是全站唯一的选中底） */
+  .kb-doc-row-on {
+    background: var(--bg-selected);
+  }
+
+  .kb-col-check {
+    display: flex;
+    flex: 0 0 20px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .kb-col-file {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  /* 与文件名起点对齐：命中区 24px + gap（列头没有展开器，自己让出来） */
+  .kb-head-file {
+    padding-left: calc(var(--hit-target) + var(--space-3));
+  }
+
+  .kb-col-caret {
+    display: inline-flex;
+    flex: 0 0 var(--hit-target);
+    align-items: center;
+    justify-content: center;
+    width: var(--hit-target);
+    height: var(--hit-target);
+    color: var(--text-tertiary);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-col-caret:hover {
+    color: var(--text-primary);
+    background: var(--bg-active);
+  }
+
+  .kb-row-name-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: stretch;
+    min-width: 0;
+    min-height: var(--hit-target);
+    color: var(--text-primary);
+  }
+
+  .kb-row-name-text {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-col-chunks {
+    flex: 0 0 56px;
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: right;
+  }
+
+  .kb-col-questions {
+    flex: 0 0 64px;
+    overflow: hidden;
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-col-questions-muted {
+    color: var(--text-tertiary);
+  }
+
+  .kb-col-size {
+    flex: 0 0 72px;
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
+  .kb-col-uploader {
+    flex: 0 0 auto;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  /**
+   * 更新时间列：**不折行**，宽度按最长的那个字符串给（绝对时间 `2026-09-16 11:42`）。
+   *
+   * 96px 装不下它——实测 14px 字号下这串要 108.6px，于是同一格里的日期与时刻被折成
+   * 两行（行高 20.58 → 41.16），而抽屉里写的是同一串、却是一行（评审记的"列表两行
+   * vs 抽屉一行"）。给到 112px 留一点字体回退的余量：宁可让弹性列（文件名）少 16px，
+   * 也不要一列高度在一屏里参差不齐。
+   */
+  .kb-col-updated {
+    flex: 0 0 112px;
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .kb-doc-group + .kb-doc-group {
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-doc-empty {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-meta-size);
+  }
+
+  .kb-doc-empty-text {
+    color: var(--text-secondary);
+  }
+
+  .kb-doc-empty-hint {
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-doc-filler {
+    pointer-events: none;
+  }
+
+  .kb-doc-error {
+    margin: 0;
+    padding: 0 var(--space-3) var(--space-2) var(--space-12);
+    font-size: var(--text-meta-size);
+    color: var(--status-danger);
+  }
+
+  .kb-doc-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-3) var(--space-2) var(--space-12);
+  }
+
+  .kb-doc-progress-meter {
+    flex: 0 1 220px;
+    min-width: 120px;
+  }
+
+  .kb-doc-progress-text {
+    overflow: hidden;
+    min-width: 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-doc-progress-more {
+    flex: 0 0 auto;
+    padding: var(--space-pair) var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-doc-progress-more:hover {
+    color: var(--accent-text);
+    background: var(--bg-hover);
+    text-decoration: none;
+  }
+
+  .kb-parts {
+    margin: 0;
+    padding: 0 var(--space-3) var(--space-2) var(--space-12);
+    list-style: none;
+  }
+
+  .kb-part {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--row-height-compact);
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-part-name {
+    color: var(--text-primary);
+  }
+
+  .kb-pager {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: -1px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+    box-shadow: 0 -1px 0 var(--border-hairline);
+  }
+
+  .kb-pager-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .kb-pager-page {
+    min-width: 6.5em;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .kb-readonly-note {
+    margin: var(--space-4) 0 0;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-control);
+  }
+
+  /* ------------------------------------------------------------ 抽屉 */
+
+  /**
+ * 抽屉的轻遮罩。**比弹窗那层更轻**（弹窗 `--overlay-scrim` 是 40%，这里借同一枚令牌
+ * 压到 12%）：列表还要看得见——抽屉是"从列表里点开看一眼"，不是把列表关掉。
+ * 它只解决一件事：底下那行文件名被从中间切断时，用户读到的应该是"这是背景"，
+ * 而不是"排版坏了"。z-index 比抽屉小一档，点它收起（Esc 那条路在组件里）。
+ */
+  .kb-drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    opacity: 0.3;
+    background: var(--overlay-scrim);
+    transition: opacity 180ms ease-out;
+    animation: kb-scrim-in 180ms ease-out;
+  }
+
+  .kb-drawer-scrim-closing {
+    opacity: 0;
+  }
+
+  .kb-drawer {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    width: min(720px, 46vw);
+    background: var(--bg-canvas);
+    border-left: 1px solid var(--border);
+    box-shadow: -10px 0 28px rgb(0 0 0 / 12%);
+    animation: kb-drawer-in 180ms ease-out;
+    transition: transform 180ms ease-out;
+  }
+
+  .kb-drawer-closing {
+    transform: translateX(100%);
+  }
+
+  @media (max-width: 900px) {
+    .kb-drawer {
+      width: 100%;
+    }
+  }
+
+  .kb-drawer-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kb-drawer-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--text-section-size);
+    font-weight: 600;
+  }
+
+  .kb-drawer-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-drawer-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--space-1);
+  }
+
+  .kb-drawer-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--space-4);
+    overflow-y: auto;
+  }
+
+  .kb-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-5) 0 var(--space-3);
+    font-size: var(--text-meta-size);
+    font-weight: 600;
+  }
+
+  .kb-section-title:first-child {
+    margin-top: 0;
+  }
+
+  .kb-section-badge {
+    padding: 0 var(--space-2);
+    font-size: var(--text-micro-size);
+    font-weight: 400;
+    color: var(--text-tertiary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-meta {
+    display: grid;
+    gap: var(--space-4) var(--space-6);
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-meta dt {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-meta dd {
+    margin: var(--space-1) 0 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kb-summary {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-summary-label {
+    margin-right: var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-tabs {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kb-tab {
+    padding: var(--space-2) 0;
+    margin-bottom: -1px;
+    font-size: var(--text-body-size);
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+  }
+
+  .kb-tab:hover {
+    color: var(--text-primary);
+  }
+
+  .kb-tab-on {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent);
+  }
+
+  .kb-tabs-hint {
+    margin-left: auto;
+    padding-bottom: var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-source-switch {
+    display: inline-flex;
+    gap: var(--space-pair);
+    margin-top: var(--space-4);
+    padding: var(--space-pair);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-row);
+  }
+
+  .kb-source-tab {
+    height: 26px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-source-tab-on {
+    color: var(--text-primary);
+    background: var(--bg-subtle);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+  }
+
+  /* 原文渲染（`kb-reader*` 三条）已随预览交给 `@/features/preview` 而删除：
+   那三条在换原语之前就没有调用方了（本次一并清掉，免得看着像还有第二个阅读器）。 */
+
+  .kb-muted {
+    margin: var(--space-4) 0 0;
+    max-width: var(--measure);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+  }
+
+  .kb-preview-note {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-question-summary {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+  }
+
+  .kb-question-summary-empty {
+    color: var(--text-tertiary);
+  }
+
+  .kb-chunk-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-chunk {
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-chunk + .kb-chunk {
+    margin-top: var(--space-3);
+  }
+
+  .kb-chunk-disabled {
+    background: var(--bg-subtle);
+    border-left: 2px solid var(--status-warning);
+  }
+
+  .kb-chunk-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-chunk-menu {
+    margin-left: auto;
+  }
+
+  .kb-chunk-text {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .kb-chunk-questions {
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-chunk-question {
+    display: flex;
+    gap: var(--space-1);
+    align-items: baseline;
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-tertiary);
+  }
+
+  .kb-chunk-question::before {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    content: '问';
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-chunk-editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .kb-chunk-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .kb-chunk-hint {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  /* ------------------------------------------------------------ 处理明细 */
+
+  .kb-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .kb-timeline-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+  }
+
+  .kb-timeline-stall {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--status-warning-soft);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-timeline-heading {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-micro-size);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .kb-step-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-step {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 30px;
+    font-size: var(--text-meta-size);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kb-step:last-child {
+    border-bottom: none;
+  }
+
+  .kb-step-pending {
+    opacity: 0.6;
+  }
+
+  .kb-step-order {
+    flex: 0 0 20px;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
+  .kb-step-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-step-visits {
+    flex: 0 0 auto;
+    font-size: var(--text-micro-size);
+    color: var(--status-warning);
+  }
+
+  .kb-step-duration {
+    flex: 0 0 76px;
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+    text-align: right;
+  }
+
+  .kb-step-status {
+    flex: 0 0 84px;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  .kb-timeline-failure {
+    margin: 0;
+    padding: var(--space-3);
+    max-height: 200px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--bg-subtle);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-timeline-note {
+    margin: 0;
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-tertiary);
+  }
+
+  /* ------------------------------------------------------------ Wiki */
+
+  .kb-wiki-body {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-5);
+    margin-top: var(--space-4);
+  }
+
+  .kb-wiki-nav {
+    flex: 0 0 240px;
+    padding-right: var(--space-4);
+    border-right: 1px solid var(--border-hairline);
+  }
+
+  .kb-wiki-article {
+    flex: 1;
+    min-width: 0;
+    max-width: var(--measure);
+  }
+
+  .kb-wiki-nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-wiki-clear {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-wiki-clear:hover {
+    color: var(--status-danger);
+  }
+
+  .kb-wiki-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-wiki-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-pair);
+    min-height: 30px;
+    border-radius: var(--radius-control);
+  }
+
+  .kb-wiki-row:hover {
+    background: var(--bg-hover);
+  }
+
+  .kb-wiki-row-on {
+    background: var(--accent-soft);
+  }
+
+  .kb-wiki-node {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+    height: 30px;
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: left;
+    border-radius: var(--radius-control);
+  }
+
+  .kb-wiki-row-on .kb-wiki-node {
+    color: var(--accent-text);
+  }
+
+  .kb-wiki-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-article-head {
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kb-article-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-page-title-size);
+    font-weight: 600;
+  }
+
+  .kb-article-brief {
+    margin: var(--space-2) 0 0;
+    color: var(--text-secondary);
+  }
+
+  .kb-article-meta {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-sources {
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-sources-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-section-size);
+    font-weight: 600;
+  }
+
+  .kb-sources-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-source {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-source + .kb-source {
+    margin-top: var(--space-1);
+  }
+
+  .kb-source-flash {
+    background: var(--accent-soft);
+  }
+
+  .kb-source-index {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+  }
+
+  .kb-source-doc {
+    overflow: hidden;
+    max-width: 34ch;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-source-doc:hover {
+    color: var(--accent-text);
+    text-decoration: underline;
+  }
+
+  .kb-source-where {
+    overflow: hidden;
+    max-width: 48ch;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-wiki-empty {
+    display: flex;
+    justify-content: center;
+    padding-top: var(--space-8);
+  }
+
+  .kb-generating {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  /* ------------------------------------------------------------ 库设置弹窗 */
+
+  .kb-settings-layout {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-5);
+    height: 100%;
+    min-height: 0;
+  }
+
+  .kb-settings-nav {
+    flex: 0 0 168px;
+    align-self: flex-start;
+  }
+
+  .kb-nav-group {
+    margin: var(--space-4) 0 var(--space-1);
+    padding: 0 var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-nav-group:first-child {
+    margin-top: 0;
+  }
+
+  .kb-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: 32px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: left;
+    border-radius: var(--radius-row);
+  }
+
+  .kb-nav-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .kb-nav-item-on {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .kb-nav-item-danger.kb-nav-item-on {
+    color: var(--status-danger);
+    background: var(--danger-soft);
+  }
+
+  .kb-pane {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding-right: var(--space-2);
+    overflow-y: auto;
+  }
+
+  .kb-pane-title {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-section-size);
+    font-weight: 600;
+  }
+
+  .kb-pane-title-standalone {
+    margin-bottom: var(--space-5);
+  }
+
+  .kb-field {
+    display: block;
+    margin-bottom: var(--space-5);
+  }
+
+  .kb-field-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .kb-id {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-pane-divider {
+    margin: var(--space-6) 0 var(--space-5);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-pane-error {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-micro-size);
+    color: var(--status-danger);
+  }
+
+  .kb-info-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4);
+    margin: 0;
+  }
+
+  .kb-info-list dt {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-info-list dd {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .kb-impact {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+    padding: var(--space-3);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-impact dt {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-impact dd {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-section-size);
+    color: var(--text-primary);
+  }
+
+  /* 勾选/单选的那一行（配 `@/ui/label` 用）：**这里只留布局**。
+     label 原语默认 12px / 500，而这一行是"读得到的选项文字"，口径是 14px / 二级灰。
+     收层之后 utilities 赢过本文件，字号/字重/文字色只能由**调用点**表达
+     （`text-[length:var(--text-meta-size)] font-normal`；原语内部走 `cn()`，
+     同类冲突以后写者为准）——在这里再写一遍会被原语静默吃掉。
+     对齐（`display:flex` + `align-items:center` + `gap`）留在本文件：它是这一行的版式，
+     与 label 的取值同值同义。 */
+  .kb-switch {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+  }
+
+  .kb-form-options {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+  }
+
+  .kb-form-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    cursor: pointer;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .kb-form-option:hover {
+    background: var(--bg-subtle);
+  }
+
+  .kb-form-option-on {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+
+  .kb-form-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-pair);
+  }
+
+  .kb-form-option-title {
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+  }
+
+  .kb-form-option-desc {
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+  }
+
+  .kb-advanced {
+    margin-top: var(--space-4);
+  }
+
+  .kb-advanced > summary {
+    padding: var(--space-1) 0;
+    font-size: var(--text-meta-size);
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .kb-advanced[open] > summary {
+    margin-bottom: var(--space-4);
+  }
+
+  .kb-advanced-grid {
+    display: grid;
+    gap: var(--space-5);
+  }
+
+  .kb-advanced-divider {
+    margin: var(--space-5) 0;
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-chunking-error {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-micro-size);
+    color: var(--status-danger);
+  }
+
+  /* ------------------------------------------------------------ 上传弹窗 */
+
+  .kb-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-5) var(--space-4);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: center;
+    background: var(--bg-subtle);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-dropzone-active {
+    color: var(--text-primary);
+    border-color: var(--accent);
+  }
+
+  .kb-dropzone-compact {
+    flex-direction: row;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .kb-dropzone-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2);
+  }
+
+  .kb-dropzone-hint {
+    max-width: 56ch;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-file-list {
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .kb-file-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.55fr) 56px 84px minmax(0, 1fr) 32px;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    font-size: var(--text-micro-size);
+  }
+
+  .kb-file-row + .kb-file-row {
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-file-name {
+    overflow: hidden;
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-file-size {
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
+  .kb-file-status-pending {
+    color: var(--text-tertiary);
+  }
+
+  .kb-file-status-uploading {
+    color: var(--status-info);
+  }
+
+  .kb-file-status-done {
+    color: var(--status-success);
+  }
+
+  .kb-file-status-duplicate {
+    color: var(--text-secondary);
+  }
+
+  .kb-file-status-failed {
+    color: var(--status-danger);
+  }
+
+  .kb-file-status-rejected {
+    color: var(--status-warning);
+  }
+
+  .kb-file-message {
+    min-width: 0;
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+  }
+
+  .kb-foot-note {
+    margin-right: auto;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* ------------------------------------------------------------ 数据源 */
+
+  .kb-source-form {
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .kb-source-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-source-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-source-item + .kb-source-item {
+    margin-top: var(--space-2);
+  }
+
+  .kb-source-main {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+  }
+
+  .kb-source-url {
+    flex: 1 1 200px;
+    min-width: 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+  }
+
+  .kb-source-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+
+  /* ------------------------------------------------------------ 分享弹窗 */
+
+  .kb-grant {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .kb-grant-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .kb-grant-permission {
+    flex: 0 0 104px;
+    width: 104px;
+  }
+
+  .kb-share-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-share-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kb-share-row:last-child {
+    border-bottom: none;
+  }
+
+  .kb-share-person {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-pair);
+  }
+
+  .kb-share-name {
+    overflow: hidden;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-share-username {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-share-title {
+    margin: var(--space-5) 0 var(--space-2);
+    font-size: var(--text-section-size);
+  }
+
+  .kb-share-error {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-micro-size);
+    color: var(--status-danger);
+  }
+
+  /* ------------------------------------------------------------ 库内检索 */
+
+  .kb-search-panel {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-6);
+    min-height: 420px;
+    max-height: 66vh;
+  }
+
+  .kb-search-side {
+    overflow-y: auto;
+  }
+
+  .kb-search-hits {
+    overflow-y: auto;
+    padding-left: var(--space-6);
+    border-left: 1px solid var(--border-hairline);
+  }
+
+  .kb-search-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .kb-narrow {
+    max-width: 96px;
+  }
+
+  .kb-history {
+    margin: var(--space-6) 0 var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-history-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+    text-align: left;
+    border-radius: var(--radius-control);
+  }
+
+  .kb-history-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .kb-history-item-on {
+    color: var(--text-primary);
+    box-shadow: inset 2px 0 0 var(--text-secondary);
+  }
+
+  .kb-history-query {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-hit-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    font-size: var(--text-meta-size);
+    color: var(--text-secondary);
+  }
+
+  .kb-hit-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-hit {
+    padding: var(--space-4);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-hit + .kb-hit {
+    margin-top: var(--space-3);
+  }
+
+  .kb-hit-title {
+    font-size: var(--text-section-size);
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .kb-hit-meta {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-hit-score {
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kb-hit-text {
+    margin: var(--space-2) 0 0;
+    max-width: var(--measure);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+    white-space: pre-wrap;
+  }
+
+  .kb-hit-channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    list-style: none;
+  }
+
+  .kb-dev-warning {
+    margin: 0 0 var(--space-6);
+    padding: var(--space-3) var(--space-4);
+    max-width: var(--measure);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+    background: var(--bg-subtle);
+    border-left: 2px solid var(--status-warning);
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  }
+
+  /* ------------------------------------------------------------ Markdown 正文 */
+
+  .kb-md {
+    font-size: var(--text-body-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+  }
+
+  .kb-md-h {
+    margin: var(--space-5) 0 var(--space-2);
+    font-size: var(--text-section-size);
+    font-weight: 600;
+  }
+
+  .kb-md-p {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  .kb-md-p + .kb-md-p {
+    margin-top: var(--space-3);
+  }
+
+  .kb-md-list {
+    margin: var(--space-2) 0 0;
+    padding-left: var(--space-5);
+  }
+
+  /*
+ * 符号：Tailwind 的 preflight 把 `ol, ul, menu` 的符号一并去掉了（`list-style: none`），
+ * 而 `padding-left` 留着——于是 Markdown 列表读起来是"缩进了一段的长文"：没有符号可分条目，
+ * 折行又回到条目的最左（评审 K20，Wiki 总览的「主题」是模型给的 `- [[标题]]：说明`）。
+ * 笔记域的富文本对同一件事的处理就是在这里还原（`notes.css` 的 `ul { list-style: disc }`）。
+ * 有符号之后，`padding-left` 就是那条**悬挂缩进**：符号挂在文字左侧，折行对齐条目首行。
+ */
+  ul.kb-md-list {
+    list-style: disc;
+  }
+
+  ol.kb-md-list {
+    list-style: decimal;
+  }
+
+  .kb-md-quote {
+    margin: var(--space-3) 0;
+    padding: var(--space-2) var(--space-3);
+    color: var(--text-secondary);
+    border-left: 3px solid var(--border);
+  }
+
+  .kb-md-pre {
+    position: relative;
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    overflow-x: auto;
+    font-size: var(--text-micro-size);
+    line-height: var(--line-code);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-md-table-wrap {
+    margin: var(--space-3) 0;
+    overflow-x: auto;
+  }
+
+  .kb-md-table {
+    font-size: var(--text-meta-size);
+    border-collapse: collapse;
+  }
+
+  .kb-md-table th,
+  .kb-md-table td {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    border: 1px solid var(--border-hairline);
+  }
+
+  .kb-md-table th {
+    font-weight: 600;
+    background: var(--bg-subtle);
+  }
+
+  .kb-md-hr {
+    margin: var(--space-5) 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .kb-md-link {
+    color: var(--accent-text);
+  }
+
+  /* 行内引用徽标：与对话页同一形态，可点可键盘激活 */
+  .kb-cite {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 8.5em;
+    height: 16px;
+    margin: 0 2px;
+    padding: 0 5px;
+    font-size: var(--text-micro-size);
+    line-height: 1;
+    color: var(--text-tertiary);
+    vertical-align: -2px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+  }
+
+  .kb-cite:hover {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+
+  .kb-cite-name {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 站内双链：强调色 + 下划线，一眼知道"点了会换一页" */
+  .kb-wikilink {
+    color: var(--accent-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  @media (max-width: 720px) {
+    .kb-settings-layout {
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .kb-settings-nav {
+      display: flex;
+      flex: 0 0 auto;
+      gap: var(--space-1);
+      overflow-x: auto;
+    }
+
+    .kb-nav-group {
+      display: none;
+    }
+
+    .kb-body,
+    .kb-wiki-body {
+      flex-direction: column;
+    }
+
+    .kb-tree,
+    .kb-wiki-nav {
+      flex: 0 0 auto;
+      padding-right: 0;
+      border-right: none;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .kb-col-uploader,
+    .kb-col-size {
+      display: none;
+    }
+  }
+
+  /* 标题旁的「?」：不动声色地放在标签行内 */
+  .kb-infotip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--text-tertiary);
+    vertical-align: -3px;
+    border-radius: var(--radius-pill);
+  }
+
+  .kb-infotip:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  /* 列表项之间留一点行距：Markdown 的 li 是一段话，挨着读会连成一块 */
+  .kb-md-list > li + li {
+    margin-top: var(--space-1);
+  }
+}

@@ -1,0 +1,658 @@
+/**
+ * 全局基座：重置、字体、排版与结构 Token。
+ * 视觉细节见《前端设计规范》§2（主题）、§4（字体排版）、§5（布局骨架）。
+ *
+ * 两条铁律：
+ * 1. 颜色只引用主题变量，禁止硬编码色值（工程规范 §4.3）；
+ * 2. 间距只用 --space-* 阶梯，禁止随手写 7px / 13px 这类数字——
+ *    节奏一旦失控，"克制"就退化成了"没对齐"。
+ */
+
+/* ---------------------------------------------------------------------
+   **层级顺序的唯一口径：`theme → base → components → utilities`。**
+
+   Tailwind v4 自己也会声明这一串，但**单靠它不够**：层的顺序由"这个名字第一次出现的位置"
+   决定，而 CSS 的加载顺序在开发环境里跟着模块求值顺序走（`misc.css` 就先于本文件被浏览器
+   看到——它挂在 `App` 的依赖子树里，而 `main.tsx` 把 `App` 引在本文件之前）。
+   于是先出现的 `@layer components` 会拿到第 1 位，Tailwind 后来那句只能把 `theme / base /
+   utilities` 追加在它**后面**——`base` 从此压住 `components`，`* { margin/padding/border: 0 }`
+   这类 preflight 重置会把整份组件样式吃掉（实测：收层后的 `.m-page-title` 字号退回 15px、
+   `.m-figure` 内边距归零）。
+
+   所以这句必须由**基座**先说出来，而且每个"可能先被看到"的开层文件都要重复一句同样的
+   内容（`misc.css` 顶部那句就是），内容相同、重复声明是幂等的；顺序一旦定下，后面再声明
+   同一串名字不会改变它。
+
+   顺带记一条现状：本文件的重置与 preflight **同层**，而 preflight 的源码在本文件之后，
+   所以 `h1 { font-size }`、`a { color }` 这两类 preflight 也声明过的属性，实际是 preflight
+   说了算（`h1` 拿到 `font-size: inherit`）。这是收层之前就有的行为，本批不动它。
+   --------------------------------------------------------------------- */
+@layer theme, base, components, utilities;
+
+/* ---------------------------------------------------------------------
+   **这一段是元素级重置，必须待在 `@layer base` 里。**
+   层外的声明会压过 Tailwind 的 `@layer utilities`——CSS 分层规则与优先级无关，
+   未分层的样式永远赢。后果是按钮上的 `bg-*` / `border-*` / `px-*` / `font-*`
+   全部失效：页签的当前态、主操作的实心按钮，全都退化成了纯文字
+   （2026-09-24 的界面评审把这一条挖了出来，它是当时一整片"控件形状不对"的病根）。
+   Tailwind v4 的 preflight 同样在 `base` 层，这里与它同层、按源码顺序生效。
+   —— 只套**重置**；下面的 `:root` 令牌定义保持不分层（令牌要被 `var()` 读到，
+   且不该被 utilities 覆盖语义）。
+   --------------------------------------------------------------------- */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--text-primary);
+    /* 字体栈按 Kimi 的顺序（它同样是纯系统字体，不引 webfont 做正文） */
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, 'Noto Sans', Ubuntu,
+      Cantarell, 'Helvetica Neue', sans-serif, Arial, 'PingFang SC', 'Source Han Sans SC',
+      'Microsoft YaHei UI', 'Microsoft YaHei';
+    font-size: var(--text-body-size);
+    /* 行高按 Kimi 的 ui-B1（22 / 15 ≈ 1.47）。比原来的 1.65 紧——
+     Kimi 的观感有相当一部分来自这个密度。长篇阅读面（文档正文、Wiki）
+     仍用 --line-prose，不受这一档影响。 */
+    line-height: 1.47;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizelegibility;
+  }
+
+  /**
+ * 字阶：四级，靠**字号**分工，不靠字重堆砌。
+ *
+ * 上一轮的问题是所有标题都是 600——标题、小标题、正文名一切皆粗体，
+ * 粗体就不再是重音，"文档优先"也就无从体现。这里只在页标题与小标题上用力，
+ * 正文与所有数字回到 400/500，让层级由字号和留白说话。
+ */
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  /* 页标题：整个界面唯一的重音 */
+  h1 {
+    font-size: var(--text-page-title-size);
+    font-weight: 600;
+    letter-spacing: -0.018em;
+  }
+
+  /* 内容小标题：只比正文大一点，靠上方的留白分区 */
+  h2 {
+    font-size: var(--text-section-size);
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  h3 {
+    font-size: var(--text-body-size);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  a {
+    color: var(--accent-text);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  button {
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* 原生 checkbox / radio 自带 3px 外边距（UA 样式），同样要归零 */
+  input[type='checkbox'],
+  input[type='radio'] {
+    margin: 0;
+  }
+
+  /**
+   * 占位文字：**统一口径**，不交给浏览器默认。
+   *
+   * 没有这条时，`::placeholder` 用的是 UA 自带的 `color-mix(currentcolor 54%)` 一类取值，
+   * 两套主题下实测都只有 **约 2:1**（评审跨页共性问题 8 与各家 P2：
+   * "占位文字两个主题都约 2:1"）——比禁用态还难认，而占位文字是"这里该填什么"的提示，
+   * 属于要被读到的内容，按 WCAG 与图标同档取 ≥3:1。
+   *
+   * 取值用四级灰的**达标档**（`--text-quaternary`，实测浅色 3.23:1 / 深色 3.2–3.33:1）。
+   * 域内若要给某一处换一档（例如笔记标题的占位符用三级灰），在域自己的样式里写
+   * `::placeholder` 即可——域样式不在这条层里，天然赢过它（`notes.css` 就是这么做的）。
+   */
+  ::placeholder {
+    color: var(--text-quaternary);
+  }
+
+  /* 键盘可达性：鼠标点击不出现焦点环，键盘导航必须有。
+   焦点环用**墨色**（`Labels-Primary`），不是品牌蓝——v0.18 照 Kimi 的实测值改的：
+
+     box-shadow: var(--next-sidebar-focus-ring, inset 0 0 0 1px var(--Labels-Primary))   ← 21 处
+     outline: 2px solid var(--Labels-Primary)                                             ← 6 处
+     outline: 2px solid var(--Colors-KMBlue)                                              ← 3 处
+
+   蓝的只有 3 处、墨色的近 30 处：**Kimi 的焦点环是墨色的**，品牌蓝留给小面积强调
+   （与本仓规范 §7「强调只在小面积上用品牌色」同一口径）。原来那圈 2px 蓝环在整页
+   到处都是，正是"品牌色被大面积使用"；用户点名的"蓝色框线表现与 Kimi 不一致"就是它。
+
+   **2026-09-24 收窄（用户："很多输入框或者下拉框的选中，黑线加粗过于逆天"）**：
+   带 `data-focus-ring="self"` 的元素跳过这条，改画自己那一层 `--ring` 的环。
+   目前是 `src/ui/` 的四个表单原语（`input` / `textarea` / `select-trigger` / `button`）
+   ——它们的黑色双环（描边 + 外环叠成 5px）正是用户点名的东西，而它们各自的
+   `focus[-visible]:ring-*` 才是那一刻**唯一**该出现的环。
+
+   为什么把排除写进**选择器**而不是只靠在原语里加 `outline-none`：这条规则在
+   `@layer base` 里，原语的 utilities 本来压得过它，但"压不压得过"取决于层序声明
+   有没有被正确加载（层的先后由名字首次出现的位置决定，见本文件顶部）——
+   "焦点环只出现一次"这件事不该拿去赌层序，所以这里直接把带标记的元素排除掉，
+   原语里那两处 `outline-none` 只是同一个意图的第二道保险。
+
+   其余控件（导航项、菜单项、链接、手写 `<button>`）继续用这条墨色环：它的取值
+   来自上面那组 Kimi 实测，本轮不动它们。 */
+  :focus-visible:not([data-focus-ring='self']) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-control);
+  }
+
+  /* 等宽用 Kimi 指定的 Geist Mono。**本机没装时逐级回退**，所以这里是一条链而不是一个值。
+   顺带修一个既有问题：--font-mono 此前被组件引用却从未定义（引用处一直拿到空值）。 */
+  code,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  /**
+ * 滚动条：全局细滚动条（《界面评审与改进计划 v0.2》§2）。
+ *
+ * 目标是 Kimi / wekora 那种**悬浮的圆角胶囊**：滑块比轨道窄、两端是圆的，
+ * 不贴着轨道边缘。做法是给滑块**透明边框 + `background-clip: content-box`**——
+ * 只靠 `border-radius` 的话，滑块会撑满整个轨道宽度，看起来还是一根方条。
+ * 颜色只引主题变量，浅色/深色自动跟随；轨道透明，内容区看起来是整块。
+ */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* 4px 的透明边框把滑块收成 4px 宽的胶囊；圆角按胶囊半径给足 */
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    background-clip: content-box;
+    border: 4px solid transparent;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+    background-clip: content-box;
+    border: 4px solid transparent;
+  }
+
+  /* 角落（横向与纵向滚动条相交处）不要那块默认的方疙瘩 */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+} /* @layer base 结束（上面的 `:root` 令牌定义在层外，故意） */
+
+/**
+ * 「用时才出现」的滚动条（v0.26，用户报的侧栏那一条）。
+ *
+ * 只把**滑块的颜色**在透明与正常之间切换，**条槽宽度一直不变**——
+ * 所以内容不会在它出现/消失时左右跳一下（那种跳动比一条静止的滚动条更烦人）。
+ * 何时出现、何时消失由 `useAutoHideScrollbar` 决定（滚动时、或鼠标移到条槽上；
+ * 停手 1.2 秒后自己灭掉），这里只管"亮成什么样"。
+ *
+ * 其余属性（`background-clip: content-box` 与那圈 4px 透明边框）从上面的全局规则
+ * 继承下来，这里不重复写：重复了就会有两种"胶囊宽度"，改一处忘一处。
+ */
+.scroll-quiet {
+  scrollbar-color: transparent transparent;
+}
+
+.scroll-quiet.is-scroll-visible {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.scroll-quiet::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.scroll-quiet.is-scroll-visible::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+}
+
+/* 抓住它的时候再深一档（与全局那条同一个反馈，只是压过上面的透明规则） */
+.scroll-quiet.is-scroll-visible::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+:root {
+  /* ---------------------------------------------------------------- 圆角
+     按 Kimi 的尺度整体放大。它的实测值只有三处：聊天输入 24px、弹层 20px、
+     图标按钮 20px；控件/行/面板/浮层四档它没单独暴露，按同一比例推上去
+     （原为 6/8/10/12 → 10/12/16/20）。圆角在这里不是装饰，
+     是"这是可点的""这是浮起来的"这类层级的表达。 */
+  --radius-control: 10px;
+  --radius-row: 12px;
+  --radius-panel: 16px;
+  --radius-overlay: 20px;
+  --radius-input: 24px;
+  --radius-icon-button: 20px;
+  --radius-pill: 999px;
+  /* 导航项 / 会话项 / 卡片按钮：Kimi 这几个实测都是 12px */
+  --radius-nav: 12px;
+  /* 发送按钮：Kimi 实测 22px（36px 的胶囊，内嵌 28px 图标） */
+  --radius-send: 22px;
+  /* 小徽章：**4px 方角矩形，不是胶囊**。Kimi 的 badge 一律
+     `border-radius: 4px` + `padding: 1px 4px` + 12px 字。
+     我们此前把状态标签做成胶囊（999px）——那是最像"生成式设计"的一种做法。 */
+  --radius-badge: 4px;
+
+  /* -------------------------------------------------------------- 焦点环
+     焦点环的颜色**只有这一处**：`src/ui/` 的四个表单原语（`input` / `textarea` /
+     `select-trigger` / `button`）都写 `ring-[var(--ring)]`，环的宽度与形状写在各自
+     原语里（文本输入 2px 贴内沿、按钮与下拉 3px 在外侧，理由见那两个文件）。
+
+     取值是**指向主题灰阶的间接层**，两条理由：
+     1. 环色必须随主题走（浅色下要压深、深色下要提亮），主题值在
+        `styles/themes/*.css`；写死在基座里就没法两套主题各拿各的；
+     2. `--text-quaternary` 是本仓唯一**两套主题都按 ≥3:1 定过契约**的灰阶
+        （见 light.css 第二节：四级灰按"占位符/图标"口径取 ≥3:1），而焦点环要的
+        正是同一条契约——WCAG 2.2 SC 1.4.11 对非文字对比度的门槛就是 3:1。
+
+     实测对比度（alpha 环先按 sRGB 空间合成到各底色上，再算 WCAG 相对亮度）：
+       浅色主题 `#00000070`：白底 3.23:1 / `--bg-subtle` 3.21:1 / 暖白画布 3.22:1
+       深色主题 `#ffffff5c`：`--bg-surface` 3.36:1 / `--bg-subtle` 3.33:1 / 菜单底 3.20:1
+     **刻意不照抄 shadcn/ui 的 `--ring`（浅色 `#a1a1a1`）**：它对白底只有 2.58:1，
+     按上面这条门槛是不合格的；我们取同一观感档里达标的那个（合成后 `#8f8f8f`）。
+     也不把环做成半透明（shadcn 那一行里的 `ring-ring/50`）：50% 的环合成到白底
+     只剩约 1.7:1——那等于把"看得见"交还给运气，而用户报的正是"环"本身。
+
+     一处已知边界：alpha 环的对比度取决于它压在哪一层底上。上面几种底（surface /
+     subtle / canvas / 菜单底）都 ≥3:1；若将来把带环控件放到更亮的底上（例如深色
+     主题的 `Bg-Quaternary` `#4d4d4d`），需要重新复算这一组数。 */
+  --ring: var(--text-quaternary);
+
+  /* ---------------------------------------------------------------- 间距
+     所有 padding/margin 只能用这些值（§4）。
+
+     **v0.13 起补上 6px 与 10px**：这两个值是从 Kimi 的线上样式表里量出来的，
+     不是随手加的——它的 `gap` 里 8px 出现 121 次、4px 90 次、12px 51 次、
+     16px 41 次，而 **6px 有 35 次、10px 8 次**。6px 密集出现在
+     "图标与文字之间""标题与副标题之间"这类**成对关系**上。
+     原先只允许 2/4/8/12…，这些位置只能就近取 4 或 8，整体比 Kimi 松一档。
+
+     网格之外的尺寸只允许一类：结构常量（图标 16/18/20/24、行高、列宽）——
+     它们跟布局对齐有关，不属于"节奏"。 */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 成对间距：历史遗留，等价于 --space-0-5。新代码用后者，
+     这里保留是为了不动已在用的少数位置（见原注释：它曾被用来把
+     "主标题 + 副标题"读成一个整体）。 */
+  --space-pair: 2px;
+
+  /* ---------------------------------------------------------------- 字阶
+     **改用 Kimi 的 ui-* 六档**（默认档取值，三档来源见《Kimi 设计 token 对照表》§5）：
+       T1 18 / T2 16 / B1 15 / B2 14 / C1 12 / C2 10
+     与上一版的两处差别：
+     1. **页标题从 28px 降到 18px**——Kimi 的层级不靠大标题，靠留白与密度；
+     2. 多了 C2（10px）。中文在它上面会糊，所以 C2 **只允许用于拉丁字母与数字**
+        （版本号、计数徽标）；中文最小仍用 C1（12px）。这条约束写在规范 §4。
+
+     **可调层**：所有档位都乘 `--font-scale`（由 composables/useFontScale.ts 写在
+     根节点上，用户可在设置 → 外观里切）。Kimi 的三档是"换整套值"，我们用乘法近似：
+     0.933 / 1 / 1.15 分别落在它 small / default / large 附近，少数档位偏差 1px。 */
+  --font-scale: 1;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace;
+
+  --ui-t1-size: calc(18px * var(--font-scale));
+  --ui-t2-size: calc(16px * var(--font-scale));
+  --ui-b1-size: calc(15px * var(--font-scale));
+  --ui-b2-size: calc(14px * var(--font-scale));
+  --ui-c1-size: calc(12px * var(--font-scale));
+  --ui-c2-size: calc(10px * var(--font-scale));
+
+  /* 别名：页面与组件继续用这些名字，值指向 Kimi 那六档 */
+  --text-page-title-size: var(--ui-t1-size);
+  --text-section-size: var(--ui-t2-size);
+  --text-body-size: var(--ui-b1-size);
+  --text-meta-size: var(--ui-b2-size);
+  --text-micro-size: var(--ui-c1-size);
+  /* 大数字（驾驶舱结论区、卡片上的统计值） */
+  --text-figure-size: calc(20px * var(--font-scale));
+  /* 只给拉丁字母与数字用的微标签（见上） */
+  --text-c2-size: var(--ui-c2-size);
+
+  /* 行高：Kimi 的 ui-* 是"字号 + 行高"成对给的，UI 文字取 B1 的比例；
+     长篇阅读面（文档正文、Wiki、命中引文）单独放宽，避免密到难读。 */
+  --line-ui: 1.47;
+  --line-prose: 1.7;
+  /* 代码块的行高：规范里只定了两档（UI 1.47 / 长文 1.7），而代码比正文更需要**紧凑对齐**
+   ——1.7 会让每行代码之间空得看不出成组。取 1.6 是原有取值，这里把它收到 token 里。 */
+  --line-code: 1.6;
+
+  /* 阅读类内容限宽（文档正文、命中引文用） */
+  --measure: 66ch;
+
+  /* ------------------------------------------------------------ 布局骨架 */
+  --header-height: 58px;
+  --chat-input-max-width: 768px;
+  /* 对话页的**列宽口径**：消息列与输入卡片共用同一条 768px 的居中窄列。
+     旧前端把它定义在对话页自己身上（`ChatView.vue` 的
+     `.chat { --chat-measure: var(--chat-input-max-width) }`，注释写明
+     "此前是 960px：对话是阅读型界面，行太长会让人看丢行"）。
+     收到令牌这一层是因为用它的不止输入框：整页那个宽盒是
+     `calc(var(--chat-measure) + 2 * var(--page-gutter))`（含左右各一条 gutter），
+     消息列、输入卡片、待批准条、命令回话都从它里头对齐。 */
+  --chat-measure: var(--chat-input-max-width);
+  /* **侧栏固定 240px**：Kimi 的实测值是写死的 240（`.sidebar-shell .sidebar`、
+     `.next-sidebar`、`.sidebar-slot--fixed` 三处一致），不随视口变。
+     我们此前用 `clamp(248px, 18vw, 320px)`：宽屏上会涨到 320px，
+     而侧栏里放的是短标题，多出来的宽度全是空——"跟窗口一起变宽"在这里没有收益，
+     反而让主内容区在宽屏上更窄。改成一个固定的数，布局可预期。 */
+  --sidebar-width: 240px;
+  /* 折叠态宽度：只放得下导航图标 + 账号图标，容纳 18px 图标 + 命中区 */
+  --sidebar-collapsed-width: 60px;
+  /* **右侧面板固定 380px**（对话页的「文件 / 网页」那一列）。
+     为什么是写死的数而不是随视口涨：它里面是文件树与一份窄预览，宽了不会多显示一层
+     （因为它是按层折叠的），只会在宽屏上白占聊天列。380 是"一行文件名 + 一行元信息"
+     读得动、又不把 1440 的聊天列压到 768 以下的那个值。
+     **窄屏（< 1100）改成覆盖式**，判据与理由见 `features/chat/panel/usePanelLayout.ts`。 */
+  --panel-width: 380px;
+  /* 页面留白也跟着视口走一点：窗口越大，越不该是"内容贴边" */
+  --page-gutter: clamp(20px, 2.4vw, 40px);
+  --page-pad-top: var(--space-6);
+
+  /* 侧栏导航项 / 会话项：Kimi 都是**高 40px、圆角 12px、gap 6px、图标 18px**。
+     我们此前导航 36px、会话 32px、图标 16px——整体小一号，
+     而"小一号"在侧栏里就等于"更松"（同样的信息占了更多行）。 */
+  --nav-height: 40px;
+  --nav-icon-size: 18px;
+  /* 分区标题（「对话」那一行）：高 28px、字号 14 */
+  --nav-section-title-height: 28px;
+
+  /* 列表行高：文档清单 44px，紧凑行 32px */
+  --row-height: 44px;
+  --row-height-compact: 32px;
+
+  /* 最小可点尺寸：低于这个数的操作控件在触屏上点不中 */
+  --hit-target: 24px;
+
+  /* 控件高度：**输入框 / 下拉 / 按钮唯一的高度口径**（规范 §7.4「与按钮同高」）。
+     在它之前，AppInput 用 `min-height:32px` + padding 撑，实际渲染 43px，
+     而 AppSelect 是 32px——同一行里差 11px，用户一眼就看出"大小不一"。
+     写成一个令牌之后，"同高"是算出来的，不是各自凑出来的。 */
+  --control-height: 32px;
+
+  /* 图标按钮：Kimi 的三个实测值——高 36px、描边 **0.5px**、圆角 20px。
+     半像素描边在高分屏上几乎是"无线条的"，这是它按钮看起来轻的原因。 */
+  --icon-button-height: 36px;
+  --icon-button-border-width: 0.5px;
+
+  /* ---------------------------------------------------------------- 动效
+     **Kimi 只有两种速度**（实测，见《Kimi 界面逐处对照》§3）：
+       .15s             给"底色 / 字色的状态切换"——列表行、导航项、菜单项；
+       .3s ease-in-out  给"有体量的东西"——按钮、侧栏位移。
+     我们此前只有 .15s 一档，于是按钮的悬停与列表行的悬停同速，读起来"按钮太急"。
+     两档都抽成令牌，"这该用哪一档"就不再是每次现拍。 */
+  --motion-fast: 0.15s;
+  --motion-slow: 0.3s;
+  --motion-ease: ease;
+  --motion-ease-inout: ease-in-out;
+  /* 发送按钮自成一档：Kimi 的 `.send-button-container` 用的是这条贝塞尔，不是全站的
+     `ease`。它要的是"按下即走"，与底色切换不是一回事。 */
+  --motion-send: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-ui:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
+  /* 按钮档：Kimi 的 `.kimi-button` / `.desktop-download-entry` 实测就是这个四元组 */
+  --transition-surface:
+    background-color var(--motion-slow) var(--motion-ease-inout),
+    box-shadow var(--motion-slow) var(--motion-ease-inout),
+    color var(--motion-slow) var(--motion-ease-inout),
+    opacity var(--motion-slow) var(--motion-ease-inout);
+
+  /* 悬浮层：静态内容不用阴影，只有真正浮起来的才用 */
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 4%);
+  /* 输入框那层阴影：Kimi 的 `.chat-editor-content` 实测 `0 5px 16px -4px`，
+     比 `--shadow-raised` 明显更"浮"——输入框是页面里唯一常驻的抬起面。 */
+  --shadow-input: 0 5px 16px -4px rgb(0 0 0 / 7%);
+
+  /* ------------------------------------------------------------ 弹层构造
+     Kimi 的菜单与弹窗都不靠描边分层，靠**底色差**（见《Kimi 界面逐处对照》§4/§5）：
+     菜单底是 `Bg-Tertiary`（深色下比画布亮两档）。所以这里要的是一个新名字，
+     而不是把 `--bg-surface` 复用到菜单上——后者在深色下比画布还暗。 */
+  --bg-menu: var(--Bg-Tertiary);
+  --menu-pad: var(--space-2);
+  --menu-item-height: 36px;
+  --menu-item-radius: var(--radius-control);
+  /* 菜单项的副标题小字：Kimi 的 `.desc` 实测 `13px/18px` + `Labels-Tertiary` + 上距 4px。
+     **13px 不在它的 ui-* 六档里**（T1 18 / T2 16 / B1 15 / B2 14 / C1 12 / C2 10），
+     是它样式表里单独写的一档；这里照抄这个值，并明说它不入字阶。 */
+  --text-aux-size: calc(13px * var(--font-scale));
+  --line-aux: 18px;
+
+  /* 头像占位：Kimi 的 `.not-login-icon` 实测 28×28 圆形 */
+  --avatar-size: 28px;
+
+  /* 侧栏页头：Kimi 的 `.sidebar-header` 实测高 56，与页面顶栏的 58 不是同一个数 */
+  --sidebar-header-height: 56px;
+}
+
+/* 数字一律等宽：分数、条数、页码要能沿一条竖轴对齐（§4） */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * 元信息与微标签：三级灰 + 小一号字号。
+ *
+ * 三级灰在浅色下是 4.9:1、深色 4.7:1，都过了 AA——这是规范 §2.4 的硬要求，
+ * 不是审美偏好。层级由字号承担，所以元信息比正文小 1px，而不是更浅一档。
+ */
+.text-meta {
+  font-size: var(--text-meta-size);
+  color: var(--text-tertiary);
+}
+
+.text-micro {
+  font-size: var(--text-micro-size);
+  color: var(--text-tertiary);
+}
+
+/**
+ * 菜单项 + 副标题小字：Kimi 的「标题 + 一行说明」两行菜单项。
+ *
+ * **这是全站唯一该有小字的地方**（《Kimi 界面逐处对照》§7）。Kimi 的小字只出现在
+ * "解释了选这个会得到什么"的位置——它的模型菜单每一项都是
+ * `K3 / 擅长对话与 Agent 任务，全能旗舰`；而侧栏导航、输入框、分区标题一律没有小字，
+ * 因为那些地方的界面自己已经说清楚了。
+ *
+ * 取值全部是实测：主行 `14px/20px` + `Labels-Primary`，副行 `13px/18px` +
+ * `Labels-Tertiary` + 上距 4px。**主行不压成二级灰**——那等于把两个层级合成一个。
+ *
+ * 用法（`<button>` 里包两层即可，容器只需 `display: block` / `flex-direction: column`）：
+ *   <button><span class="menu-item-title">K3</span><span class="menu-desc">擅长…</span></button>
+ *
+ * 目前没有调用方：我们的菜单项都只有一行，没有可作副标题的字段。
+ * 先把它落在 token 层，等哪一天菜单里有了"这个选项是干什么的"这类数据再用——
+ * 而不是先编一段说明文字去填满这个位置。
+ */
+.menu-item-title {
+  display: block;
+  font-size: var(--text-meta-size);
+  line-height: 20px;
+  color: var(--menu-item-text);
+}
+
+.menu-desc {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-aux-size);
+  line-height: var(--line-aux);
+  color: var(--menu-desc-text);
+}
+
+/**
+ * 表单标签与说明文字：全局唯一口径（《界面评审与改进计划 v0.1》§2）。
+ *
+ * 抽出来的理由：同一种"标签"曾在六个组件里各写一遍，字号在 micro/meta 之间、
+ * 颜色在 secondary/tertiary 之间漂；同一种"说明"有十五个局部类名。
+ * 各自都还行，摆在一起就是不齐——而扫视时看的正是这些对齐线。
+ *
+ * 取值依据规范 §4.2：注释 12–13px；三级灰需过 AA，所以"要被读到"的说明用
+ * secondary，"可以弱"的脚注才用 tertiary。
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field-label {
+  font-size: var(--text-micro-size);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* "可选""留空表示不改动"这类后缀：与标签同字号，但退一档灰 */
+.field-optional {
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* 说明句：引导、影响、规则——用户需要读它才知道自己在做什么 */
+.text-note {
+  font-size: var(--text-micro-size);
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* 提示句：次要、可略过（字段示例、脚注） */
+.text-hint {
+  font-size: var(--text-micro-size);
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+
+/**
+ * 纯文本分隔符。
+ *
+ * 上一轮用 `--border-strong` 给分隔符着色，结果是 1.56:1——那已经近乎隐形了，
+ * 分隔符承载"这两项并列"的信息，属于内容，必须用可读的前景色。
+ */
+.sep {
+  color: var(--separator);
+  padding: 0 var(--space-1);
+}
+
+/**
+ * 页面外壳：统一"左对齐铺满 + 紧凑内边距"，取代各页各写一套 max-width + margin auto。
+ *
+ * 上一轮的 .page 是 `max-width: 880~1040px; margin: 0 auto`，内容区宽起来以后
+ * 两侧留出大片空白，六个页面全是"居中一条"。控制台不是文章页，工具型界面
+ * 该把宽度用在信息上：主列表铺满，只有真正的阅读内容（文档正文、命中引文）才限宽。
+ */
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: var(--page-pad-top) var(--page-gutter) var(--space-12);
+}
+
+.page-shell-body {
+  margin-top: var(--space-5);
+}
+
+/* 只有阅读型页面用它把正文拦到 --measure */
+.page-shell-narrow .page-shell-body {
+  max-width: var(--measure);
+}
+
+/**
+ * 列表面板与它的表头区（三处清单共用：知识库 / 文档 / 任务）。
+ *
+ * 为什么单独抽出来：这三个列表此前各写一套"面板 + 表头"，列宽和行高稍有出入就不齐；
+ * 更要紧的是表头此前只是一行灰字浮在面板上方——参考图里表头是**面板内部的一层底色**，
+ * 它把"这是表头、下面是数据"这件事说清楚了，也让整块面板不再是"白底上一片灰字"。
+ *
+ * 用法：容器加 `.panel`，表头行加 `.panel-head`，数据行加 `.panel-row`。
+ */
+.panel {
+  /* `auto` 而不是 `hidden`（2026-10-01，P2-9）：**窄窗的横向兜底**——列放不下时
+     由这张面板横向滚动，而不是把标题列压到叠字、把末列裁掉。表头与行是兄弟节点：
+     两边都设了同一个 `min-w`，滚动发生在面板这一层，所以它们**一起位移、不会错位**。
+     圆角裁切照旧（`auto` 同样裁）。内容不溢出的面板行为与 `hidden` 别无二致。 */
+  overflow: auto;
+  /* 面板是**卡片里的一层**（2026-10-01 §8 卡片化后）：页面底是画布、内容区是
+     抬起的卡片（`--bg-surface`），面板再往上一层用 `--bg-subtle`（深色下更亮）。 */
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+}
+
+.panel-head {
+  height: 36px;
+  font-size: var(--text-micro-size);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.panel-row {
+  min-height: var(--row-height);
+  border-radius: var(--radius-row);
+}
+
+.panel-row + .panel-row {
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* 行悬停用 alpha 填充（--bg-hover = Fills-F1）而不是换一个实色：
+   叠在纸白、浅灰、选中底上都对，不必为每种底色各配一个值。 */
+.panel-row:hover {
+  background: var(--bg-hover);
+}

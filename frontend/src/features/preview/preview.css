@@ -1,0 +1,698 @@
+/**
+ * 预览域样式（旧前端 `OfficePreview.vue` / `FilePreview.vue` 的 `<style scoped>` 合体）。
+ *
+ * 三条纪律与其余各域一致：
+ * 1. **颜色、间距、圆角一律引用 `tokens.css` / `themes/*.css` 的变量**，这里不出现
+ *    色值与裸像素（结构常量如行号列宽、表头高度除外——它们属于布局骨架）；
+ * 2. 类名统一 `kylab-` 前缀：docx-preview 会写 `.docx-wrapper`、pptx-preview 会写
+ *    `.pptx-preview-wrapper`、本文件里的类名与它们**不重名**，谁覆盖谁一眼看得出来；
+ * 3. 三个库都自带样式，其中两个**带灰底/黑底**（见下面各自的段落）——这是本文件存在
+ *    的主要理由，覆盖处都写了为什么。
+ *
+ * **除两类层外例外（docx-preview 那三条、Markdown 代码块的 `highlight.js` 配色）外，
+ * 整份规则收在 `@layer components` 里（2026-09-24 第五批）**，理由与 `tokens.css`
+ * 那段元素重置、`misc.css` 的 `.m-*`、`knowledge.css` 的 `.kb-*` 逐字相同：
+ * **未分层的声明永远压过 `@layer utilities`**（分层规则与优先级无关）。本文件里的类名
+ * 都在库画出来的 DOM 上，调用点不给它们加工具类，收层不改任何取值——但"不改"要拿探针
+ * 说话，不是靠读一遍（`.shots/batch5-probe-preview.cjs`：层内 vs 层外逐元素比计算样式，
+ * 差异须逐条为空）。
+ *
+ * **两类必须留在层外**（逐条标了 `@unlayered`）：`docx-preview` 把默认样式以 `<style>`
+ * **注入到容器内部**；`highlight.js/styles/github.css` 那份主题也由 `main.tsx` 作为
+ * 独立样式表引进。两者都是**层外**的规则；**层外的声明压过任何层的规则，选择器写得再
+ * 具体也没用**。所以覆盖它们的规则也只能自己不进层——这不是"没收干净"，是这里只有层外
+ * 身份才成立（`tokens.css` 的全局 `:focus-visible` 是同一种性质的例外）。
+ *
+ * 只有一份 `@layer components` 不好吗——文件中间夹着那段层外例外，所以下面有两个
+ * `@layer components` 块（**同名层会被合并，顺序仍按第一次出现算**，写法与
+ * `misc.css` / `knowledge.css` 的单块等价）。
+ *
+ * 层级顺序同样显式声明（层的顺序由名字首次出现的位置决定，本文件也可能先于
+ * `tokens.css` 被浏览器看到）。
+ */
+@layer theme, base, components, utilities;
+
+@layer components {
+  /* ---------------------------------------------------------------- 通用说明文字 */
+
+  .kylab-preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 160px;
+  }
+
+  .kylab-note {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-meta-size);
+  }
+
+  /* 失败态显红：与"还在加载"是两件事，不能只是同一句话换个词 */
+  .kylab-note[data-tone='bad'] {
+    color: var(--status-danger);
+  }
+
+  /* 失败说明 + 重试按钮：左对齐（"这份看不了"是结果，不是一个居中的空态），
+     按钮跟在说明下面一行，别挤在同一行里抢读注意力 */
+  .kylab-failure {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  /* 「这个格式不能在这里预览」：不假装能预览，但也别让用户以为出错了 */
+  .kylab-none {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-8) var(--space-4);
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  .kylab-none-icon {
+    color: var(--text-quaternary);
+  }
+
+  .kylab-none-title {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-body-size);
+  }
+
+  .kylab-none-note {
+    margin: 0;
+    font-size: var(--text-meta-size);
+  }
+
+  /* ---------------------------------------------------------------- 纯文本与代码 */
+
+  /* 文本与代码：等宽、可横向滚、**保留空白**。
+     `pre-wrap` 而不是 `pre`：一行的长句子在窄抽屉里应当折行，而不是逼人横向拖
+     （旧 `FilePreview.vue` 同一条）。 */
+  .kylab-text {
+    margin: 0;
+    max-height: 60vh;
+    padding: var(--space-3);
+    overflow: auto;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ---------------------------------------------------------------- Markdown */
+
+  .kylab-md {
+    color: var(--text-primary);
+    font-size: var(--text-body-size);
+    line-height: var(--line-prose);
+    word-break: break-word;
+  }
+
+  .kylab-md > :first-child {
+    margin-top: 0;
+  }
+
+  .kylab-md h1,
+  .kylab-md h2,
+  .kylab-md h3,
+  .kylab-md h4,
+  .kylab-md h5,
+  .kylab-md h6 {
+    margin: var(--space-5) 0 var(--space-2);
+    /* 字重与对话页那一档（`chat.css` 的 `.md-h`：600）对齐。**不写这一条，
+       标题粗细就取决于"用户有没有先去过对话页"**——两套样式同时在时 600，
+       只在 preview.css 里时是 preflight 继承下来的 400（探针实测，见
+       `.shots/hygiene-md-code-contrast.json`）。 */
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .kylab-md h1 {
+    font-size: var(--text-page-title-size);
+  }
+
+  .kylab-md h2 {
+    font-size: var(--text-section-size);
+  }
+
+  .kylab-md h3,
+  .kylab-md h4,
+  .kylab-md h5,
+  .kylab-md h6 {
+    font-size: var(--text-body-size);
+  }
+
+  .kylab-md p,
+  .kylab-md ul,
+  .kylab-md ol,
+  .kylab-md blockquote,
+  .kylab-md table {
+    margin: 0 0 var(--space-3);
+  }
+
+  /* **段落里的单换行按 CommonMark 走**（= 一个空格），所以这里显式 `normal`。
+     渲染器那一档已经不把单换行换成 `<br>` 了（`markdown.tsx` 的 `plain` 插件表），
+     但对话页那份 `chat.css` 的 `.md-p` 是 `white-space: pre-wrap`——两套样式同时在时
+     它会把单换行又变回视觉换行（探针实测：两套都在 → pre-wrap，只装 preview.css → normal）。
+     不显式写这一条，"文档语义"就只在文档页成立。 */
+  .kylab-md p {
+    white-space: normal;
+  }
+
+  .kylab-md ul,
+  .kylab-md ol {
+    padding-left: var(--space-6);
+  }
+
+  /*
+   * 列表符号与条目间距：preflight 把 `ul/ol` 的符号一并去掉了（`list-style: none`），
+   * 不显式还原，Markdown 的条目就只是"几行缩进文字"——层级与"这是第几步"全丢
+   * （`chat.css` 与 `knowledge.css` 里都为各自那份写过同一段说明）。
+   *
+   * **为什么这里也要写一遍**：那两份是各自的域样式，知识库 / 文档页只有
+   * `preview.css`——实测（`.shots/hygiene-md-code-contrast.json`）：只装 preview.css 时
+   * `list-style-type` 是 `none`、`li + li` 的间距是 0、宽松列表里那层 `<p>` 还多带
+   * 12px 下边距，于是**同一条列表在两条路上长得不一样**。取值全部照 `chat.css` 那一套，
+   * 写在这一层之后两条路收敛到同一个样子。
+   */
+  .kylab-md ul {
+    list-style: disc;
+  }
+
+  .kylab-md ol {
+    list-style: decimal;
+  }
+
+  /* 嵌套一层：符号换样式、间距收紧一档（内层列表不再各带一份下边距） */
+  .kylab-md ul ul {
+    list-style: circle;
+  }
+
+  .kylab-md ul ul,
+  .kylab-md ol ol,
+  .kylab-md ul ol,
+  .kylab-md ol ul {
+    margin: var(--space-1) 0 0;
+  }
+
+  /* 条目之间留半档：多行条目不给间距会连成一段 */
+  .kylab-md li + li {
+    margin-top: var(--space-2);
+  }
+
+  /* GFM 的宽松列表会给条目里的文字包一层 `<p>`：那一层**不该再带下边距**——
+     条目之间的间隔由 `li + li` 管（8px），包一层段落等于每条后面再多 12px，
+     列表会散成互不相干的行。条目内部的多个段落之间给半档。与 `chat.css` 同口径。 */
+  .kylab-md li > p {
+    margin-bottom: 0;
+  }
+
+  .kylab-md li > p + p {
+    margin-top: var(--space-2);
+  }
+
+  .kylab-md blockquote {
+    padding-left: var(--space-3);
+    border-left: 2px solid var(--border-strong);
+    color: var(--text-secondary);
+  }
+
+  .kylab-md hr {
+    margin: var(--space-5) 0;
+    border: none;
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kylab-md pre {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-3);
+    overflow-x: auto;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+    font-family: var(--font-mono);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+  }
+
+  .kylab-md code {
+    padding: 2px 5px;
+    background: var(--bg-group);
+    border-radius: var(--radius-control);
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  .kylab-md pre code {
+    padding: 0;
+    background: none;
+    border-radius: 0;
+    font-size: inherit;
+  }
+
+  /* 表格**独立成块**：宽表格在窄抽屉里必须能横向滚，否则会把整页撑破 */
+  .kylab-md table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--text-meta-size);
+  }
+
+  /*
+   * 单元格**只画行分隔线**（整表的框由上面 `.kylab-md table` 给）。
+   * `border: 0` 这一条是必须的：对话页那份 `chat.css` 的 `.md-table th, .md-table td`
+   * 是"逐格细线"（`border: 1px`），两套样式同时在时它会落到预览里（同权重，且声明了
+   * 本规则没声明的三条边），于是同一个 md 预览在对话页与文档页画得不一样
+   * （探针实测：td 的 border-top 1px vs 0px）。这里把三边显式清零、再补行分隔线。
+   */
+  .kylab-md th,
+  .kylab-md td {
+    border: 0;
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border-hairline);
+    text-align: left;
+  }
+
+  .kylab-md th {
+    background: var(--bg-group);
+    font-weight: 500;
+  }
+
+  .kylab-md tr:last-child td {
+    border-bottom: none;
+  }
+
+  .kylab-md img {
+    max-width: 100%;
+    border-radius: var(--radius-row);
+  }
+
+  .kylab-md a {
+    color: var(--accent-text);
+  }
+
+  /* ---------------------------------------------------------------- 图片与 PDF */
+
+  .kylab-image {
+    display: block;
+    max-width: 100%;
+    border-radius: var(--radius-row);
+  }
+
+  /* PDF 占满抽屉的高度：它是"一页一页翻"的东西，给个 400px 的框等于让人在一条缝里读。
+     高度用 vh 是因为抽屉自己就是视口高的一部分（旧 `FilePreview.vue` 同一条）。 */
+  .kylab-pdf {
+    width: 100%;
+    height: calc(100vh - 180px);
+    min-height: 420px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+  }
+
+  /* ---------------------------------------------------------------- Office 外框 */
+
+  /* 三个 Office 预览共用一层"纸面"外框：背景、发丝边框、圆角都走令牌 */
+  .kylab-office {
+    width: 100%;
+    max-height: 70vh;
+    min-height: 200px;
+    padding: var(--space-3);
+    overflow: auto;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+  }
+}
+
+/* ---------------------------------------------------------------- docx-preview */
+
+/*
+ * docx-preview 的默认样式写死了 `.kylab-docx-wrapper { background: gray }` 与
+ * `section.kylab-docx { background: white; box-shadow: ... }`（v0.4.1 的
+ * `renderDefaultStyle`），而且它是把 `<style>` **注入到我们给的容器里**
+ * （`DocxPreview` 把 `styleContainer` 留空，库就写进 `bodyContainer`）。
+ *
+ * **注入的那条规则在层外，所以下面三条覆盖也只能留在层外**：层外的声明压过任何层的
+ * 规则，**选择器写得更具体也救不了**——原来这里写着"靠更高的特异性取胜"（两段类名
+ * 压库的一段），收层那一刻就不成立了（探针实测：`.kylab-docx-wrapper` 的底色变回
+ * 库的 `gray`、内边距变回 30px，`section` 重新带上白底与阴影）。
+ * 这三条与后面那段 Markdown 代码高亮配色本文件里**两类**必须留在层外的规则，逐条用
+ * `@unlayered` 标着；
+ * 结构检查（`scripts/check_layering.py` 的 C1）认这个标记，但要求写明理由。
+ *
+ * 之所以要覆盖而不是照单全收：灰底 + 白纸的观感是为"独立网页"设计的，
+ * 放进深色主题的抽屉里就是一块刺眼的白。纸张本身仍是一页一页的（版式不受影响），
+ * 只是底色与描边走我们的令牌。
+ */
+
+/* @unlayered: docx-preview 把默认样式 `<style>` 注入到容器内部，那条规则在层外——
+   层外压过一切层，进层就等于没写（见上面那段）。 */
+.kylab-docx-pane .kylab-docx-wrapper {
+  display: flex;
+  flex-flow: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0;
+  background: transparent;
+}
+
+/* @unlayered: 同上（库的 `section.docx`：白纸 + 阴影 + 页间距）。 */
+.kylab-docx-pane .kylab-docx-wrapper > section.kylab-docx {
+  margin-bottom: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+/* 正文默认色跟着主题走。文档自己带的颜色是**行内样式**，仍然盖得住这一条
+   ——版式忠实于原件，只有"没指定颜色"的部分才跟主题。 */
+/* @unlayered: 同上（库的 `.kylab-docx { color: black }`）。 */
+.kylab-docx-pane .kylab-docx {
+  color: var(--text-primary);
+}
+
+/*
+ * 代码块的颜色（`hljs-*` 类名由 `rehype-highlight` 发，`markdown.tsx` 那一层不管颜色）。
+ *
+ * **为什么在层外**：`main.tsx` 引进来的 `highlight.js/styles/github.css` 在层外
+ * （`.hljs { color: #24292e; background: #fff }` 与 `.hljs-*` 一族都在），
+ * 层外压过任何层——写进 `@layer components` 就等于没写（与 `chat.css` 末尾那条同源，
+ * 也是本文件第二类必须留在层外的规则）。
+ *
+ * **那份配色在深色主题下不能用**：它是**浅色**主题。深色下 `.hljs` 的 `#24292e`
+ * 压在代码块底色（`--bg-subtle` = `#1f1f1f`）上，实测对比度 **1.12:1**
+ * （WCAG 2.x 口径：正文/注释要 ≥4.5:1，关键字/字符串/数字这类 ≥3:1）——等于看不见；
+ * 同一份里字符串 1.25、数字 2.62、注释 3.42、标题 2.53，也都不达标。
+ *
+ * **换成什么**：底色与前景走令牌，其余按语义借主题里已有的那几档
+ * （危险 / 成功 / 强调 / 次强调 / 二级文字），两套主题各自取自己那一份——
+ * 不新增"语法色令牌"是因为那要对两个主题文件各加一份，超出本轮范围。
+ * 浅色主题下那份 github 配色本来就够用（正文 13.45、关键字 4.2、字符串 12.14、
+ * 数字 5.77），**只有注释 4.42 差一点点**，所以浅色只补注释这一档（`--text-secondary`）。
+ *
+ * 实测（真浏览器，亮/暗各一组；数字与口径落在 `.shots/hygiene-md-code-contrast.json`，
+ * 前景带 alpha 时先与代码块底色做合成——`--text-primary` 这类是带 alpha 的）：
+ *   亮色：正文 16.2 / 注释 5.6 / 关键字 4.2 / 字符串 12.1 / 数字 5.8
+ *   暗色：正文 11.9 / 注释 6.0 / 关键字 4.9 / 字符串 7.1 / 数字 5.4
+ * 改这份配色时照同一支探针再量一次（亮/暗两主题、两种样式组合），别只看截图。
+ *
+ * 选择器用 `.md-pre`（不是 `.kylab-md`）：对话页**回答**里的代码块与文件预览的代码块
+ * 都是这个类，同一个缺陷不该只修一半；`preview.css` 在两条路上都会加载
+ * （对话页经 `Sheets` → `FilePreview`，文档页经 `DocumentDrawer`）。
+ */
+
+/* @unlayered: github 那份主题在层外（见上），只有层外的声明压得住它。 */
+.md-pre code {
+  background: none;
+  color: var(--text-primary);
+}
+
+/* @unlayered: 同上（`.hljs-comment` 是 github 主题里的层外规则）。注释档两套主题共用一个令牌。 */
+.md-pre .hljs-comment,
+.md-pre .hljs-code,
+.md-pre .hljs-formula {
+  color: var(--text-secondary);
+}
+
+/* @unlayered: 同上。以下六条是**深色主题**专用的令牌配色——浅色那份 github 配色继续用。 */
+[data-theme='dark'] .md-pre .hljs-doctag,
+[data-theme='dark'] .md-pre .hljs-keyword,
+[data-theme='dark'] .md-pre .hljs-meta .hljs-keyword,
+[data-theme='dark'] .md-pre .hljs-template-tag,
+[data-theme='dark'] .md-pre .hljs-template-variable,
+[data-theme='dark'] .md-pre .hljs-type,
+[data-theme='dark'] .md-pre .hljs-variable.language_ {
+  color: var(--status-danger);
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-regexp,
+[data-theme='dark'] .md-pre .hljs-string,
+[data-theme='dark'] .md-pre .hljs-meta .hljs-string,
+[data-theme='dark'] .md-pre .hljs-name,
+[data-theme='dark'] .md-pre .hljs-quote,
+[data-theme='dark'] .md-pre .hljs-selector-tag,
+[data-theme='dark'] .md-pre .hljs-selector-pseudo {
+  color: var(--status-success);
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-attr,
+[data-theme='dark'] .md-pre .hljs-attribute,
+[data-theme='dark'] .md-pre .hljs-literal,
+[data-theme='dark'] .md-pre .hljs-meta,
+[data-theme='dark'] .md-pre .hljs-number,
+[data-theme='dark'] .md-pre .hljs-operator,
+[data-theme='dark'] .md-pre .hljs-variable,
+[data-theme='dark'] .md-pre .hljs-selector-attr,
+[data-theme='dark'] .md-pre .hljs-selector-class,
+[data-theme='dark'] .md-pre .hljs-selector-id,
+[data-theme='dark'] .md-pre .hljs-section {
+  color: var(--accent-text);
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-title,
+[data-theme='dark'] .md-pre .hljs-title.class_,
+[data-theme='dark'] .md-pre .hljs-title.class_.inherited__,
+[data-theme='dark'] .md-pre .hljs-title.function_ {
+  color: var(--accent-2-text);
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-built_in,
+[data-theme='dark'] .md-pre .hljs-symbol,
+[data-theme='dark'] .md-pre .hljs-bullet {
+  color: var(--status-warning);
+}
+
+/* @unlayered: 同上（`subst` / `emphasis` / `strong` 在 github 那份里也被写死了 #24292e）。 */
+[data-theme='dark'] .md-pre .hljs-subst,
+[data-theme='dark'] .md-pre .hljs-emphasis,
+[data-theme='dark'] .md-pre .hljs-strong {
+  color: var(--text-primary);
+}
+
+/* @unlayered: 同上（diff 那两档 github 带浅色底：深色主题下就是两块白斑）。 */
+[data-theme='dark'] .md-pre .hljs-addition,
+[data-theme='dark'] .md-pre .hljs-deletion {
+  background: none;
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-addition {
+  color: var(--status-success);
+}
+
+/* @unlayered: 同上。 */
+[data-theme='dark'] .md-pre .hljs-deletion {
+  color: var(--status-danger);
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- pptx-preview */
+
+  /*
+   * pptx-preview 把 `.pptx-preview-wrapper` 的底色与宽度写成**行内样式**
+   * （`style.setProperty('background', '#000')` 等，见 v1.0.7 的 `_renderWrapper`），
+   * 行内样式只有 `!important` 盖得住——这是本文件里唯一用 `!important` 的地方。
+   * 不盖的话，浅色主题里会突然出现一整块黑舞台。
+   *
+   * **这两条可以留在层里**（与上面 docx 那三条不同）：赢的是 `!important` 本身，
+   * 而"重要程度"比层的先后先判——层里的 `!important` 照样压过层外的普通声明与行内样式。
+   */
+  .kylab-pptx-pane .pptx-preview-wrapper {
+    background: transparent !important;
+    margin: 0 !important;
+  }
+
+  .kylab-pptx-pane .pptx-preview-slide-wrapper {
+    margin: 0 auto var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+
+  /* 最后一页不留一条多余的间距 */
+  .kylab-pptx-pane .pptx-preview-slide-wrapper:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ---------------------------------------------------------------- 表格（exceljs） */
+
+  .kylab-sheet {
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+  }
+
+  /* 工作表标签：多 sheet 的切换就靠它。横向可滚——一张工作簿十几个 sheet 是常事。 */
+  .kylab-sheet-tabs {
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    overflow-x: auto;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row) var(--radius-row) 0 0;
+  }
+
+  .kylab-sheet-tab {
+    flex: 0 0 auto;
+    height: var(--control-height);
+    padding: 0 var(--space-3);
+    color: var(--text-secondary);
+    font-size: var(--text-meta-size);
+    white-space: nowrap;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+
+  .kylab-sheet-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .kylab-sheet-tab[aria-selected='true'] {
+    color: var(--accent-text);
+    background: var(--accent-soft);
+  }
+
+  .kylab-sheet-tab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* 表格视口：表头与行号在里面 `position: sticky`（见下），所以滚动条是这一层 */
+  .kylab-sheet-viewport {
+    max-height: 62vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .kylab-sheet-grid {
+    display: grid;
+    width: max-content;
+    font-size: var(--text-meta-size);
+    line-height: var(--line-ui);
+  }
+
+  /*
+   * 表头（列字母）与行号**都由自己的类名管定位**，网格模板由组件按虚拟化结果算：
+   * - 列头：`position: sticky; top: 0`，在流里，所以粘得住（绝对定位的元素粘不住）；
+   * - 行号：`position: sticky; left: 0`，同理。
+   * 两者都吃 `z-index`，避免被后来渲染的单元格压住。
+   */
+  .kylab-sheet-cell,
+  .kylab-sheet-colhead,
+  .kylab-sheet-rowhead,
+  .kylab-sheet-corner {
+    box-sizing: border-box;
+    border-right: 1px solid var(--border-hairline);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .kylab-sheet-corner,
+  .kylab-sheet-colhead {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 结构常量（表头高度）：不参与间距节奏，只跟格子对齐有关，所以不走 --space-* */
+    height: 24px;
+    padding: 0 var(--space-1-5);
+    overflow: hidden;
+    color: var(--text-tertiary);
+    background: var(--bg-group);
+    user-select: none;
+  }
+
+  .kylab-sheet-corner {
+    left: 0;
+    z-index: 4;
+  }
+
+  .kylab-sheet-rowhead {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    background: var(--bg-group);
+    user-select: none;
+  }
+
+  .kylab-sheet-cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 var(--space-1-5);
+    overflow: hidden;
+    color: var(--text-primary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* 公式格：显示的是**文件里缓存的计算结果**（exceljs 不求值），左上角点一下能看到公式 */
+  .kylab-sheet-fx {
+    flex: 0 0 auto;
+    margin-right: var(--space-1);
+    color: var(--text-quaternary);
+    font-size: var(--text-micro-size);
+  }
+
+  .kylab-sheet-fx-label {
+    margin-left: var(--space-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 竖向占位（虚拟化留下的空档）：不画任何线，也不吃掉事件 */
+  .kylab-sheet-spacer {
+    grid-column: 1 / -1;
+  }
+
+  /* 横向占位：只是**占住宽度**，不跨列——它老老实实待在"行号"与"可见列"之间
+     （与上一行的 `.kylab-sheet-spacer` 是两件事：那个要跨满一整行） */
+  .kylab-sheet-gap {
+    min-width: 0;
+    pointer-events: none;
+  }
+
+  /* 截断提示（行/列太多时）：贴在表的下方，说清"你看到的不是全部" */
+  .kylab-sheet-note {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    color: var(--text-tertiary);
+    font-size: var(--text-micro-size);
+    border-top: 1px solid var(--border-hairline);
+  }
+}

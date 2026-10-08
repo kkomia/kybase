@@ -1,0 +1,22 @@
+# 只有这一个包（不是 monorepo）：这份文件的作用是给 pnpm 两个开关。
+#
+# `allowBuilds.esbuild`：vite 依赖 esbuild 的安装脚本（它要落平台二进制）。
+# pnpm 默认拦下所有安装脚本（供应链防护），**必须显式放行**，否则 vite 起不来——
+# 症状是"pnpm install 成功、pnpm dev 报找不到 esbuild 二进制"。
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - prettier@3.9.9
+# **katex 只留一份**（D01，2026-09-28 走查）。
+#
+# `rehype-katex@7.0.1` 依赖 `katex: ^0.16.0`，于是它自己那份装成 **0.16.47**，
+# 而页面（`main.tsx`）引的 CSS 是顶层那个 **0.18.7**——两版的类名不一样
+# （0.16 是 `.base` / `.strut`，0.18 是 `.katex-base` / `.katex-strut`），
+# 结果就是"公式的 HTML 出来了、样式一条都对不上"：指数掉行、分式散架。
+#
+# 对齐到 **0.18.7**（而不是把顶层降到 0.16）的理由：CSS 与渲染器必须同版，
+# 而顶层那个是页面显式引 CSS 的那一份；新版还顺带把两份合并成一份（少一个副本）。
+# 注意 pnpm 11 **不再读 package.json 里的 `pnpm.overrides`**（会打印一条 WARN 并忽略），
+# 所以这条只能写在这里。
+overrides:
+  katex: 0.18.7

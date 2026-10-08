@@ -1,0 +1,7 @@
+dist
+node_modules
+coverage
+pnpm-lock.yaml
+
+# 生成物：由 scripts/gen_api_types.py 从后端 OpenAPI 生成
+src/api/schema.d.ts

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>KYLAB 知识库</title>
+    <script>
+      // 首屏前定主题与字号，避免深浅切换、字号跳变闪烁（与旧前端逐字一致：
+      // 这份内联脚本是"用户看到的第一个像素"的一部分，两套前端要表现相同）
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('kylab-theme')
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          document.documentElement.dataset.theme = saved || (prefersDark ? 'dark' : 'light')
+        } catch (error) {
+          document.documentElement.dataset.theme = 'light'
+        }
+        try {
+          var sizes = { small: 14, medium: 15, large: 16.5, xlarge: 18 }
+          var pick = localStorage.getItem('kylab-font-scale')
+          var bodySize = sizes[pick] || sizes.medium
+          document.documentElement.style.setProperty('--font-scale', String(bodySize / 15))
+        } catch (error) {
+          document.documentElement.style.setProperty('--font-scale', '1')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <!--
+      **挂载前的骨架**（D30，2026-09-28 走查）。
+
+      为什么写在这里而不是只写在 React 里：走查实测那段空白分两截——
+      ① JS 包还没跑到（React 根本没挂载，`skeleton=0`）；② React 挂上了但 `AuthGate`
+      还没判完身份（146–513ms）。只修第 ② 段的话，第一段仍然是白屏。
+      这份静态骨架是"用户看到的第一个像素"的一部分（与上面那段定主题的内联脚本同一层）；
+      React 一挂载就会把 `#root` 换掉，接着由 `App.tsx` 的 `BootSkeleton` 接上
+      ——**两份形状要一致**，不然会闪一下。
+
+      用内联样式而不是 Tailwind 类：这份要用的 CSS 还没下载完（样式在 JS 之后到）。
+      中性半透明灰在深浅两个主题下都成立；动效在 `prefers-reduced-motion` 下关掉。
+    -->
+    <div id="root">
+      <div
+        aria-hidden="true"
+        data-testid="app-boot-skeleton"
+        style="display: flex; height: 100dvh; overflow: hidden"
+      >
+        <div
+          style="
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            width: 240px;
+            flex: 0 0 240px;
+            padding: 12px;
+            border-right: 1px solid rgba(127, 127, 127, 0.18);
+          "
+        >
+          <span class="ky-boot-block" style="height: 28px"></span>
+          <span class="ky-boot-block" style="height: 28px"></span>
+          <span class="ky-boot-block" style="height: 28px"></span>
+          <span class="ky-boot-block" style="height: 28px"></span>
+          <span class="ky-boot-block" style="height: 28px"></span>
+        </div>
+        <div
+          style="
+            display: flex;
+            flex: 1;
+            min-width: 0;
+            flex-direction: column;
+            gap: 12px;
+            padding: 24px;
+          "
+        >
+          <span class="ky-boot-block" style="height: 24px; width: 40%"></span>
+          <span class="ky-boot-panel" style="height: 120px"></span>
+          <span class="ky-boot-panel" style="height: 120px; width: 70%"></span>
+        </div>
+      </div>
+    </div>
+    <style>
+      .ky-boot-block,
+      .ky-boot-panel {
+        display: block;
+        border-radius: 8px;
+        background: rgba(127, 127, 127, 0.14);
+        animation: ky-boot-pulse 1.6s ease-in-out infinite;
+      }
+      .ky-boot-panel {
+        border-radius: 12px;
+        background: rgba(127, 127, 127, 0.12);
+      }
+      @keyframes ky-boot-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.55;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ky-boot-block,
+        .ky-boot-panel {
+          animation: none;
+        }
+      }
+      /* 侧栏那一栏只在宽屏显示（与真实壳一致：窄屏下侧栏是收起的，见 §12.305） */
+      @media (min-width: 640px) {
+        #root [data-testid='app-boot-skeleton'] > div:first-child {
+          display: flex;
+        }
+      }
+    </style>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

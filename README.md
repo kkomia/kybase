@@ -5,8 +5,9 @@ kylab 的**知识库服务**：从单体仓库 [kylab](https://gitee.com/kkomia/
 对外经**窄 API / MCP / 官方 Skill** 三条等价路径服务 Agent 侧；
 Agent 侧在没有它的时候完整可用（降级而非失效）。
 
-> 当前状态：**剥离进行中**（2026-10-08 起）。本仓库此刻只有目录骨架与官方 Skill，
-> 服务端实现仍在 kylab 仓内跑着（NAS 上的单体**照跑不动**）。
+> 当前状态：**剥离进行中**（2026-10-08 起）。后端实现仍在 kylab 仓内跑着
+> （NAS 上的单体**照跑不动**）；本仓库现有目录骨架、官方 Skill，以及**知识库管理台前端**
+> （`frontend/`，形态 B：独立 WebUI，不进桌面壳）。
 > 接手先读[交接文档](docs/交接文档-v0.1.md)，施工顺序见
 > [剥离方案](kylab知识库剥离方案-v0.1.md) §6。
 
@@ -52,12 +53,30 @@ backend/app/
   mcp_server/   对外 MCP（stdio + Streamable HTTP，强制鉴权）
   core/         配置、异常、安全/签名、HTTP、日志、文本卫生等纯契约
 skills/         官方 Skill（顶层交付物：会被安装到别处，不得 import app/）
+frontend/       知识库管理台（Vite + React + TS + pnpm）——独立 WebUI，见下
 deploy/         独立 compose（PG + 对象存储 + KB 后端），待填
 docs/           本服务的文档；交接文档在此
 tests/          测试（KB 服务的门禁落点），待填
 ```
 
 骨架里的 `__init__.py` 是**占位**：目录先立住、边界先看得见，实现随方案 §6 各阶段搬入。
+
+### frontend/（知识库管理台）
+
+老板 2026-10-08 拍板：知识库前端走**独立 WebUI**（形态 B），kylab 前端以后不再有知识库页面群。
+这一份就是从 kylab `frontend/` 按 **import 闭包**搬出来的知识库页面群 + 登录 + 壳（只留
+「所有知识库 / 概览 / 任务中心」这一组导航），agent 语义的入口一个都没进来。
+
+| 项 | 值 |
+|---|---|
+| 技术栈 | Vite 8 + React 19 + TS 5.9 + Tailwind 4 + pnpm 11（与 kylab 前端同版本） |
+| 开发端口 | **5175**（5173 是 kylab 前端的，两个要能同时跑） |
+| `/api` 反代 | 默认 `http://192.168.31.18:8081`（NAS 上正在跑的知识库服务）；改档用 `KYBASE_API_TARGET=... pnpm dev` |
+| 起法 | `cd frontend && pnpm install && pnpm dev` |
+| 门禁 | `pnpm exec tsc --noEmit` / `pnpm exec eslint src` / `pnpm build` / `pnpm test` |
+
+**同一文件以 kylab 为准**这条纪律在这份前端上同样成立（它此刻是从 kylab 复制来的快照）；
+后面本仓库要改它，就是本仓库自己的代码了——两条路径从此各走各的。
 
 ## 怎么参与
 

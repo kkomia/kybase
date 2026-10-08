@@ -1,0 +1,17 @@
+<!--
+  品牌标（环行星）——与产品界面是同一份几何。
+
+  来源：用户 2026-09-20 重新设计的 logo（AI 生成的位图），逐像素量出来重画成矢量。
+  数值与 frontend/src/features/chat/ui/Logo.tsx（mark 档）完全一致：**改那边要同步这里**。
+-->
+<style>svg{color:#111}@media (prefers-color-scheme:dark){svg{color:#fff}}</style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 370 299" fill="none" stroke="currentColor"
+     role="img" aria-label="KYLAB">
+  <circle cx="182.5" cy="148.5" r="145.75"
+          stroke-width="5.5" />
+  <ellipse cx="185.5" cy="155.5" rx="192.0" ry="44.0"
+           transform="rotate(-18.5 185.5 155.5)"
+           stroke-width="2.2" />
+  <circle cx="318.5" cy="147.0" r="13.75"
+          stroke-width="5.5" />
+</svg>

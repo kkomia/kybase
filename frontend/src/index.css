@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * Tailwind v4 的入口。
+ *
+ * **设计令牌不归 Tailwind 管**：`--radius-*` / `--space-*` / `--text-*` / 颜色这些
+ * 仍然是 `src/styles/tokens.css` 里那份（从旧前端原样搬来，两套前端共享同一份取值）。
+ * 这里只做一件事：把那份令牌**映射成 Tailwind 的 theme**，让新组件能写
+ * `bg-canvas` / `text-secondary` / `rounded-row` 这类类名，而取值只有一处。
+ *
+ * `@theme inline` 是刻意的：值必须**引用** CSS 变量（inline）而不是把当前值烤死，
+ * 否则亮/暗主题切换时 Tailwind 生成的工具类不会跟着变。
+ */
+@theme inline {
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-subtle: var(--bg-subtle);
+  --color-hover: var(--bg-hover);
+  --color-selected: var(--bg-selected);
+  --color-menu: var(--bg-menu);
+  --color-overlay: var(--bg-overlay);
+  --color-scrim: var(--scrim);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-quaternary: var(--text-quaternary);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-success: var(--status-success);
+
+  --radius-control: var(--radius-control);
+  --radius-row: var(--radius-row);
+  --radius-panel: var(--radius-panel);
+  --radius-overlay: var(--radius-overlay);
+  --radius-badge: var(--radius-badge);
+  --radius-pill: var(--radius-pill);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  /* 字号不走 `--text-*` 那个命名（会与 tokens.css 里同名的辅助类撞车、被它抢走，
+     见 `src/ui/README.md` 的两个真坑）：组件里一律写
+     `text-[length:var(--text-meta-size)]`，Tailwind 只当它是任意值。 */
+}
+
+/*
+ * 高度链：旧前端的令牌里写的是 `#app`，React 挂在 `#root`。
+ * 少了这一条，`height:100%` 的页面（笔记两栏、对话页）会退化成内容高——
+ * 表现是"两列各自滚动"变成"共用一条滚动条"（笔记域踩过一次）。
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* KaTeX 的样式表在 `main.tsx` 里引（它自己带字体文件，交给打包器处理）。 */
+
+/*
+ * 系统要求"减少动态效果"时，把动效压到瞬时。
+ *
+ * **为什么是这一条全局规则，而不是逐个组件加 `motion-reduce:`**：
+ *
+ * 1. `src/ui/` 那十几份共享原语（弹窗 / 抽屉 / 菜单 / 气泡 / 骨架屏…）里的
+ *    `animate-in` / `animate-out` / `animate-spin` / `animate-pulse` 全部来自上游，
+ *    而 `src/ui/README.md` 明写"上游那套原样保留，不必再动 `ui/` 里的文件"——
+ *    于是它们一直无视这个开关（量过：`src/ui/` 下 `motion-reduce` 零命中）；
+ * 2. 组件是**跨域共用**的：对话、知识库、笔记、设置挂的是同一批弹窗。逐个组件补
+ *    等于同一件事写十几遍，而且以后新引一个上游原语又会漏一处；
+ * 3. 各域自己那几份 `@media (prefers-reduced-motion: reduce)` 块（`layout` /
+ *    `knowledge` / `notes` / `misc`）**保留不动**：它们管各自那几处具体动效，
+ *    这一条兜的是"剩下的"，两者不冲突。
+ *
+ * 时长取 0.01ms 而不是 0：**状态照样变，只是看不出过程**——写 `display: none`
+ * 那类做法会连过渡结束事件一起吞掉，界面逻辑会以为"它没动过"。
+ * `scroll-behavior: auto` 一并关掉平滑滚动（减少动态效果的人尤其不该被拖着滚）。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

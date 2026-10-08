@@ -1,0 +1,166 @@
+/**
+ * 应用壳（侧栏 / 历史会话面板）里那几处**用 Tailwind 类名表达不清楚**的样式。
+ *
+ * 只有两类东西落在这里，其余一律走 Tailwind 的令牌类名：
+ *
+ * 1. **折叠过渡**（宽度 + 那些"用 max-width 收到 0"的文字）。写成类名的话，
+ *    "为什么是 max-width 而不是 `display: none`"这件事就没地方记了——`v-if` / `display`
+ *    是瞬时的，没有过渡可接；而这几条正是旧版反复调过的地方；
+ * 2. **导航图标的悬停动效**（v0.18）：每项一个动作族、只在进入时播、`prefers-reduced-motion`
+ *    下关掉。关键帧名不能走变量（Vue 时代的坑：scoped 会给关键帧改名；React 这边没有
+ *    改名问题，但"每项一个动作"这件事仍然只有写成关键帧才表达得清）。
+ *
+ * 上游那份还有第三类（"悬停才显形、但始终可聚焦"的两组控件：节标题右侧的增补按钮、
+ * 会话行右端的「⋯」）与一整段历史会话面板的条目样式——**那些控件属于 agent 域，
+ * 没有随这一份搬进来**（见 `SideNav` 文件头的减法表），规则也一并删掉了：
+ * 留着只会在下一轮让人以为界面上还有那些东西。
+ *
+ * 取值全部来自 `tokens.css` 的令牌，没有一处硬编码色值。
+ *
+ * **整份规则收在 `@layer components` 里（2026-09-24 第五批）**，理由与 `tokens.css`
+ * 那段元素重置、`misc.css` 的 `.m-*`、`knowledge.css` 的 `.kb-*` 逐字相同：
+ * **未分层的声明永远压过 `@layer utilities`**（分层规则与优先级无关）。
+ *
+ * 收层在这里**挖出两处"有意靠层外身份压过工具类"的规则**，按 `knowledge.css`
+ * 的 `.kb-switch` 同一个做法处理——**取值挪到调用点**（那里本来就知道折叠态），
+ * 本文件只留布局骨架与状态，不再与工具类争同一个属性：
+ *
+ * 1. `.ly-sidebar-collapsed .ly-nav-item` 的 `gap: 0` 与左右 14px（图标在 60px 栏里居中）
+ *    → `SideNav` 的 `NAV_ROW` 折叠态写 `gap-0 px-[14px]`；
+ * 2. `.ly-sidebar-collapsed .ly-account-row` 的 `justify-content: center` 与 `gap: 0`
+ *    → `AccountMenu` 按同一份折叠态写 `justify-center gap-0`。
+ *
+ * 上游判据不是"看着没变"，而是 `.shots/batch5-probe-layout.cjs`：同一时刻把本文件再注入
+ * 一份**去掉层**的副本，逐元素比"层内 / 层外"两种身份下的计算样式——差异逐条为空才算收干净
+ * （那两处挪走的取值也会被它验到：挪错一个像素就会现形）。那份探针随 agent 页面的
+ * 走查脚本一起留在 kylab，本仓库不做像素探针。
+ */
+
+/* 动画定义留在层外（见文件头）。 */
+
+/* ------------------------------------------------------------------ 图标动效 */
+
+/* 照 kimi.com 的 AnimatedIcon 抄骨架，但**一项一个动作**、且**只在进入时播**。
+   每项一个姿势，取的是"这个图标画的是什么"该有的动作（知识库书脊滑进来）。
+
+   **没有"离开"那一段**：Kimi 的离开靠"三层结构 + 反向播放"，单个元素上照抄会
+   让图标永久停在收回去的姿态（旧版实测踩到）。只留进入那一段。
+
+   上游那一版还有四个动作族（气泡落下 / 便签放上 / 记忆歪头 / 能力通电）——
+   它们分别属于「新建会话」与笔记 / 记忆 / 能力三个导航项，那些条目没有随这一份搬进来，
+   关键帧与对应的悬停规则一并删掉（侧栏现在只有「知识库」这一个分组头需要动作）。 */
+
+/* 每项自己的时长与曲线：Kimi 线上 phase 规则里是 200ms linear。 */
+@keyframes ly-nav-slide-in {
+  0% {
+    transform: translateX(11%) scale(0.6);
+    opacity: 0;
+  }
+
+  45% {
+    transform: translateX(1.5%) scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Kimi 在 8.333%（≈17ms）就把 opacity 拉到 1，是一次硬闪；它那套图标是纯描边，
+   同一条动画还叠着 stroke-opacity 由淡到实。我们的图标是填充式，同样的 opacity
+   落上去就是整块图形闪一下——所以每项统一改成**在前 40% 内淡入**（≈80ms），
+   缩放与位移仍按 Kimi 的节奏走。
+
+   `fill-mode: both` 在这里是安全的：终帧就是静止姿态（opacity 1 / scale 1 / 无位移），
+   悬停结束后元素停在原样。 */
+
+/**
+ * **层级顺序：与 `tokens.css` / `misc.css` / `knowledge.css` 顶部那句逐字相同，
+ * 重复是故意的。**
+ *
+ * 层的顺序由"这个名字第一次出现的位置"决定，而本文件在真实加载里可能**先于**
+ * `tokens.css` 被浏览器看到（侧栏挂在 `App` 的依赖子树里）。只写下面那个
+ * `@layer components`、不写这一句的话，`components` 会拿到第 1 位，Tailwind 后来
+ * 声明的 `base` 反而压在它上面——`* { margin: 0; padding: 0; border: 0 }` 这类
+ * preflight 重置会静默吃掉整份侧栏样式（`misc.css` 那次实测：页标题字号退回 15px、
+ * 卡片内边距归零）。
+ *
+ * 两句内容相同、幂等：谁先被浏览器看到，顺序都由它定死，不依赖 CSS 的加载顺序。
+ */
+@layer theme, base, components, utilities;
+
+@layer components {
+  /* ------------------------------------------------------------------ 折叠过渡 */
+
+  /* 宽度与 flex-basis 一起动，内容区平滑让出 / 收回空间。
+     时长取 Kimi 的 300ms ease-in-out（它折叠的是 transform，我们折叠的是宽度——
+     聊天应用必须让内容区真的让出空间，不能只把侧栏推走）。 */
+  .ly-sidebar {
+    transition:
+      width var(--motion-slow) var(--motion-ease-inout),
+      flex-basis var(--motion-slow) var(--motion-ease-inout);
+  }
+
+  /* 折叠态：图标栏。`overflow: visible` 是给账号菜单留的——
+     折叠态下它向右飞出，被 `overflow: hidden` 裁掉就点不到了。 */
+  .ly-sidebar-collapsed {
+    overflow: visible;
+  }
+
+  /* 字标 / 导航标签 / 账号那三行文字：用 max-width 收成 0，**不用 `display: none`**。
+     后者是瞬时的，宽度动画会断在它身上；`max-width` 让它们跟着栏一起收。 */
+  .ly-collapsible {
+    overflow: hidden;
+    max-width: 200px;
+    transition:
+      max-width var(--motion-slow) var(--motion-ease-inout),
+      opacity var(--motion-fast) var(--motion-ease);
+  }
+
+  .ly-sidebar-collapsed .ly-collapsible {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  /* 导航项在折叠态怎么摆（`gap: 0`、左右 14px = (44 − 16) ÷ 2 让图标居中），
+     由调用点按同一份折叠态写工具类（见文件头第 1 条）：这里写已经压不过它身上的
+     `gap-1.5` / `px-2`——**层序与优先级无关**。 */
+
+  /* 页脚那一块：折叠态只留头像，于是整行居中。
+     **内边距这里没有规则**：它要的 `--space-2` 与调用点的 `p-2` 是同一个值，
+     两边各写一条只会让人以为其中一条在起作用（折叠态的行居中同理，见 AccountMenu）。 */
+
+  /* 折叠开关绝对定位在离右缘 `--space-4` 处。
+     **这不是随手定位，是为了让过渡不跳**：展开态它在右边距 16px；折叠态 60px 栏里
+     "居中"的位置恰好也是右边距 16px（60 − 16 − 28 = 16）。于是宽度动画一动，
+     它就顺着右缘平滑滑到正中，不用切换 `justify-content`，也就没有瞬移。 */
+
+  /* 尊重"减少动态效果"：动画是锦上添花，不该在需要静的人那里坚持播放 */
+  @media (prefers-reduced-motion: reduce) {
+    .ly-sidebar,
+    .ly-collapsible,
+    .ly-nav-item {
+      transition: none;
+    }
+  }
+
+  /* ------------------------------------------------ 悬停才显形（但仍可 Tab 到） */
+
+  /* 上游这里还有「悬停才显形」的两组控件（节标题右侧的增补按钮 / 会话行右端的「⋯」）、
+     以及历史会话面板条目的一整套规则。**它们服务的 Markup 没有随这一份搬进来**，
+     所以规则一并删掉：留着只会让人以为界面上还有那些东西。
+     侧栏现在唯一带动作的图标是「知识库」那个分组头。 */
+  .ly-nav-item:hover .ly-nav-motion-slide {
+    animation: ly-nav-slide-in 200ms linear both;
+  }
+
+  /* 选择器要和上面同权重（都是 0-3-0）才压得住——只写 `.ly-nav-item .ly-nav-icon`
+     是 0-2-0，会被 `:hover` 那条盖掉，等于这个设置从来没生效过（旧版踩过）。 */
+  @media (prefers-reduced-motion: reduce) {
+    .ly-nav-item:hover .ly-nav-motion-slide {
+      animation: none;
+    }
+  }
+}
