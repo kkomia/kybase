@@ -609,6 +609,73 @@
     bottom: var(--space-3);
   }
 
+  /* 卡片上的「近 90 天入库」迷你趋势图。
+     整块（读数一行 + 图形）的高度是**死**的：一条入库都没有的库也占同样的高度，
+     所以卡片不会被趋势图撑得忽高忽低。见 `Sparkline.tsx` 头注那三条。 */
+  .kb-trend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+  }
+
+  .kb-trend-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  /* 两段都单行不折：卡片最窄那一档（240px 网格轨道）里宁可把标签裁掉尾巴，
+     也不让它折成两行——折了高度就变了，正是整块高度写死要防的事 */
+  .kb-trend-label {
+    overflow: hidden;
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kb-trend-value {
+    flex: 0 0 auto;
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  /* 图形高度写死（结构常量，与列宽同类）：与 `Sparkline.tsx` 的 `HEIGHT` 是同一个数 */
+  .kb-spark {
+    display: block;
+    width: 100%;
+    height: 28px;
+  }
+
+  /* 颜色只认主题变量：`--accent` 与本项目那条系列线的口径一致
+     （概览的趋势线也是 `--accent` + 一成面积的底，见 `DashboardPage.tsx`） */
+  .kb-spark-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .kb-spark-area {
+    fill: color-mix(in srgb, var(--accent) 16%, transparent);
+    stroke: none;
+  }
+
+  /* 一条入库都没有：平线退成中性色、底下的面积收掉——
+     一根亮蓝色的实线会让人以为"这里有点什么"（其实正是"什么都没有"） */
+  .kb-spark-empty .kb-spark-line {
+    stroke: var(--border-strong);
+  }
+
+  .kb-spark-empty .kb-spark-area {
+    fill: none;
+  }
+
   .kb-rows {
     margin: var(--space-5) 0 0;
     padding: 0;

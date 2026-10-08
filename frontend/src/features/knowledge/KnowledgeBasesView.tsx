@@ -3,8 +3,8 @@
  *
  * 为什么这里用卡片、而文档清单用行：知识库是**容器型对象且数量少**，用户的动作是
  * "挑一个进去"（扫视比较），不是"在长列表里找某一条"。卡片给每个库一个独立边界，
- * 正好承载"名称 + 规模 + 模型 + 入口"这一小簇信息。条目多起来时（>12）切回行
- * ——这条判定规则原本就写在规范 §5.1。
+ * 正好承载"名称 + 规模 + 概述 + 近 90 天入库节奏 + 入口"这一小簇信息。条目多起来时
+ * （>12）切回行——这条判定规则原本就写在规范 §5.1。
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
@@ -24,9 +24,16 @@ import { revalidateKbCache } from '@/api/kbCache'
 import { useKnowledgeProviderStatus, providerGateApplies } from '@/api/provider'
 import { EmptyState, InfoTip, SkeletonRows } from '@/features/knowledge/composites'
 import { chunkingErrorOf, numberOr, parseIntOrNull } from '@/features/knowledge/chunking'
+import {
+  INGEST_TREND_DAYS,
+  TREND_MAX_ROWS,
+  useIngestTrends,
+  type IngestTrend,
+} from '@/features/knowledge/ingestTrend'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { RangeField } from '@/features/knowledge/RangeField'
 import { snapshotNote } from '@/features/knowledge/snapshot'
+import { Sparkline } from '@/features/knowledge/Sparkline'
 import {
   SuggestedQuestionsFields,
   type SuggestedQuestionsValue,
@@ -42,6 +49,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 /** 规范 §5.1 的阈值：超过 12 个容器就用行而不是卡片，避免格子被挤窄。 */
 const CARD_LIMIT = 12
+
+/** 行形态下传给趋势钩子的空清单（同一份引用，免得每帧造一个新数组）。 */
+const EMPTY_KB_IDS: string[] = []
 
 /** 库形态（v24）：`vector` = 仅向量检索（默认），`wiki` = 额外开启 Wiki。 */
 type KbForm = 'vector' | 'wiki'
@@ -60,6 +70,28 @@ const SQ_DEFAULTS: SuggestedQuestionsValue = {
  * ——对外的契约定（`embedding_model_pk` 为空即默认）一点没变。
  */
 const EMBEDDING_DEFAULT = '__default__'
+
+/**
+ * 趋势图那一行的读数。
+ *
+ * 读不到（还在路上 / 这一读失败）写「—」——与别处"没有结论"用的是同一个记号，
+ * 而不是 0：`0` 是一句**结论**（"确实一条都没进"），没读到不是。
+ */
+function trendTextOf(trend: IngestTrend | undefined): string {
+  if (trend?.status !== 'ready') return '—'
+  if (trend.total === 0) return '无入库'
+  return `${trend.truncated ? '≥' : ''}${formatCount(trend.total)} 篇`
+}
+
+/**
+ * 读数被页数上限截住时的悬浮说明（卡片上放不下第二行字）。
+ *
+ * 只有真截住才给：没截住时挂一句"只统计了最近 N 篇"是无中生有的免责声明。
+ */
+function trendTitleOf(trend: IngestTrend | undefined): string | undefined {
+  if (trend?.status !== 'ready' || !trend.truncated) return undefined
+  return `只统计了最近 ${TREND_MAX_ROWS} 篇文档，更早那几天的入库可能没算全`
+}
 
 export function KnowledgeBasesView() {
   const store = useKnowledgeBases()
@@ -144,6 +176,13 @@ export function KnowledgeBasesView() {
 
   const hasItems = store.items.length > 0
   const useCards = store.items.length <= CARD_LIMIT
+
+  /**
+   * 卡片上那根趋势图的数据（**入库节奏**，见 `ingestTrend.ts` 头注为什么不是检索命中）。
+   *
+   * 行形态（> 12 个库）传空数组：那时趋势图不画，也就不该白拉十几个文档列表。
+   */
+  const trends = useIngestTrends(useCards ? store.items.map((kb) => kb.id) : EMPTY_KB_IDS)
 
   function openCreate(): void {
     setCreateOpen(true)
@@ -266,7 +305,7 @@ export function KnowledgeBasesView() {
                   </span>
                 </span>
 
-                {/* 卡片主体只用两样东西说清一个库：**一个数字 + 一段概述** */}
+                {/* 卡片主体用三样东西说清一个库：**一个数字 + 一段概述 + 一条节奏** */}
                 <span className="kb-card-body">
                   <span className="kb-doc-count">
                     <span className="kb-doc-value tabular">
@@ -276,6 +315,19 @@ export function KnowledgeBasesView() {
                   </span>
                   {/* 没写简介就整行不渲染：「暂无简介」是替一个空字段占的一行字 */}
                   {kb.description ? <span className="kb-description">{kb.description}</span> : null}
+                  {/* 迷你趋势图：画的是**近 90 天入库节奏**（按天的新增文档数），
+                      不是检索命中——后端没有按库记检索事件，那个名字今天兑现不了
+                      （见 `ingestTrend.ts` 头注）。文案怎么写、图就画什么。
+                      一条都没进时图是一根平线、读数是「无入库」，不补占位数据。 */}
+                  <span className="kb-trend">
+                    <span className="kb-trend-head">
+                      <span className="kb-trend-label">近 {INGEST_TREND_DAYS} 天入库</span>
+                      <span className="kb-trend-value tabular" title={trendTitleOf(trends[kb.id])}>
+                        {trendTextOf(trends[kb.id])}
+                      </span>
+                    </span>
+                    <Sparkline series={trends[kb.id]?.series ?? []} />
+                  </span>
                 </span>
 
                 <span className="kb-card-foot">
