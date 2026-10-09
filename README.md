@@ -5,9 +5,12 @@ kylab 的**知识库服务**：从单体仓库 [kylab](https://gitee.com/kkomia/
 对外经**窄 API / MCP / 官方 Skill** 三条等价路径服务 Agent 侧；
 Agent 侧在没有它的时候完整可用（降级而非失效）。
 
-> 当前状态：**剥离进行中**（2026-10-08 起）。后端实现仍在 kylab 仓内跑着
-> （NAS 上的单体**照跑不动**）；本仓库现有目录骨架、官方 Skill，以及**知识库管理台前端**
-> （`frontend/`，形态 B：独立 WebUI，不进桌面壳）。
+> 当前状态：**后端实现已就位（自 kylab `b0685e9` 搬入），待 NAS 切换**（2026-10-09）。
+> kylab 侧的逻辑切割已经做完（组合根拆成 `KbServices` / `Services`，KB 侧从 HEAD 删除），
+> 这里把那一份整树搬了进来：`backend/`（app + tests + pyproject/uv.lock/Dockerfile）、
+> 根级 `scripts/` 门禁脚本族、`deploy/`（含 NAS 应用层的 `deploy/nas/docker-compose.yml`），
+> 加上原本就在的**知识库管理台前端**（`frontend/`，形态 B：独立 WebUI，不进桌面壳）
+> 与官方 Skill。NAS 上跑的仍是旧单体，切换由部署方执行。
 > 接手先读[交接文档](docs/交接文档-v0.1.md)，施工顺序见
 > [剥离方案](kylab知识库剥离方案-v0.1.md) §6。
 
@@ -61,14 +64,19 @@ backend/app/
   workers/      队列消费者（摄入）
   mcp_server/   对外 MCP（stdio + Streamable HTTP，强制鉴权）
   core/         配置、异常、安全/签名、HTTP、日志、文本卫生等纯契约
+backend/tests/  测试（KB 服务的门禁落点）——unit/（与 app/ 镜像同构）+ integration/ + bench/
+backend/        pyproject.toml / uv.lock / Dockerfile / .env.example / README.md
+scripts/        门禁脚本族（check-backend / check-frontend / check_layering / scan_emoji / ci / …）
 skills/         官方 Skill（顶层交付物：会被安装到别处，不得 import app/）
-frontend/       知识库管理台（Vite + React + TS + pnpm）——独立 WebUI，见下
-deploy/         独立 compose（PG + 对象存储 + KB 后端），待填
+frontend/       知识库管理台（Vite + React + TS + pnpm）——独立 WebUI，见下；自带 Dockerfile + nginx.conf
+deploy/         compose：`deploy/docker-compose.yml`（干净机器一键起四件套，未实测）
+                与 `deploy/nas/docker-compose.yml`（NAS 应用层：backend + mcp + frontend，共用存储层）
 docs/           本服务的文档：部署指南 / 外部接入指南 / 交接文档
-tests/          测试（KB 服务的门禁落点），待填
 ```
 
-骨架里的 `__init__.py` 是**占位**：目录先立住、边界先看得见，实现随方案 §6 各阶段搬入。
+`backend/app/` 下的是**实现**（不是占位），`pytest tests` 能跑起来——**但还没全绿**：
+搬进来的是 `b0685e9` 那一刻的测试树，其中一批用例还没跟上 `KbServices` 拆分（kylab 在
+删除链里随后才改的），另一批要读仍留在 kylab 的《API 接口规范》等文档与另外 4 个技能。
 
 ### frontend/（知识库管理台）
 
