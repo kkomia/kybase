@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.auth import require_read
-from app.api.v1.schemas import DashboardOut, UsageOut
+from app.api.v1.schemas import DashboardOut, SearchHitsOut, UsageOut
 from app.core.services import Services, get_services
 from app.services.api_key import Caller
 from app.services.stats import DEFAULT_WINDOW_DAYS
@@ -52,3 +52,27 @@ def usage_summary(
     统计页会把"没报"画成"没用"，那是在撒谎。
     """
     return UsageOut.model_validate(services.usage.summary(days=days))
+
+
+@router.get("/stats/search-hits", response_model=SearchHitsOut, summary="检索命中趋势")
+def search_hits(
+    days: int = Query(default=30, ge=1, le=MAX_WINDOW_DAYS, description="观察窗口（天）"),
+    services: Services = Depends(get_services),
+    caller: Caller = Depends(require_read),
+) -> SearchHitsOut:
+    """按知识库的检索命中趋势（v0.61）。
+
+    一行 = 一次检索 × 一个库，**候选（收敛前）与留存（收敛后）分开给**：
+    两者之差是"这次检索里这个库被砍掉了多少"——只有留存一条线的话，
+    "给 12 条留 2 条"与"给 2 条留 2 条"长得一模一样，而那两件事的下一步动作不同。
+
+    ``by_kb`` 只含窗口内**真有记录**的库（趋势是稀疏的，前端自己补零），
+    而"被检索了但一条没命中"的库**会**在里面：它有一行 candidates=0 的记录
+    ——"没人查过"与"查了但答不上来"必须能分开，这是这份数据的一半价值。
+
+    与 ``/stats/dashboard`` 同一套可见性：成员的窗口只统计自己可见的库
+    （跨库汇总的数字也算私有信息）。
+    """
+    kb_ids = services.api_keys.visible_kb_ids(caller) if caller.user is not None else None
+    summary = services.search_stats.hits(days=days, kb_ids=kb_ids)
+    return SearchHitsOut.model_validate(summary)

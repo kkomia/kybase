@@ -8,6 +8,10 @@
   现在是**数出来的**，不是估的；
 - **切块按所属文档的创建时间归日**：`chunks` 表没有自己的时间戳，
   但"某天入库的文档带来多少块"才是用户关心的口径，这个近似是准的；
+- **检索命中走 `search_events`（v0.61）**：活跃度曲线上的 `hits` 是"这一天各库
+  一共被捞上来多少条候选"。它**不是**用量表那个 `items`——那个只有"这次返回几条"、
+  没有库这一维，画不出按库的曲线，也答不出"这个库最近答不上来"（见
+  `services/search_stats.py` 的模块头）；
 - **查询下推、聚合留在 Python**：这一版把原来的 `K+1` 次查询（按库逐个取全量文档
   + 一次巨型 `IN` + 全表任务）换成**两条投影查询**
   （`list_document_stats` / `list_task_stats`：只取聚合要的那几列，
@@ -24,7 +28,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.storage.base import KnowledgeBaseRecord, StoreBundle
 
@@ -42,12 +46,19 @@ DEFAULT_WINDOW_DAYS = 120
 
 @dataclass(frozen=True, slots=True)
 class ActivityPoint:
-    """一天的活跃度。三个计数分开给，前端可以切换看哪个维度。"""
+    """一天的活跃度。四个计数分开给，前端可以切换看哪个维度。"""
 
     day: date
     documents: int
     chunks: int
     tasks: int
+    hits: int = 0
+    """这一天的**检索命中候选数**（各库 ``search_events.candidates`` 之和，v0.61）。
+
+    与 ``tasks``（做了多少活）不同，它回答的是"用户问了多少、库里答上来多少"。
+    取**候选**而不是留存：候选反映"这次检索从库里捞上来多少"，
+    留存是被分布收敛之后的结果，两者的曲线形状差在"收敛切得狠不狠"上，
+    而概览页那条线要看的是"检索本身的量"。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,8 +134,23 @@ class StatsService:
         tasks = self._stores.tasks.list_task_stats(
             None if kb_ids is None else [doc.id for doc in documents]
         )
+        # 检索命中事件（v0.61）：概览页那条 `hits` 曲线的数据源。
+        #
+        # 窗口下沿**往前多取一天**：`since` 是**本地日**，而库里按 UTC 存，
+        # 两者最多差 14 小时（`local_day` 那一段记着这个坑）。少取的那 14 小时
+        # 会让"昨天刚问过的检索"在热力图上凭空少一格；多取的那点由下面
+        # `_build_activity` 的按日过滤丢掉，不会多算。
+        search_events = self._stores.usage.list_search_events(
+            since=datetime.combine(since, time.min, tzinfo=UTC) - timedelta(days=1)
+        )
+        if kb_ids is not None:
+            # 成员视角：跨库汇总的数字也算私有信息（"别人的库被搜了多少次"
+            # 不该从我的驾驶舱读出来），所以与文档、任务同一套过滤。
+            # 在 Python 里筛而不是下推到 SQL：可见性口径只该有一处（`visible_kb_ids`），
+            # 存储层不认识调用者身份
+            search_events = [event for event in search_events if event.kb_id in set(kb_ids)]
 
-        activity = _build_activity(documents, tasks, since=since, today=today)
+        activity = _build_activity(documents, tasks, search_events, since=since, today=today)
 
         return DashboardStats(
             generated_at=datetime.now(),
@@ -190,6 +216,7 @@ def local_day(stamp: datetime) -> date:
 def _build_activity(
     documents: list,
     tasks: list,
+    search_events: list,
     *,
     since: date,
     today: date,
@@ -219,6 +246,17 @@ def _build_activity(
             continue
         tasks_by_day[day] += 1
 
+    # 检索命中（v0.61）：按**候选数**累加（一次跨两库的检索会给那天加两行之和），
+    # 与 usage 那条"按日聚合"同一口径——本地日、窗口外丢掉
+    hits_by_day: Counter[date] = Counter()
+    for event in search_events:
+        if event.created_at is None:
+            continue
+        day = local_day(event.created_at)
+        if day < since:
+            continue
+        hits_by_day[day] += event.candidates
+
     points: list[ActivityPoint] = []
     cursor = since
     while cursor <= today:
@@ -228,6 +266,7 @@ def _build_activity(
                 documents=documents_by_day.get(cursor, 0),
                 chunks=chunks_by_day.get(cursor, 0),
                 tasks=tasks_by_day.get(cursor, 0),
+                hits=hits_by_day.get(cursor, 0),
             )
         )
         cursor += timedelta(days=1)

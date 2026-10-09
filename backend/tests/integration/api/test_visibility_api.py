@@ -167,6 +167,43 @@ def test_member_tasks_and_dashboard_are_scoped(two_users) -> None:  # type: igno
     assert client.get("/api/v1/tasks/health", headers=_as(member["token"])).status_code == 403
 
 
+def test_member_search_hit_trend_sees_only_own_knowledge_bases(two_users) -> None:  # type: ignore[no-untyped-def]
+    """检索命中趋势的成员视角（v0.61）：别人的库不进窗口，**连合计都不进**。
+
+    这是一份"谁的库被搜了多少次"的数据，按库的明细与跨库汇总都是私有信息
+    ——与本文件开头那句"那不叫统计，叫泄露"是同一条纪律。
+    """
+    client, admin, member = two_users
+    admin_kb = client.post(
+        "/api/v1/knowledge-bases", json={"name": "管理员的库"}, headers=_as(admin["token"])
+    ).json()
+    member_kb = client.post(
+        "/api/v1/knowledge-bases", json={"name": "成员的库"}, headers=_as(member["token"])
+    ).json()
+
+    from app.core.services import get_services
+    from app.storage.base import SearchEventRecord
+
+    get_services().auth._stores.meta.record_search_events(
+        [
+            SearchEventRecord(
+                id="se_admin", kb_id=admin_kb["id"], candidates=9, kept=3, fit="weak"
+            ),
+            SearchEventRecord(
+                id="se_member", kb_id=member_kb["id"], candidates=2, kept=1, fit="weak"
+            ),
+        ]
+    )
+
+    mine = client.get("/api/v1/stats/search-hits", headers=_as(member["token"])).json()
+    assert mine["candidates"] == 2, "别人的库连合计都不该算进来"
+    assert [item["kb_id"] for item in mine["by_kb"]] == [member_kb["id"]]
+
+    everything = client.get("/api/v1/stats/search-hits", headers=_as(admin["token"])).json()
+    assert everything["candidates"] == 11
+    assert {item["kb_id"] for item in everything["by_kb"]} == {admin_kb["id"], member_kb["id"]}
+
+
 def test_member_cannot_touch_console_endpoints(two_users) -> None:  # type: ignore[no-untyped-def]
     """密钥管理/用户名册对成员是 403（与外部 API Key 同一档待遇）。
 

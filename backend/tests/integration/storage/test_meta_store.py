@@ -35,6 +35,7 @@ from app.storage.base import (
     KnowledgeBaseRecord,
     MetaStore,
     ParseResultRecord,
+    SearchEventRecord,
     SessionEventRecord,
     SessionRecord,
     ShareRecord,
@@ -1213,3 +1214,138 @@ def test_session_events_cascade_with_the_conversation(store: MetaStore) -> None:
     store.delete_conversation("conv_1")
 
     assert store.list_session_events("conv_1") == []
+
+
+# ---------------------------------------------------------------- 检索命中事件（v0.61）
+
+
+def _hit(
+    event_id: str,
+    kb_id: str,
+    *,
+    candidates: int,
+    kept: int,
+    fit: str = "weak",
+    created_at: datetime | None = None,
+) -> SearchEventRecord:
+    return SearchEventRecord(
+        id=event_id,
+        kb_id=kb_id,
+        candidates=candidates,
+        kept=kept,
+        fit=fit,
+        created_at=created_at,
+    )
+
+
+def test_search_events_batch_round_trip(store: MetaStore, kb) -> None:
+    """整批写入、按时间读回，值一个不差。
+
+    一次检索会同时落好几个库的行，所以写侧是**批**——这条钉住"批里每一行的
+    kb_id / 候选 / 留存 / 契合度都各自落对了"，而不是"最后一个覆盖了前面的"。
+    """
+    store.create_knowledge_base(
+        KnowledgeBaseRecord(
+            id="kb_2", name="运维库", embedding_model_id="BAAI/bge-m3", embedding_dim=1024
+        )
+    )
+    now = utc_now()
+    store.record_search_events(
+        [
+            # 三行给**不同的时间戳**：读回顺序按 created_at，同戳的话先后是不确定的，
+            # 而"顺序对不对"正是这条用例要看的一半
+            _hit("se_1", kb.id, candidates=12, kept=3, created_at=now),
+            # 被检索了但一条没命中：candidates=0 也要有自己的一行
+            _hit(
+                "se_2",
+                "kb_2",
+                candidates=0,
+                kept=0,
+                fit="none",
+                created_at=now + timedelta(seconds=1),
+            ),
+            _hit(
+                "se_3",
+                "kb_2",
+                candidates=5,
+                kept=2,
+                fit="strong",
+                created_at=now + timedelta(minutes=1),
+            ),
+        ]
+    )
+
+    rows = store.list_search_events()
+
+    assert [(row.id, row.kb_id, row.candidates, row.kept, row.fit) for row in rows] == [
+        ("se_1", "kb_1", 12, 3, "weak"),
+        ("se_2", "kb_2", 0, 0, "none"),
+        ("se_3", "kb_2", 5, 2, "strong"),
+    ], "读回顺序按时间，值逐列对上"
+
+
+def test_search_events_have_the_kb_and_time_index(store: MetaStore) -> None:
+    """``(kb_id, created_at)`` 这条索引是主查询形状（某个库的一段时间）的支撑。
+
+    没有它，KB 卡片上那条迷你趋势就是一次全表扫——而它会随每次检索增长。
+    概览页那条全局曲线按 created_at 单独走一条。
+    """
+    with store._db.read() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute(
+            "select indexname from pg_indexes where tablename = 'search_events' order by indexname"
+        ).fetchall()
+
+    names = {row["indexname"] for row in rows}
+    assert "idx_search_events_kb_created" in names
+    assert "idx_search_events_created" in names
+
+
+def test_search_events_follow_the_knowledge_base_deletion(store: MetaStore, kb) -> None:
+    """库删了，它的历史命中跟着走。
+
+    留一批指向不存在的库的行，只会让趋势图上多出一条没有名字、也点不进去的曲线。
+    """
+    store.record_search_events([_hit("se_1", kb.id, candidates=4, kept=1)])
+
+    store.delete_knowledge_base(kb.id)
+
+    assert store.list_search_events() == []
+
+
+def test_list_search_events_respects_the_window(store: MetaStore, kb) -> None:
+    """窗口外的记录不能进曲线，否则"最近 7 天"画的是全部历史。"""
+    old = utc_now() - timedelta(days=40)
+    store.record_search_events(
+        [
+            _hit("se_old", kb.id, candidates=99, kept=9, created_at=old),
+            _hit("se_new", kb.id, candidates=2, kept=1),
+        ]
+    )
+
+    assert [row.id for row in store.list_search_events()] == ["se_old", "se_new"]
+    assert [
+        row.id for row in store.list_search_events(since=utc_now() - timedelta(days=7))
+    ] == ["se_new"]
+
+
+def test_purge_search_events_drops_only_old_rows(store: MetaStore, kb) -> None:
+    """保留期清理只动过期的：多删一条就是历史曲线缺一格，而且看不出来。"""
+    old = utc_now() - timedelta(days=400)
+    store.record_search_events(
+        [
+            _hit("se_old", kb.id, candidates=1, kept=1, created_at=old),
+            _hit("se_new", kb.id, candidates=1, kept=1),
+        ]
+    )
+
+    removed = store.purge_search_events_before(utc_now() - timedelta(days=400) + timedelta(days=1))
+
+    assert removed == 1
+    assert [row.id for row in store.list_search_events()] == ["se_new"]
+
+
+def test_recording_no_search_events_is_a_no_op(store: MetaStore) -> None:
+    """空批直接返回：没有可以归因的库那一档由调用方决定不写，存储层照办。"""
+    store.record_search_events([])
+
+    assert store.list_search_events() == []

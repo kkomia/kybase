@@ -44,7 +44,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 BASELINE_VERSION = 1
 """``schema.sql`` 对应的版本号，与文件末尾写入 schema_migrations 的值一致。"""
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 """应用期望的 schema 版本：基线 v1 + ``MIGRATIONS`` 里已追加的增量。
 
 **启动时会对不上就自动补**：低于它就按序应用缺的那些迁移，高于它才报错
@@ -442,6 +442,43 @@ MIGRATIONS: tuple[Migration, ...] = (
             # 行为与迁移前**一字不差**——这条迁移不该让任何一把在用钥匙失灵。
             "ALTER TABLE api_keys"
             " ADD COLUMN IF NOT EXISTS allowed_tool_names jsonb NOT NULL DEFAULT '[]'::jsonb",
+        ),
+    ),
+    Migration(
+        version=19,
+        description="检索命中事件：每次检索按知识库记一行，供控制台看命中趋势（v0.61）",
+        statements=(
+            # 这张表回答的是**另一个问题**：`usage_events(kind='search')` 只记了
+            # "这次检索返回几条"，没有库这一维，于是概览页能画检索量、却画不出
+            # "哪个库的命中在涨/在跌"，KB 卡片上那条迷你曲线也无处取数
+            # （交接文档 §9 第 6 条记着这个缺口）。
+            #
+            # 一行 = **一次检索 × 一个库**。`candidates` / `kept` 刻意分开：
+            # 前者是分布收敛**之前**这个库贡献的条数，后者是收敛后真返回的条数，
+            # 两者之差 = 这个库这一趟被砍掉多少（见 base.SearchEventRecord 的说明）。
+            # 只记一个数的话，"给 12 条留 2 条"与"给 2 条留 2 条"在曲线上长得一模一样。
+            #
+            # `fit` 是整次检索的判定（strong / weak / none / unknown），同一批行相同：
+            # 它是分布的性质而不是某个库的，存下来是为了能回答"这几天有多少次
+            # 是「资料里没有」"——那正是这份数据的另一边价值。
+            #
+            # `ON DELETE CASCADE`：库删了，它的历史命中也跟着走。留一批指向不存在
+            # 的库的行，只会让趋势图出现一条没有名字、也点不进去的曲线。
+            """
+            CREATE TABLE search_events (
+                id         text PRIMARY KEY,
+                kb_id      text NOT NULL REFERENCES knowledge_bases (id) ON DELETE CASCADE,
+                candidates integer NOT NULL DEFAULT 0,
+                kept       integer NOT NULL DEFAULT 0,
+                fit        text NOT NULL DEFAULT 'unknown',
+                created_at timestamptz NOT NULL DEFAULT now()
+            )
+            """,
+            # 主查询形状是"某个库、某段时间"（KB 卡片上那条迷你趋势），这条索引直接对上它
+            "CREATE INDEX idx_search_events_kb_created ON search_events (kb_id, created_at)",
+            # 概览页那条全局曲线与保留期清理都按时间过滤；聚合成 (kb_id, created_at)
+            # 的前缀用不了，所以单独一条（与 usage_events 同一种形状）
+            "CREATE INDEX idx_search_events_created ON search_events (created_at)",
         ),
     ),
 )

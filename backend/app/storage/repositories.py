@@ -54,6 +54,7 @@ from app.storage.base import (
     ParseResultRecord,
     RegisteredModelRecord,
     ScheduledTaskRecord,
+    SearchEventRecord,
     SessionEventRecord,
     SessionRecord,
     ShareRecord,
@@ -737,6 +738,10 @@ class UsageRepo(Protocol):
     """用量域（G7）：token 与调用量的落库、聚合读取与留存清理。
 
     **刻意不算钱**：价目表必然过期，这个域只存原始计数，聚合口径在服务层。
+
+    检索命中事件（``search_events``，v0.61）也算这一域：它与用量是同一类东西
+    （运营统计用的只增计量，聚合都在服务层），而且两者总是一起被控制台读。
+    区分它相对用量多的那一维是 **kb_id**——一张"按库计的检索命中"表。
     """
 
     def record_usage(self, record: UsageEventRecord) -> UsageEventRecord: ...
@@ -744,6 +749,12 @@ class UsageRepo(Protocol):
     def list_usage(self, *, since: datetime | None = None) -> list[UsageEventRecord]: ...
 
     def purge_usage_before(self, before: datetime) -> int: ...
+
+    def record_search_events(self, records: Sequence[SearchEventRecord]) -> None: ...
+
+    def list_search_events(self, *, since: datetime | None = None) -> list[SearchEventRecord]: ...
+
+    def purge_search_events_before(self, before: datetime) -> int: ...
 
 
 @runtime_checkable

@@ -75,6 +75,7 @@ from app.storage.base import (
     ParseResultRecord,
     RegisteredModelRecord,
     ScheduledTaskRecord,
+    SearchEventRecord,
     SessionEventRecord,
     SessionRecord,
     ShareRecord,
@@ -2623,6 +2624,56 @@ class PostgresMetaStore(MetaStore):
         with self._db.session() as conn:
             cursor = conn.execute(
                 "DELETE FROM usage_events WHERE created_at < %s", (_dump(before),)
+            )
+        return int(cursor.rowcount or 0)
+
+    @staticmethod
+    def _search_event_from_row(row: dict) -> SearchEventRecord:
+        return SearchEventRecord(
+            id=row["id"],
+            kb_id=row["kb_id"],
+            candidates=row["candidates"],
+            kept=row["kept"],
+            fit=row["fit"],
+            created_at=_load(row["created_at"]),
+        )
+
+    def record_search_events(self, records: Sequence[SearchEventRecord]) -> None:
+        if not records:
+            return
+        with self._db.session() as conn:
+            _executemany(
+                conn,
+                "INSERT INTO search_events (id, kb_id, candidates, kept, fit, created_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s)",
+                [
+                    (
+                        record.id,
+                        record.kb_id,
+                        record.candidates,
+                        record.kept,
+                        record.fit,
+                        _dump(record.created_at or _now()),
+                    )
+                    for record in records
+                ],
+            )
+
+    def list_search_events(self, *, since: datetime | None = None) -> list[SearchEventRecord]:
+        sql = "SELECT * FROM search_events"
+        params: tuple[object, ...] = ()
+        if since is not None:
+            sql += " WHERE created_at >= %s"
+            params = (_dump(since),)
+        sql += " ORDER BY created_at"
+        with self._db.read() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._search_event_from_row(row) for row in rows]
+
+    def purge_search_events_before(self, before: datetime) -> int:
+        with self._db.session() as conn:
+            cursor = conn.execute(
+                "DELETE FROM search_events WHERE created_at < %s", (_dump(before),)
             )
         return int(cursor.rowcount or 0)
 

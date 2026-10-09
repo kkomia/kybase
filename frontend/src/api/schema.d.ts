@@ -702,6 +702,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats/search-hits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 检索命中趋势
+         * @description 按知识库的检索命中趋势（v0.61）。
+         *
+         *     一行 = 一次检索 × 一个库，**候选（收敛前）与留存（收敛后）分开给**：
+         *     两者之差是"这次检索里这个库被砍掉了多少"——只有留存一条线的话，
+         *     "给 12 条留 2 条"与"给 2 条留 2 条"长得一模一样，而那两件事的下一步动作不同。
+         *
+         *     ``by_kb`` 只含窗口内**真有记录**的库（趋势是稀疏的，前端自己补零），
+         *     而"被检索了但一条没命中"的库**会**在里面：它有一行 candidates=0 的记录
+         *     ——"没人查过"与"查了但答不上来"必须能分开，这是这份数据的一半价值。
+         *
+         *     与 ``/stats/dashboard`` 同一套可见性：成员的窗口只统计自己可见的库
+         *     （跨库汇总的数字也算私有信息）。
+         */
+        get: operations["search_hits_api_v1_stats_search_hits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -1687,6 +1718,12 @@ export interface components {
             chunks: number;
             /** Tasks */
             tasks: number;
+            /**
+             * Hits
+             * @description 这天的检索命中**候选数**（v0.61，各库之和）。概览页趋势图上的「检索命中」一档。
+             * @default 0
+             */
+            hits: number;
         };
         /** ApiKeyCreateIn */
         ApiKeyCreateIn: {
@@ -2521,6 +2558,30 @@ export interface components {
              * @default false
              */
             cited: boolean;
+        };
+        /**
+         * KbSearchHitsOut
+         * @description 单个知识库在窗口内的命中情况 + 它的稀疏曲线。
+         */
+        KbSearchHitsOut: {
+            /** Kb Id */
+            kb_id: string;
+            /** Name */
+            name: string;
+            /** Candidates */
+            candidates: number;
+            /** Kept */
+            kept: number;
+            /**
+             * Searches
+             * @description 这个库在窗口内被检索了几次（= 它的行数，一次跨两库的检索算两行）。
+             */
+            searches: number;
+            /**
+             * Series
+             * @description **稀疏**：只有真有记录的那些天，前端自己补零成连续曲线。
+             */
+            series?: components["schemas"]["SearchHitPointOut"][];
         };
         /** KbStatOut */
         KbStatOut: {
@@ -3446,6 +3507,46 @@ export interface components {
             /** Rerank Score */
             rerank_score?: number | null;
         };
+        /**
+         * SearchHitPointOut
+         * @description 某一天、某个知识库的命中量（检索命中趋势上的一个点）。
+         */
+        SearchHitPointOut: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Candidates
+             * @description 分布收敛**之前**这个库贡献的条数。
+             */
+            candidates: number;
+            /**
+             * Kept
+             * @description 收敛之后真的返回给调用方的条数。
+             */
+            kept: number;
+        };
+        /**
+         * SearchHitsOut
+         * @description 检索命中趋势（``GET /stats/search-hits``，v0.61）。
+         *
+         *     ``by_kb`` **只含窗口内真有记录的库**：一次都没被检索过的库没有曲线可画，
+         *     出现在这里只会让图例多出一堆平线。
+         */
+        SearchHitsOut: {
+            /** Days */
+            days: number;
+            /** Candidates */
+            candidates: number;
+            /** Kept */
+            kept: number;
+            /** Searches */
+            searches: number;
+            /** By Kb */
+            by_kb?: components["schemas"]["KbSearchHitsOut"][];
+        };
         /** SearchRequest */
         SearchRequest: {
             /** Query */
@@ -3473,6 +3574,12 @@ export interface components {
             min_vector_score?: number | null;
             /** Min Term Coverage */
             min_term_coverage?: number | null;
+            /** Keep */
+            keep?: number | null;
+            /** Min Score */
+            min_score?: number | null;
+            /** Per Doc */
+            per_doc?: number | null;
             /**
              * Rerank
              * @default false
@@ -3482,6 +3589,19 @@ export interface components {
         };
         /** SearchResponse */
         SearchResponse: {
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Distribution */
+            distribution?: {
+                [key: string]: unknown;
+            } | null;
+            /** Decision */
+            decision?: {
+                [key: string]: unknown;
+            } | null;
             /** Hits */
             hits: components["schemas"]["SearchHitOut"][];
             /** Mode */
@@ -5748,6 +5868,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_hits_api_v1_stats_search_hits_get: {
+        parameters: {
+            query?: {
+                /** @description 观察窗口（天） */
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHitsOut"];
                 };
             };
             /** @description Validation Error */

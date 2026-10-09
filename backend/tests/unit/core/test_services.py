@@ -22,6 +22,7 @@ _EXPECTED = (
     "chunks",
     "models",
     "usage",
+    "search_stats",
     "users",
     "auth",
     "shares",

@@ -168,6 +168,15 @@ def test_migration_to_the_latest_version_runs_on_an_older_database(
             "select conname from pg_constraint"
             " where conrelid = 'session_events'::regclass and contype = 'u'"
         ).fetchall()
+        # v19 的表也顺路核对一遍：这条用例是唯一一条**在旧库上升级**的路径，
+        # 基线与迁移写错了它才抓得住（空库那条路永远是"一次建完"）
+        search_columns = conn.execute(
+            "select column_name from information_schema.columns"
+            " where table_name = 'search_events' order by ordinal_position"
+        ).fetchall()
+        search_indexes = conn.execute(
+            "select indexname from pg_indexes where tablename = 'search_events' order by indexname"
+        ).fetchall()
     assert [row["column_name"] for row in columns] == [
         "id",
         "conversation_id",
@@ -179,3 +188,16 @@ def test_migration_to_the_latest_version_runs_on_an_older_database(
     assert [row["conname"] for row in unique] == ["uq_session_events_seq"], (
         "会话内 seq 的唯一约束是「只追加」的机械保证"
     )
+    assert [row["column_name"] for row in search_columns] == [
+        "id",
+        "kb_id",
+        "candidates",
+        "kept",
+        "fit",
+        "created_at",
+    ]
+    assert {row["indexname"] for row in search_indexes} == {
+        "idx_search_events_created",
+        "idx_search_events_kb_created",
+        "search_events_pkey",
+    }

@@ -1101,6 +1101,37 @@ class UsageEventRecord:
 
 
 @dataclass(slots=True)
+class SearchEventRecord:
+    """一次检索里**某个知识库**贡献的命中（v0.61）。
+
+    **一行 = 一次检索 × 一个库**，不是"一次检索"：`usage_events(kind='search')`
+    只有一个整数（返回了几条）且没有库这一维，于是控制台画不出"这个库的检索命中趋势"
+    （交接文档 §9 第 6 条记着这个缺口）。这张表补的正是那一维。
+
+    ``candidates`` 与 ``kept`` 刻意**分开记**：
+
+    - ``candidates`` 是这个库在**分布收敛之前**贡献的条数（``summarize`` 看到的那一批）；
+    - ``kept`` 是收敛之后**真的返回**的条数。
+
+    两者之差就是"这次检索里这个库被砍掉了多少"——只记一个数的话，
+    一个库从"给 12 条、留 2 条"退化成"给 2 条、留 2 条"，在曲线上看不出任何区别，
+    而前者说明它的召回还行、只是被收敛剪掉了，后者说明它压根没捞到东西。
+
+    ``fit`` 是这次检索整体的判定（``distribution.fit``：``strong`` / ``weak`` /
+    ``none`` / ``unknown``）。它**是整批的性质，不是这个库的**（分布按整次检索算），
+    所以同一批记录里这一列相同；存下来是为了曲线之外还能回答"这几天有多少次
+    是「资料里没有」"这种问题。
+    """
+
+    id: str
+    kb_id: str
+    candidates: int = 0
+    kept: int = 0
+    fit: str = "unknown"
+    created_at: datetime | None = None
+
+
+@dataclass(slots=True)
 class ModelProviderRecord:
     """模型供应商：一个 base_url + 一把凭据（调研报告 G1）。
 
@@ -2394,6 +2425,36 @@ class MetaStore(ABC):
         """清掉某时间点之前的用量。返回删了几行。
 
         用量数据只用于看趋势，留太久没有价值；与幂等键同一套保留期思路。
+        """
+        ...
+
+    @abstractmethod
+    def record_search_events(self, records: Sequence[SearchEventRecord]) -> None:
+        """批量写一次检索的**按库命中记录**（一库一行，v0.61）。
+
+        一次检索会同时落好几个库的行，所以整批一起写：逐行写等于一次检索多几次往返，
+        而它们本来就是同一件事的几行。**空列表直接返回**——"没有可以归因的库"那一档
+        （不指定库的全库检索、且一条都没命中）由调用方决定不写，存储层照办。
+        """
+        ...
+
+    @abstractmethod
+    def list_search_events(self, *, since: datetime | None = None) -> list[SearchEventRecord]:
+        """取某时间点之后的检索命中记录（控制台的趋势曲线用）。
+
+        **不做 SQL 聚合**，与 ``list_usage`` 同一条纪律：曲线按**本地日历日**分桶，
+        而"日"是业务口径（见 ``services/search_stats.py``），压在 SQL 里就得把时区
+        偏移传下去。本地部署的数据量（一次检索几行、一天几百行）全读回来聚合完全够用。
+        """
+        ...
+
+    @abstractmethod
+    def purge_search_events_before(self, before: datetime) -> int:
+        """清掉某时间点之前的检索命中记录。返回删了几行。
+
+        **保留期不跟用量表共用**：控制台能看的窗口上限是 365 天（``stats.MAX_WINDOW_DAYS``），
+        而用量只留 180 天——照用量那套清会让最后半年的曲线整段变空，
+        且是"慢慢变空"，看起来像没人检索。见 ``services/search_stats.py`` 的保留期常量。
         """
         ...
 

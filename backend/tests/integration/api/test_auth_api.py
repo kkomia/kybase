@@ -110,6 +110,7 @@ def test_health_stays_open_even_when_locked(locked: TestClient) -> None:
         ("get", "/api/v1/api-keys"),
         ("get", "/api/v1/tasks"),
         ("get", "/api/v1/stats/dashboard"),
+        ("get", "/api/v1/stats/search-hits"),
     ]
     )
 def test_missing_credentials_are_rejected(

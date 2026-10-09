@@ -57,6 +57,7 @@ from app.services.parser_router import ParserRouter
 from app.services.retrieval import RetrievalService, build_reranker
 from app.services.retrieval.rerank import RerankProvider
 from app.services.runtime_config import RuntimeConfigService
+from app.services.search_stats import SearchStatsService
 from app.services.secrets import NullSecretStore, SecretStore
 from app.services.share import ShareService
 from app.services.sources import SourceService
@@ -169,6 +170,12 @@ class Services:
 
     usage: UsageService
     """用量统计：按次记 token 与调用量（调研报告 G7）。"""
+
+    search_stats: SearchStatsService
+    """检索命中趋势（v0.61）：一次检索按知识库记一行候选 / 留存 / 契合度。
+
+    写侧是 ``retrieval`` 的 ``search_recorder`` 回调（与 ``usage_recorder`` 同一个形状），
+    读侧给 ``/stats/search-hits`` 与概览页那条活跃度曲线。"""
 
     idempotency: IdempotencyService
     """幂等键：上传类接口防重试造成重复入库（架构 §3.2）。"""
@@ -352,6 +359,9 @@ def _build_graph(
 
     # 用量服务要**先建**：下面的 embedder 回调闭包引用了它
     usage = UsageService(bundle)
+    # 按库命中记录的读写（v0.61）：写侧给 retrieval 的回调，读侧给 /stats/search-hits
+    # 与概览页的活跃度曲线。**它要早于 retrieval 建**——下面那个回调引用了它
+    search_stats = SearchStatsService(bundle)
 
     def _record_embed_usage(**kwargs: object) -> None:
         usage.record(**kwargs)  # type: ignore[arg-type]
@@ -376,6 +386,9 @@ def _build_graph(
         embedders=embedding_resolver,
         # 检索次数原先只在日志里：接了回调仪表盘才有"检索量 / 平均命中"可看
         usage_recorder=lambda **kwargs: usage.record(**kwargs),  # type: ignore[arg-type]
+        # 按库命中（v0.61）：检索层只交 ``{kb_id: (候选, 留存)}`` + 契合度，
+        # 落库是他自己的事——回调就是"检索层不认识存储"的那道边界
+        search_recorder=search_stats.record,
     )
     # webhook 先建：下面的摄入与生命周期都通过回调向它发事件（T4.6）。
     # **用回调而不是直接依赖**：通知是旁路，它挂了不能让摄入卡住
@@ -438,6 +451,9 @@ def _build_graph(
         if removed_keys:
             logger.info("清理过期幂等键 %d 条", removed_keys)
         usage.purge_expired()
+        # 检索命中记录**不跟用量共用保留期**（400 天 vs 180 天）：控制台最长能看
+        # 365 天的窗口，照用量那套清会让"近一年"的后半段慢慢变空（见 search_stats 常量处）
+        search_stats.purge_expired()
         # 任务与阶段事件这两张表只增不减，而它们都在热路径上（列表、队列概览、
         # 每行的进度条都会读）。保留期见 services/maintenance.py（§12.116）。
         MaintenanceService(bundle).prune_history()
@@ -485,6 +501,7 @@ def _build_graph(
         ),
         models=registry,
         usage=usage,
+        search_stats=search_stats,
         users=UserService(bundle),
         auth=AuthService(bundle),
         avatars=AvatarService(bundle),

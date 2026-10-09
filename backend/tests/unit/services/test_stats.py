@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.models.enums import DataSourceKind, DocumentStage, TaskKind, TaskState
 from app.services.stats import StatsService, local_day
-from app.storage.base import DocumentRecord, KnowledgeBaseRecord, TaskRecord
+from app.storage.base import DocumentRecord, KnowledgeBaseRecord, SearchEventRecord, TaskRecord
 
 
 def _kb(store, kb_id: str = "kb_1", name: str = "手册"):
@@ -194,3 +194,37 @@ def test_empty_database_returns_zeros_not_errors(bundle) -> None:
     assert stats.total_documents == 0
     assert sum(point.documents for point in stats.activity) == 0
     assert len(stats.activity) == 7
+    assert sum(point.hits for point in stats.activity) == 0
+
+
+def test_activity_carries_search_hits_and_narrows_for_members(store, bundle) -> None:  # type: ignore[no-untyped-def]
+    """活跃度上的 ``hits`` = 当天各库的**候选数**之和（v0.61）。
+
+    两件事：窗口外的检索不进图（否则"近 7 天"画的是全部历史），
+    以及**成员视角只算自己可见的库**——"别人的库被搜了多少次"同样不该从
+    我的驾驶舱读出来（与文档、任务同一套过滤）。
+    """
+    _kb(store, "kb_1", "技术库")
+    _kb(store, "kb_2", "别人的库")
+    now = datetime.now(UTC)
+    store.record_search_events(
+        [
+            SearchEventRecord(id="se_1", kb_id="kb_1", candidates=3, kept=1, created_at=now),
+            SearchEventRecord(id="se_2", kb_id="kb_2", candidates=5, kept=2, created_at=now),
+            SearchEventRecord(
+                id="se_old",
+                kb_id="kb_1",
+                candidates=999,
+                kept=99,
+                created_at=now - timedelta(days=60),
+            ),
+        ]
+    )
+
+    full = StatsService(bundle).dashboard(window_days=7)
+    mine = StatsService(bundle).dashboard(window_days=7, kb_ids=["kb_1"])
+
+    assert len(full.activity) == 7, "缺口照旧补"
+    assert sum(point.hits for point in full.activity) == 8
+    assert sum(point.hits for point in mine.activity) == 3
+    assert full.activity[-1].hits == 8  # 都在今天

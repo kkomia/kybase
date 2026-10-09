@@ -444,6 +444,71 @@ def test_search_modes_and_filters(client: TestClient, kb_id: str) -> None:
     assert filtered["filtered_out"] > 0
 
 
+def test_search_response_leads_with_the_verdict_and_the_distribution(
+    client: TestClient, kb_id: str
+) -> None:
+    """REST 这条路的响应顺序与 MCP 那条**完全一致**（v0.55）：
+
+    ``summary`` → ``distribution`` → ``decision`` 排在 ``hits`` 之前。
+    JSON 的键序就是读的人的阅读顺序——判定排在原文后面，它就会被当成事后统计；
+    而这两个入口给出的分布必须是**同一份形状**（同一个 ``as_payload``），
+    否则"网页上有分布、MCP 里没有"这类不一致就回来了。
+    """
+    _upload(client, kb_id)
+    _drain_worker()
+
+    body = client.post("/api/v1/search", json={"query": "混合召回", "kb_ids": [kb_id]}).json()
+
+    keys = list(body)
+    assert keys.index("summary") < keys.index("distribution") < keys.index("decision")
+    assert keys.index("decision") < keys.index("hits")
+    assert body["summary"], "判定不能是空串：它是响应里的第一行"
+    assert body["distribution"] is not None, "分布无条件在（这条路上没有开关）"
+    assert body["distribution"]["count"] >= len(body["hits"])
+    assert body["decision"]["fit"] == body["distribution"]["fit"]
+
+
+def test_search_converges_with_the_knobs_it_advertises(client: TestClient, kb_id: str) -> None:
+    """REST 也认 ``keep`` / ``min_score`` / ``per_doc``，语义与 MCP 工具那三个一样。
+
+    界面上要收敛（"只要最相关的两段"）时走的就是这三个字段：参数在 REST 与工具两条路上
+    同名同义，才不会出现"界面上能收、Agent 收不了"。
+    """
+    _upload(client, kb_id)
+    _drain_worker()
+
+    body = client.post(
+        "/api/v1/search",
+        json={"query": "混合召回", "kb_ids": [kb_id], "keep": 1, "per_doc": 1},
+    ).json()
+
+    assert body["decision"]["keep"] == 1
+    assert body["decision"]["per_doc"] == 1
+    assert body["decision"]["decided_by"] == "model"
+    assert "模型" in body["summary"]
+    assert len(body["hits"]) <= 1
+
+
+def test_search_rejects_out_of_range_convergence_knobs(client: TestClient, kb_id: str) -> None:
+    """上下限与 MCP 工具广告的同一组（keep 1–20、per_doc 1–10、min_score 0–1）。
+
+    越界直接 422：这三个数是模型/界面按分布算出来的，超出范围说明调用方算错了，
+    悄悄夹到边界反而让它以为自己那套算法是对的。
+    """
+    for payload in (
+        {"keep": 0},
+        {"keep": 21},
+        {"per_doc": 0},
+        {"per_doc": 11},
+        {"min_score": 1.5},
+        {"min_score": -0.1},
+    ):
+        response = client.post(
+            "/api/v1/search", json={"query": "部署", "kb_ids": [kb_id], **payload}
+        )
+        assert response.status_code == 422, payload
+
+
 def test_create_kb_without_an_embedding_model_is_rejected(monkeypatch) -> None:
     """没配嵌入模型时建库要被**明确拒绝**，而不是退回无语义的哈希实现。
 
@@ -555,6 +620,61 @@ def test_empty_search_is_not_counted(client: TestClient, kb_id: str) -> None:
 
     assert {item["kind"] for item in usage["by_kind"]} == set()
 
+
+# ------------------------------------------------- 检索命中趋势（v0.61）
+
+
+def test_search_hits_endpoint_carries_the_recorded_knowledge_bases(
+    client: TestClient, kb_id: str
+) -> None:
+    """``/stats/search-hits`` 的形状与口径。
+
+    一次真实检索会给它碰过的库落一行——**空库也一样**（候选 0）。
+    而窗口内**一行都没有**的库不进 ``by_kb``：它没有曲线可画。
+    """
+    search = client.post("/api/v1/search", json={"query": "眼轴长度", "kb_ids": [kb_id]})
+    assert search.status_code == 200, search.text
+    never_searched = client.post("/api/v1/knowledge-bases", json={"name": "没搜过的库"}).json()
+
+    body = client.get("/api/v1/stats/search-hits").json()
+
+    assert body["days"] == 30
+    assert body["searches"] >= 1
+    by_kb = {item["kb_id"]: item for item in body["by_kb"]}
+    assert kb_id in by_kb, "被检索过的空库也要在"
+    assert never_searched["id"] not in by_kb, "窗口内没有记录的库不该出现"
+    mine = by_kb[kb_id]
+    assert mine["name"] == "技术库"
+    assert (mine["candidates"], mine["kept"]) == (0, 0)
+    assert mine["series"], "有记录就该有点"
+    assert set(mine["series"][0]) == {"day", "candidates", "kept"}
+    # 顶层是窗口内的合计，与 by_kb 对得上账
+    assert body["candidates"] == sum(item["candidates"] for item in body["by_kb"])
+    assert body["searches"] == sum(item["searches"] for item in body["by_kb"])
+
+
+def test_search_hits_days_is_bounded(client: TestClient) -> None:
+    """``days`` 的上下界与兄弟端点同一套（1 … MAX_WINDOW_DAYS）。"""
+    assert client.get("/api/v1/stats/search-hits?days=0").status_code == 422
+    assert client.get("/api/v1/stats/search-hits?days=366").status_code == 422
+    assert client.get("/api/v1/stats/search-hits?days=365").status_code == 200
+
+
+def test_dashboard_activity_carries_search_hits(client: TestClient, kb_id: str) -> None:
+    """概览页那条「检索命中」由活跃度序列带出来：**每一天都有 hits**（缺口补零）。
+
+    数据源是 ``search_events.candidates``（收敛前的候选数），不是用量表那个
+    "返回了几条"——后者没有库这一维，画不出按库的曲线。
+    """
+    # 走真实的记录回调（检索时落库走的就是它），别自己造一行——那样测的就不是
+    # "写侧写出来的东西能不能画成曲线"了
+    get_services().search_stats.record(hits_by_kb={kb_id: (7, 2)}, fit="weak")
+
+    activity = client.get("/api/v1/stats/dashboard").json()["activity"]
+
+    assert all("hits" in point for point in activity)
+    assert sum(point["hits"] for point in activity) == 7
+    assert activity[-1]["hits"] == 7, "今天那一格"
 
 
 # ------------------------------------------------- 推荐问题设置（v19）
