@@ -309,7 +309,7 @@ def test_every_mcp_tool_is_mentioned_by_some_skill() -> None:
 
     **例外表已经没有了**（v0.1.0 瘦身）：原先唯一那个例外是 ``ingest_artifact``
     （它要一份会话产物，而外部 MCP 通道没有会话上下文），那个工具本身已经随着
-    Agent 侧代码拆除——现在对外那 8 个**每一个都必须被点到**。
+    Agent 侧代码拆除——现在对外那张表**每一个都必须被点到**。
     """
     from app.mcp_server.server import MCP_TOOL_NAMES
 

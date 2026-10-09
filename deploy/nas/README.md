@@ -58,7 +58,7 @@ docker compose down                 # 停掉（**不动存储层**）
 
 三个服务：`backend`（FastAPI，不发布宿主机端口）、`mcp`（同一镜像，8765 对外）、
 `frontend`（nginx，8081 对外）。**MCP 那条通道强制鉴权**：每个请求要带
-`Authorization: Bearer kylab_sk_…`（「设置 → API 密钥」里建；唯一的放行例外是握手与
+`Authorization: Bearer kylab_sk_…`（管理台侧栏的「API 密钥」页新建；唯一的放行例外是握手与
 `tools/list`），别把 8765 暴露到公网。
 
 构建很慢（`uv sync` / `pnpm install`）时不要挂在 SSH 会话上：把构建放到脱离会话的后台跑，
@@ -133,7 +133,7 @@ cd /vol1/1000/docker/kybase/app && docker compose build && docker compose up -d
 ```bash
 cd /vol1/1000/docker/kybase/app
 docker compose exec -T backend python -c "from app.services.runtime_config import DEFAULTS; print(sorted(k for k in DEFAULTS if k.startswith('retrieval.')))"
-# 对外 MCP 面正好是纯知识库那 8 个（Agent 工具一个都不该在）：
+# 对外 MCP 面就是纯知识库那张表（Agent 工具一个都不该在）：
 docker compose exec -T backend python -c "from app.mcp_server.server import MCP_TOOL_NAMES; print(len(MCP_TOOL_NAMES), sorted(MCP_TOOL_NAMES))"
 ```
 
@@ -238,10 +238,11 @@ pnpm@11.21.0` 钉版本），`.dockerignore` 排掉了 `node_modules`——**别
 curl -fsS http://127.0.0.1:8081/api/v1/health
 #    期望：{"status":"ok","app":"kylab","version":"...","api_version":"v1"}
 
-# 2) MCP 那条通道的工具面正好是纯知识库那 8 个
+# 2) MCP 那条通道的工具面就是纯知识库那张表
 docker compose exec -T mcp python -m app.mcp_server.server --list-tools
 #    期望：list_knowledge_bases / create_knowledge_base / upload_document /
-#         add_data_source / search / list_documents / get_document_status / delete_document
+#         add_data_source / search / list_documents / get_document_status /
+#         get_document_content / delete_document
 ```
 
 > **2026-10-09 后端瘦身后的变化**：原先这两条检查打的是 `services/skills.py` 的技能清单与

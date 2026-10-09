@@ -58,7 +58,7 @@ def _request(
         if exc.code in (401, 403):
             print(
                 f"需要凭据（HTTP {exc.code}）。kybase 的接口一律要凭据（没有开关）：\n"
-                "  在控制台「设置 → API 密钥」建一把**只读**密钥，"
+                "  在控制台侧栏的「API 密钥」页建一把**只读**密钥，"
                 "然后设 KYLAB_API_KEY，或给本脚本传 --token。\n"
                 "  （登录会话令牌也可以，但它只属于浏览器；给脚本用请用 API Key。）",
                 file=sys.stderr,

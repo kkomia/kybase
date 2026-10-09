@@ -173,7 +173,7 @@ services:
       retries: 3
 
   # **MCP 不在这份里**：它要与 backend 共用同一份数据目录（DuckDB 单写者），
-  # 而它的对外面只有知识库那 8 个工具（见 `app/mcp_server/server.py` 模块头）。
+  # 而它的对外面只有知识库那张工具表（见 `app/mcp_server/server.py` 模块头）。
   # 要开 MCP 就照 `deploy/nas/docker-compose.yml` 里那个 mcp 服务加一节——
   # 同一镜像、`command` 换成 `python -m app.mcp_server.server --transport http`、
   # 把 8765 发布出来，环境变量与 backend 逐字相同。

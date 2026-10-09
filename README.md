@@ -15,7 +15,8 @@ Agent 侧在没有它的时候完整可用（降级而非失效）。
 > 根级 `scripts/` 门禁脚本族、`deploy/`（NAS 应用层 `deploy/nas/docker-compose.yml` + 干净机器四件套），
 > 加上**知识库管理台前端**（`frontend/`，形态 B：独立 WebUI，不进桌面壳）与官方 Skill。
 > **瘦身已完成**（2026-10-09 本轮）：Agent 侧与本机档代码整体拆除，`backend/` 今天只剩知识库本体，
-> MCP 对外面只剩 8 个纯 KB 工具。剩下的是**分家**：环境变量前缀仍是 `KYLAB_`、
+> MCP 对外面只剩纯 KB 工具（清单以 `services/tools.py` 的 `TOOL_NAMES` 为准，**别记个数**）。
+> 剩下的是**分家**：环境变量前缀仍是 `KYLAB_`、
 > PG 迁移序列仍是交错那一串（见交接文档 §3.2）。
 > 接手先读[交接文档](docs/交接文档-v0.1.md)，施工顺序见
 > [剥离方案](kylab知识库剥离方案-v0.1.md) §6。
@@ -62,7 +63,7 @@ Agent 侧的东西（对话/笔记/记忆/技能/沙箱/工作区/定时任务/�
 backend/app/
   api/          KB 面 REST（knowledge-bases / documents / folders / search / chunks /
                 wiki / tabular / data-sources / shares / tasks / lifecycle / webhooks /
-                maintenance / stats / provider）
+                maintenance / stats / provider / tools / api-keys）
   services/     摄入、切块、检索、嵌入、Wiki、表格、连接器、分享等 KB 业务
   storage/      postgres_impl（向量 + 全文 + KB 元数据）、duckdb_impl（表格副本）
   parsers/      插件式解析器层（互不引用）
@@ -89,7 +90,8 @@ docs/           本服务的文档：部署指南 / 外部接入指南 / 交接�
 
 老板 2026-10-08 拍板：知识库前端走**独立 WebUI**（形态 B），kylab 前端以后不再有知识库页面群。
 这一份就是从 kylab `frontend/` 按 **import 闭包**搬出来的知识库页面群 + 登录 + 壳（只留
-「所有知识库 / 概览 / 任务中心」这一组导航），agent 语义的入口一个都没进来。
+「所有知识库 / 概览 / 任务中心 / 工具 / API 密钥」这一组导航，后两项是 2026-10-09 补的
+对外能力面），agent 语义的入口一个都没进来。
 
 | 项 | 值 |
 |---|---|

@@ -34,6 +34,7 @@ the evidence, and a summary is not.
 | `search` | The default action for answering anything | Use it as a substitute for reading the returned text; the passages are the answer's basis |
 | `list_documents` | The user asks what a library contains, or you need to check whether a document finished processing | Use `search` to survey a library — it only returns passages related to a query, never the full inventory |
 | `get_document_status` | After an upload, or when search finds nothing | Assume a non-`indexed` document is searchable; it is not |
+| `get_document_content` | You need the document itself rather than the passages one query matched — `search` answers "what does the base say about X", this answers "what does this document say". `format="markdown"` (default) returns the parsed body text; `format="original"` returns the original file as base64 with its `filename` / `media_type` / `size_bytes` | Use it as a substitute for `search` — a whole document in the context is rarely necessary and long ones are not readable. Markdown over 200 000 characters comes back cut off with `truncated=true`: **that is not the whole document**, so never conclude something is absent from what the cut copy omits. An original file over 32 MB is refused outright (the error points at the REST download endpoint) instead of truncated |
 | `upload_document` | The user hands you a file (base64) to add — or a conclusion, decision, or procedure is worth keeping and the user wants it searchable | Re-upload the same content to "refresh" it (content-hash dedup returns the existing document instead), and do not expect it to be searchable at once — it goes through the same pipeline as any upload, so check `get_document_status` |
 | `add_data_source` | The user wants a feed or page kept up to date | Expect content to appear immediately — registering does **not** fetch |
 | `create_knowledge_base` | The user wants a new, separate library | Mix unrelated material into one library; separate libraries keep retrieval scoped |
@@ -100,10 +101,13 @@ python -m app.mcp_server.server --list-tools          # the tool names it expose
 python -m app.mcp_server.server --transport stdio      # what an MCP client launches
 ```
 
-**Every tool call needs a credential** — there is no anonymous access. Create a key in
-kybase's console (设置 → API 密钥) and give it the scope you want the agent to have:
-a key bound to specific libraries can only see and write those, and a read-only key
-cannot upload, create libraries, or delete.
+**Every tool call needs a credential** — there is no anonymous access. Create a key on
+kybase's console, on the sidebar's **API 密钥** page (it takes an admin session), and give
+it the scope you want the agent to have: a key bound to specific libraries can only see and
+write those, a read-only key cannot upload, create libraries, or delete, and a key can be
+**limited to a subset of the tools** — scope it to `search` and it can query, and nothing
+else. Leaving the library scope or the tool scope empty means "unrestricted" on that axis;
+`permission` is the one axis that is always read-only or read/write.
 
 stdio has no request headers, so the key goes in the client's environment:
 
