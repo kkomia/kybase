@@ -619,11 +619,18 @@ class IngestService:
         self._advance(document, DocumentStage.CHUNKING)
         markdown = parse_result.markdown if parse_result else self._read_markdown(document)
 
+        # 总页数是"页码可信"判据的一半（见 ``chunking.trusted_pages``）：末段没有下一条
+        # 标记，只有当前页正好是总页数时才敢报。**解析产物里的页数更准**（切分后它
+        # 是各段页数之和），断点续跑时没有产物，就用库里的——探测阶段已经落库了
+        # （此处 `document` 是入队前的快照，那时 page_count 还没写进去）。
+        page_count = (parse_result.page_count if parse_result else None) or document.page_count
+
         chunks = chunk_markdown(
             markdown,
             document_id=document.id,
             knowledge_base_id=document.knowledge_base_id,
             config=self._chunking_for(kb),
+            page_count=page_count,
         )
         # 出题**必须在落库之前**：问题要跟着块一起写进去（不然后面还得再 UPDATE 一遍），
         # 而且紧接着的全文索引读的就是含问题的 `index_text`。

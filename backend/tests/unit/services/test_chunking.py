@@ -196,14 +196,17 @@ class TestPageMapping:
         from app.services.splitting import render_page_marker
 
         # 段长给 10，让两段必然分开成两块——否则它们会被贪心装进同一个桶，
-        # 而那测的就不是"页码对不对"而是"桶怎么装"了
+        # 而那测的就不是"页码对不对"而是"桶怎么装"了。
+        # 两条标记取**相邻**的 500/501：读侧只认"下一条标记正好是下一页"的页码
+        # （见 chunking.trusted_pages），跨页的标记钉不死页码，这里是标记→页码的
+        # 管道测试，不该顺带考那条规则（它由 TestPageTrust 专门钉）。
         markdown = (
-            f"{render_page_marker(1)}\n\n第一段正文。\n\n"
+            f"{render_page_marker(500)}\n\n第一段正文。\n\n"
             f"{render_page_marker(501)}\n\n第二段正文。"
         )
-        chunks = _chunk(markdown, config=ChunkingConfig(size=10, overlap=0))
+        chunks = _chunk(markdown, config=ChunkingConfig(size=10, overlap=0), page_count=501)
 
-        assert [chunk.page for chunk in chunks] == [1, 501]
+        assert [chunk.page for chunk in chunks] == [500, 501]
 
     def test_标记本身不进_chunk_正文(self) -> None:
         # 留在正文里会污染检索文本，也会让嵌入向量被一串 HTML 注释干扰
@@ -233,11 +236,11 @@ class TestPageMapping:
         from app.services.splitting import render_page_marker
 
         markdown = f"{render_page_marker(1)}\n\n第一页。\n\n{render_page_marker(2)}\n\n第二页。"
-        chunks = _chunk(markdown, config=ChunkingConfig(size=100, overlap=0))
+        chunks = _chunk(markdown, config=ChunkingConfig(size=100, overlap=0), page_count=2)
         assert len(chunks) == 1
         assert chunks[0].page == 1
         # 段长小时就会分成两块，各自带自己的页码
-        split = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0))
+        split = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=2)
         assert [chunk.page for chunk in split] == [1, 2]
 
     def test_同一页的每一块都带这一页的页码(self) -> None:
@@ -254,18 +257,119 @@ class TestPageMapping:
             f"{render_page_marker(2)}\n\n第二页第一段。\n\n第二页第二段。"
         )
         # 段长调小，让每个自然段各自成块（否则测的是桶怎么装，不是页码）
-        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0))
+        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=2)
 
         assert [chunk.page for chunk in chunks] == [1, 1, 2, 2]
 
     def test_有标记时页码不会丢(self) -> None:
-        # 与"没有标记就为空"相反的方向：有标记就必须带上，不能因为分块而丢掉
+        # 与"没有标记就为空"相反的方向：有标记就必须带上，不能因为分块而丢掉。
+        # 3 页文档的最后一条标记就是第 3 页（= 总页数），因此末段页码可信
         from app.services.splitting import render_page_marker
 
         chunks = _chunk(
-            f"{render_page_marker(3)}\n\n有页码。\n", config=ChunkingConfig(size=100, overlap=0)
+            f"{render_page_marker(3)}\n\n有页码。\n",
+            config=ChunkingConfig(size=100, overlap=0),
+            page_count=3,
         )
         assert chunks[0].page == 3
+
+
+class TestPageTrust:
+    """**页码只在文档自己的标记支持时才报**（v0.13 修）。
+
+    凭据是实测：一份 37 页的指南（MinerU 那条路）在合并 Markdown 里只留下
+    5 条标记——1/4/8/14/37，于是 394 块里 299 块被标成第 1 页。**一个看起来
+    像引用、其实指不到原文的数字，比没有更糟。** 判据只有一句话（见
+    ``chunking.trusted_pages``）：一个页码可信，当且仅当它后面紧挨着的就是
+    下一页的标记；末段要先有一条等于文档总页数的标记。
+    """
+
+    def test_只看得到首页标记时不报页码(self) -> None:
+        """题目里的那个例子：40 页文档只有一条 page:1 标记。
+
+        "当前页沿用到下一条标记"在这里会把整份文档报成第 1 页——
+        一个稳定、系统、且完全错误的答案。
+        """
+        from app.services.splitting import render_page_marker
+
+        markdown = f"{render_page_marker(1)}\n\n第一段。\n\n第二段。\n\n第三段。"
+        chunks = _chunk(markdown, config=ChunkingConfig(size=6, overlap=0), page_count=40)
+
+        assert len(chunks) == 3
+        assert all(chunk.page is None for chunk in chunks)
+
+    def test_逐页齐全时页码原样保留(self) -> None:
+        """标记逐页相连 → 每一块都被钉死在单独一页上，页码一位不变。"""
+        from app.services.splitting import render_page_marker
+
+        markdown = "\n\n".join(
+            f"{render_page_marker(page)}\n\n第{page}页正文。" for page in (1, 2, 3)
+        )
+        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=3)
+
+        assert [chunk.page for chunk in chunks] == [1, 2, 3]
+
+    def test_单页文档的一条标记仍然报第一页(self) -> None:
+        """**不要过度纠正**：1 页的文档只有一条标记，但它就是全部——
+        末段标记等于总页数，页码可信。"""
+        from app.services.splitting import render_page_marker
+
+        markdown = f"{render_page_marker(1)}\n\n单页正文。"
+        chunks = _chunk(markdown, config=ChunkingConfig(size=100, overlap=0), page_count=1)
+
+        assert [chunk.page for chunk in chunks] == [1]
+
+    def test_markdown_文档没有标记所以没有页码(self) -> None:
+        """.md 本来就没有"页"这个东西；总页数也未知，一律 None。"""
+        chunks = _chunk("# 标题\n\n正文。\n\n## 小节\n\n更多正文。\n", page_count=None)
+        assert all(chunk.page is None for chunk in chunks)
+
+    def test_缺口两侧不报页码_被标记夹住的页保留(self) -> None:
+        """实测形状（一份 18 页的指南：标记 1/2/7/15/16/17/18）。
+
+        1→2 之间只可能是第 1 页，15→16→17→18 同理，这些页码**是真话，必须保住**
+        （读者能照着翻到原文）；而 2→7、7→15 中间缺了标记，那段内容落在哪一页
+        无从确定，只能报 None——**第 2 页那条块正是"看起来对、其实指不到原文"的
+        那一种**：2→7 之间三个标记都没了，那块可能是第 2~6 页里任何一页。
+        """
+        from app.services.splitting import render_page_marker
+
+        markdown = "\n\n".join(
+            f"{render_page_marker(page)}\n\n第{page}页正文。" for page in (1, 2, 7, 15, 16, 17, 18)
+        )
+        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=18)
+
+        assert [chunk.page for chunk in chunks] == [1, None, None, 15, 16, 17, 18]
+
+    def test_页码倒退时整份文档不给页码(self) -> None:
+        """大文件切分的老样子：各段的相对页号被直接拼了起来（…200, 201, 1, 2…）。
+
+        "倒着走"说明这套号码自己就不自洽——同一个数字指了两处不相邻的内容。
+        实测一份 585 页的 PDF 因此有 713/1047 块被标成第 1 页。
+        """
+        from app.services.splitting import render_page_marker
+
+        markdown = "\n\n".join(
+            f"{render_page_marker(page)}\n\n第{page}页正文。" for page in (1, 2, 3, 1, 2, 3)
+        )
+        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=585)
+
+        assert all(chunk.page is None for chunk in chunks)
+
+    def test_末段页码要对得上总页数(self) -> None:
+        """末段没有下一条标记可依：只有当它就是文档最后一页时才敢报。
+
+        标记只到第 3 页而文档有 10 页 → 第 3 页之后还有内容，那段是第 3~10 页里的
+        某一页，报 3 是错的。
+        """
+        from app.services.splitting import render_page_marker
+
+        markdown = "\n\n".join(
+            f"{render_page_marker(page)}\n\n第{page}页正文。" for page in (1, 2, 3)
+        )
+        chunks = _chunk(markdown, config=ChunkingConfig(size=8, overlap=0), page_count=10)
+
+        assert [chunk.page for chunk in chunks] == [1, 2, None]
 
 
 class TestConfigFromRecord:

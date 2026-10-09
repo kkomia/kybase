@@ -32,7 +32,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from app.core.page_markers import PAGE_MARKER_TEMPLATE as _PAGE_MARKER_TEMPLATE
-from app.core.page_markers import page_marker
+from app.core.page_markers import page_marker, shift_page_markers
 from app.parsers.base import ParseError, ParseResult, ParserProvider
 
 __all__ = [
@@ -224,13 +224,21 @@ def merge_parts(texts: Sequence[str], parts: Sequence[PageRange]) -> str:
 
     ``texts`` 与 ``parts`` 必须等长：长度不一致说明调用方把某段的产物弄丢了，
     这属于编程错误，直接抛而不是猜。
+
+    **每段的产物要先把自己的页标记抬成绝对页号**（``shift_page_markers``）：
+    段是单独提交的，解析器给出的页号是这一段内部的（第 1 页起）。不抬的话，
+    第二段之后的标记会从 1 重新开始，读侧看到 `页码倒着走` 只能把后面的正文
+    全标成第 1 页——实测一份 585 页的 PDF 有 713/1047 块因此被标成第 1 页。
+    段起始标记照旧插在最前面：解析器一条标记都没给时（没有页码可用），
+    至少"这一段的起点在哪一页"是确定的。
     """
     if len(texts) != len(parts):
         raise ValueError(f"产物数量 {len(texts)} 与页段数量 {len(parts)} 不一致")
 
     blocks: list[str] = []
     for text, part in zip(texts, parts, strict=True):
-        blocks.append(f"{render_page_marker(part.start)}\n\n{text.strip()}")
+        body = shift_page_markers(text.strip(), part.start - 1)
+        blocks.append(f"{render_page_marker(part.start)}\n\n{body}")
     return "\n\n".join(blocks) + "\n"
 
 

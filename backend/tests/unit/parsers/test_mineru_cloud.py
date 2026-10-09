@@ -167,6 +167,42 @@ def test_parse_without_content_list_keeps_markdown_untouched() -> None:
     assert "page:" not in result.markdown
 
 
+def test_parse_passes_page_count_so_a_false_anchor_cannot_drag_the_positions() -> None:
+    """页数必须一路传到 ``locate_block_offsets``，否则位置先验失效、页码整体错位。
+
+    第 4 页的第一个块在 md 里没有（只有文末附录里那句话能撞上）。少了页数这条先验，
+    假命中会把游标拖到文末，第 4 页的标记落到附录上、第 5/6 页的边界全部丢失；
+    传了页数，假命中被拒，六页的标记各就各位。
+    """
+    body = "\n".join(
+        f"# 第{page}节\n\n第 {page} 页正文，长度均匀，供位置先验参照。\n" for page in range(1, 7)
+    )
+    markdown = f"{body}\n附录：只在文末附录出现一次的第 4 页文本\n"
+    content_list = []
+    for page in range(1, 7):
+        if page == 4:
+            content_list.append(
+                {"type": "text", "text": "只在文末附录出现一次的第 4 页文本", "page_idx": page - 1}
+            )
+        content_list.append({"type": "text", "text": f"# 第{page}节", "page_idx": page - 1})
+        content_list.append(
+            {
+                "type": "text",
+                "text": f"第 {page} 页正文，长度均匀，供位置先验参照。",
+                "page_idx": page - 1,
+            }
+        )
+    parser = MinerUCloudParser(
+        MinerUConfig(token="sk-test"), client=_ZipClient(_zip_with(content_list, markdown))
+    )
+
+    result = parser.parse(content=b"x", filename="a.pdf", mime_type="application/pdf")
+
+    markers = [line for line in result.markdown.splitlines() if line.startswith("<!--")]
+    assert markers == [f"<!-- page:{page} -->" for page in range(1, 7)]
+    assert result.page_count == 6
+
+
 def test_read_content_list_tolerates_broken_input() -> None:
     """读不懂辅助文件不该让整份解析失败：没有页码可以，解析挂了不行。"""
     from app.parsers.mineru_cloud import _read_content_list

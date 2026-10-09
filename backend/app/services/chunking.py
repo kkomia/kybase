@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 
 from app.core.page_markers import PAGE_MARKER_RE
 from app.storage.base import ChunkRecord
@@ -28,6 +29,7 @@ __all__ = [
     "chunk_markdown",
     "config_from_record",
     "content_hash_of",
+    "trusted_pages",
 ]
 
 
@@ -91,6 +93,38 @@ def content_hash_of(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
 
 
+def trusted_pages(markdown: str, page_count: int | None) -> frozenset[int]:
+    """这份 Markdown 里**能被钉死在单独一页上的页码**。
+
+    页标记只声明一件事："从这里开始是第 N 页"。它声明的是一个**起点**，
+    而 chunker 要回答的是"这一块在第几页"——两者只在**每一页都有标记**时才等价。
+    中间缺了标记时，"当前页沿用到下一条标记"就会把好几页的内容算成第 N 页：
+    实测一份 37 页的指南只留下 5 条标记（1/4/8/14/37），于是 394 块里有 299 块
+    被标成第 1 页。**一个看起来像引用、其实指不到原文的数字，比没有更糟**——
+    读者翻到那一页对不上，从此不再信任引用（``core/page_markers.py`` 的同一条原则）。
+
+    所以判据只有一句话：**一个页码可信，当且仅当它后面紧挨着的就是"下一页"的
+    标记（N+1）**——两条相邻标记之间必定整页都在第 N 页上；文档末段没有下一条
+    标记，只有当前页正好是文档总页数（``page_count``）时才可信。
+    标记号**倒退**（`…200, 201, 1, 2…`）说明这套页码自己就不自洽——那是大文件
+    切分把各段的相对页号直接拼了起来，整份文档一律不给页码。
+
+    规则不用任何阈值，只用文档自己声明的页数，且**只减不加**：钉不死就报 None。
+    """
+    pages = [
+        int(match.group(1))
+        for line in markdown.splitlines()
+        if (match := PAGE_MARKER_RE.match(line.strip()))
+    ]
+    if not pages or any(later < earlier for earlier, later in pairwise(pages)):
+        return frozenset()
+
+    trusted = {earlier for earlier, later in pairwise(pages) if later == earlier + 1}
+    if page_count is not None and pages[-1] == page_count:
+        trusted.add(pages[-1])
+    return frozenset(trusted)
+
+
 def chunk_markdown(
     markdown: str,
     *,
@@ -98,6 +132,7 @@ def chunk_markdown(
     knowledge_base_id: str,
     config: ChunkingConfig | None = None,
     part_id: str | None = None,
+    page_count: int | None = None,
 ) -> list[ChunkRecord]:
     """把 Markdown 切成 chunk 序列。
 
@@ -106,9 +141,12 @@ def chunk_markdown(
 
     ``size`` 是**硬上限**，重叠也算在里面：新块开头若加上重叠尾巴就放不下当前块，
     宁可放弃这一段重叠也不让任何 chunk 超限（超限会破坏下游 embedding 的批量假设）。
+
+    ``page_count`` 是文档自己声明的总页数，只用来判断**末段的页码可不可信**
+    （见 :func:`trusted_pages`）。不传就是"不知道总页数"，末段一律不给页码。
     """
     settings = config or ChunkingConfig()
-    blocks = _split_blocks(markdown)
+    blocks = _split_blocks(markdown, trusted=trusted_pages(markdown, page_count))
     chunks: list[ChunkRecord] = []
 
     buffer = ""
@@ -158,10 +196,12 @@ def chunk_markdown(
     return chunks
 
 
-def _split_blocks(markdown: str) -> list[tuple[str, str | None, int | None]]:
+def _split_blocks(
+    markdown: str, *, trusted: frozenset[int] = frozenset()
+) -> list[tuple[str, str | None, int | None]]:
     """按标题与空行切成块，并跟踪标题栈与**当前页码**。
 
-    页码来自大文件切分器插入的页标记（``splitting.PAGE_MARKER_TEMPLATE``）。
+    页码来自页标记（``core/page_markers.py``，写侧是解析器与大文件切分器）。
     一份 1500 页的文档被切成 8 段分别解析，它们的产物是拼起来的，
     没有标记的话「这条命中在第几页」这个问题就永远答不出来——
     而引文页码是"答案可核查"的前提（架构 §5）。
@@ -179,6 +219,11 @@ def _split_blocks(markdown: str) -> list[tuple[str, str | None, int | None]]:
     所以现在是：标记设置当前页，之后所有段落都带上它，直到下一个标记。
     空行、标题都不影响（它们只是分块信号，不是分页信号）。
 
+    **但"当前页"不是无条件可信**：沿用只在标记逐页相连时才等于真话。
+    ``trusted`` 给出这份 Markdown 里能钉死的页码集合（见 :func:`trusted_pages`），
+    不在其中的一律回 ``None``——**报一个错页码比不报更糟**（同一条原则见
+    ``core/page_markers.py`` 里"宁缺勿错"的说明）。默认空集合 = 一个都不信。
+
     **标记本身不进 chunk 正文**：它是给这里读的元数据，留在正文里会污染检索文本，
     也会让嵌入向量被一串 HTML 注释干扰。
     """
@@ -194,7 +239,8 @@ def _split_blocks(markdown: str) -> list[tuple[str, str | None, int | None]]:
         text = "\n".join(pending).strip()
         pending.clear()
         if text:
-            blocks.append((text, heading_path(), current_page))
+            page = current_page if current_page in trusted else None
+            blocks.append((text, heading_path(), page))
 
     for line in markdown.splitlines():
         stripped = line.strip()

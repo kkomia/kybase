@@ -267,6 +267,28 @@ class TestMergeParts:
         with pytest.raises(ValueError, match="不一致"):
             merge_parts(["甲"], [PageRange(1, 1), PageRange(2, 2)])
 
+    def test_每段内部的页标记被抬成绝对页号(self) -> None:
+        """段是**单独提交**给解析引擎的，它给的页号是这一段内部的（第 1 页起）。
+
+        不抬的话合并产物里会出现 `…200, 201, 1, 2…`：读侧看到页码倒着走，
+        只能把第二段之后的正文全标成第 1 页。实测一份 585 页的 PDF 就是这样，
+        1047 块里 713 块成了第 1 页。
+        """
+        merged = merge_parts(
+            [f"{render_page_marker(1)}\n\n甲", f"{render_page_marker(1)}\n\n乙"],
+            [PageRange(1, 500), PageRange(501, 1000)],
+        )
+
+        # 第二段自己的第 1 页 = 整份文档的第 501 页
+        assert merged.count(render_page_marker(501)) == 2
+        assert render_page_marker(1) in merged
+        # 正文一个字符都不能因此变动
+        assert "甲" in merged and "乙" in merged
+
+    def test_没有标记的段不受影响(self) -> None:
+        merged = merge_parts(["甲", "乙"], [PageRange(1, 500), PageRange(501, 1000)])
+        assert merged.count("<!--") == 2
+
 
 # ------------------------------------------------------ PageRangeSplitter
 

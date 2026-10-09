@@ -180,17 +180,21 @@ class MinerUCloudParser(ParserProvider):
 
         # 页码：按 content_list 的 page_idx 顺序锚定，在合并 Markdown 里插页标记。
         # 定位不到的边界宁可跳过（"宁缺勿错"，见 core/page_markers 的说明）。
+        # 总页数要一并传进去：定位靠"第 N 页 / 共 P 页"的位置先验挡住假锚点，
+        # 少了 P 这道判据就失效了。
         markdown = parsed.markdown
+        # content_list 的页数比探测准（探测只读文本层，VLM 后端页数可能不同）
+        page_count = parsed.page_count or (probe.page_count if probe else None)
         if parsed.page_blocks:
             markdown = insert_page_markers(
-                markdown, locate_block_offsets(markdown, parsed.page_blocks)
+                markdown,
+                locate_block_offsets(markdown, parsed.page_blocks, page_count=page_count),
             )
 
         return ParseResult(
             markdown=markdown,
             parser_name=self.name,
-            # content_list 的页数比探测准（探测只读文本层，VLM 后端页数可能不同）
-            page_count=parsed.page_count or (probe.page_count if probe else None),
+            page_count=page_count,
             probe=probe,
             image_ids=[image.name for image in parsed.images],
         )
