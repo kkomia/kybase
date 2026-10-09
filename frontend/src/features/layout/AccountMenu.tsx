@@ -6,12 +6,11 @@
  * **不提供在系统里切换使用者的入口**：切换身份必须先登出再登录——一个下拉就能换人，
  * 会让"我以为我是谁"和"后端认为我是谁"分叉。
  *
- * 菜单四项（都是"这一份界面上成立的事"）：
+ * 菜单三项（都是"这一份界面上成立的事"）：
  *
  * | 菜单项 | 做什么 | 为什么在这里 |
  * | --- | --- | --- |
  * | 头像 | 换一张脸（`AvatarDialog`） | 低频、只跟账号有关，所以收进二级菜单 |
- * | API 密钥 | 管理长期密钥（`ApiKeysDialog`） | 控制台级端点（只认管理员会话），与账号同区 |
  * | 切换为浅色 / 深色 | 翻到另一边 | 低频，且"这台机器怎么显示"属于设置；这里给一条近路 |
  * | 退出登录 | 退会话 → 清本地 → 去登录页 | 不可逆，摊在页脚上误点代价高，所以收进二级菜单 |
  *
@@ -23,10 +22,9 @@
  * 而这份界面是知识库服务的独立管理台。用户管理（`/users`）也住在那个弹窗里，
  * 一并没进来——它要摆哪、要不要摆，是紧接着的界面工作，不在"把 KB 页面群搬出来"这一刀里。
  *
- * 「API 密钥」是例外地单独补进来的一项（2026-10-09）：`/api-keys` 那一族挂在
- * **服务器档**（不在上游那个本机档弹窗的端点清单里），本仓的服务端就是它，
- * 所以不走"等设置弹窗"那条路，直接在账号区开一项；非管理员打开看到的是 403 态
- * （弹窗里那条判据写着理由）。
+ * 「API 密钥」曾经也在这里（2026-10-09 上半场补的一项弹窗），同一天**搬成了侧栏上的一页**
+ * （`features/misc/settings/ApiKeysPage`）：它够日常、又要有自己的地址栏入口，而弹窗每次打开
+ * 都从零重来、也进不了书签。所以这一份菜单里只剩"我是谁"那三件事。
  *
  * 上游还有两处本机档专用的东西，这里一并没有（不是隐藏，是代码里不存在）：
  *
@@ -53,7 +51,6 @@
 import { useState } from 'react'
 import {
   RiArrowDownSLine,
-  RiKeyLine,
   RiLogoutBoxRLine,
   RiMoonLine,
   RiSunLine,
@@ -62,7 +59,6 @@ import {
 import { useNavigate } from 'react-router'
 
 import { AvatarDialog } from '@/features/misc/settings/AvatarDialog'
-import { ApiKeysDialog } from '@/features/misc/settings/ApiKeysDialog'
 import { setTheme, useThemeMode } from '@/features/misc/settings/useTheme'
 import { cn } from '@/lib/utils'
 import { logout } from '@/lib/sessionActions'
@@ -114,7 +110,6 @@ export function AccountMenu() {
   const { collapsed } = useSidebar()
 
   const [avatarOpen, setAvatarOpen] = useState(false)
-  const [apiKeysOpen, setApiKeysOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
   /** 这一行写谁：账号的名字（写不出来就留白，见文件头那一段）。 */
@@ -169,7 +164,7 @@ export function AccountMenu() {
             </Avatar>
             {/* 名字、角色、箭头都用 max-width 收（`.ly-collapsible`），
                 折叠态收到 0 而不是 `display: none`——后者是瞬时的，没有过渡可接 */}
-            {/* 行高**归 20px**（`leading-5` ✓）：Kimi 那份对照表里是 `14px/20px 500`，
+            {/* 行高**归 20px**（`leading-5`）：Kimi 那份对照表里是 `14px/20px 500`，
                 而默认行高在这套 token 下算出 20.58px —— 差 0.58px，
                 但它是"名字基线比左侧导航项低半像素"这类观感的来源 */}
             <span
@@ -198,13 +193,8 @@ export function AccountMenu() {
               <RiUserLine size={ICON} aria-hidden="true" /> 头像
             </DropdownMenuItem>
           )}
-          {/* 「API 密钥」同样只给真账号：端点只认管理员会话，
-              成员打开看到的是弹窗里的受限态（那里写着理由），所以入口不收起 */}
-          {currentUser && (
-            <DropdownMenuItem onSelect={() => setApiKeysOpen(true)}>
-              <RiKeyLine size={ICON} aria-hidden="true" /> API 密钥
-            </DropdownMenuItem>
-          )}
+          {/* 「API 密钥」不在这里：2026-10-09 起它是侧栏上的一页（`/api-keys`）。
+              这一份菜单只留"我是谁"那三件事（见文件头那张表）。 */}
           <DropdownMenuItem onSelect={onToggleTheme}>
             {dark ? (
               <RiSunLine size={ICON} aria-hidden="true" />
@@ -238,7 +228,6 @@ export function AccountMenu() {
         url={currentUser?.avatar_url ?? ''}
         onClose={() => setAvatarOpen(false)}
       />
-      <ApiKeysDialog open={apiKeysOpen} onClose={() => setApiKeysOpen(false)} />
     </>
   )
 }

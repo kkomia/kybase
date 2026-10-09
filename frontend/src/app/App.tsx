@@ -43,6 +43,8 @@ const WikiView = lazy(PAGES.wiki)
 const DocumentView = lazy(PAGES.document)
 const LoginPage = lazy(PAGES.login)
 const TasksPage = lazy(PAGES.tasks)
+const ToolsPage = lazy(PAGES.tools)
+const ApiKeysPage = lazy(PAGES.apiKeys)
 const DashboardPage = lazy(PAGES.dashboard)
 const NotFoundPage = lazy(PAGES.notFound)
 
@@ -86,6 +88,8 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/kb\//, '文档列表'],
   [/^\/documents\//, '文档详情'],
   [/^\/tasks/, '任务中心'],
+  [/^\/tools/, '工具'],
+  [/^\/api-keys/, 'API 密钥'],
 ]
 
 /**
@@ -230,6 +234,10 @@ export function App() {
                 <Route path="/documents/:documentId" element={<DocumentView />} />
                 {/* 任务中心：流水线任务（摄入 / 解析 / 索引）与运行负载 */}
                 <Route path="/tasks" element={<TasksPage />} />
+                {/* 对外能力：工具目录（含 MCP 地址与随附技能）——任何登录会话都读得到 */}
+                <Route path="/tools" element={<ToolsPage />} />
+                {/* API 密钥：端点只认管理员；成员进来看到的是页面自己的受限态 */}
+                <Route path="/api-keys" element={<ApiKeysPage />} />
                 {/* 旧地址保留成重定向，免得旧书签变 404（与上游同一处置） */}
                 <Route path="/search" element={<Navigate to="/knowledge-bases" replace />} />
                 <Route path="*" element={<NotFoundPage />} />

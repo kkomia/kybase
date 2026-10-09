@@ -12,6 +12,14 @@
 /** 任务中心：任务列表。 */
 export const TASKS_QUERY_KEY = ['tasks', 'list'] as const
 
+/**
+ * 工具目录（`GET /tools`）。
+ *
+ * 两个页面读**同一份**：「工具」页整页渲染它，API 密钥页的「工具范围」拿它当候选项
+ * （以及把回显的工具名翻译成标签）。共用一个键，于是划过侧栏那两项时不会各拉一趟。
+ */
+export const TOOLS_QUERY_KEY = ['tools', 'catalogue'] as const
+
 /** 概览：统计窗口（天）。 */
 export const DASHBOARD_WINDOW_DAYS = 365
 

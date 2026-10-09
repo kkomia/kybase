@@ -5,7 +5,7 @@
  *
  * ```
  * 品牌位（环行星标 + 折叠开关）
- * 主导航：所有知识库 / 概览 / 任务中心（三个**顶层**项，没有父分组）
+ * 主导航：所有知识库 / 概览 / 任务中心 / 工具 / API 密钥（**顶层**项，没有父分组）
  * 页脚：账号（头像 + 名字 → 向上展开的菜单）
  * ```
  *
@@ -22,19 +22,20 @@
  * | 历史会话面板（`ConversationHistoryPanel`） | 无 | 同上；`AppShell` 里那一段也一并摘掉 |
  * | 全局快捷键（`chat.new` / `layout.toggleSidebar`） | 无 | 那段绑定住在 kylab 的 chat 域与设置域的快捷键注册表里，随会话面一起留下；折叠开关照旧在品牌位那颗按钮上（`useSidebar`） |
  *
- * 留下的三件事一件没少：**品牌位（含折叠）**、**三个顶层导航项**、
+ * 留下的三件事一件没少：**品牌位（含折叠）**、**主导航**、
  * **账号区**（头像 / 主题 / 退出登录，见 `AccountMenu`）。
  *
- * ## 主导航：三条固定项、**拍平成顶层**
+ * ## 主导航：固定几项、**拍平成顶层**
  *
- * 上游把这三条挂在「知识库」这个可折叠父分组下面。而这一份界面**整个就是知识库控制台**，
+ * 上游把知识库那几条挂在「知识库」这个可折叠父分组下面。而这一份界面**整个就是知识库控制台**，
  * 父分组除了把"这里是知识库"再说一遍之外不提供任何层级信息，还白占一行与一次折叠动作
  * ——所以分组头连同它的箭头、展开态、以及"收起时才点亮"的那个组级选中态一起删掉，
- * 三条子项提成顶层导航项（`NAV_ITEMS`），行样式沿用导航项那一套（`NAV_ROW`）。
+ * 子项提成顶层导航项（`NAV_ITEMS`），行样式沿用导航项那一套（`NAV_ROW`）。
  *
- * 三项**无条件渲染**：连不上的处置在页面自己身上（页面进页时那条读会报它自己的错）。
- * 顺序照旧：所有知识库（`/knowledge-bases`）/ 概览（`/`，exact）/ 任务中心（`/tasks`）；
- * 选中态也照旧**各算各的**（`isActive`），不再有"整组亮起来"那一条。
+ * 各项**无条件渲染**：连不上的处置在页面自己身上（页面进页时那条读会报它自己的错）。
+ * 顺序：所有知识库（`/knowledge-bases`）/ 概览（`/`，exact）/ 任务中心（`/tasks`）/
+ * 工具（`/tools`）/ API 密钥（`/api-keys`）；后两项是 2026-10-09 补的对外能力面
+ * （见 `NAV_ITEMS` 那张表）。选中态**各算各的**（`isActive`），不再有"整组亮起来"那一条。
  *
  * ## 图标：Remix Icon（与上游同一套）
  *
@@ -43,6 +44,8 @@
  * | 所有知识库 | `book-2-line` |
  * | 概览 | `dashboard-line` |
  * | 任务中心 | `task-line` |
+ * | 工具 | `tools-line` |
+ * | API 密钥 | `key-2-line` |
  * | 品牌标 | 环行星（`features/chat/ui/Logo.tsx` 的 `mark`） |
  * | 折叠开关 | 自绘（`./icons.tsx`，用户给的 iconfont 原稿） |
  *
@@ -56,7 +59,7 @@
 import { Link, useLocation } from 'react-router'
 
 import { preloadPage } from '@/app/routes'
-import { RiBook2Line, RiDashboardLine, RiTaskLine } from '@remixicon/react'
+import { RiBook2Line, RiDashboardLine, RiKey2Line, RiTaskLine, RiToolsLine } from '@remixicon/react'
 
 import { Logo } from '@/features/chat/ui/Logo'
 import { cn } from '@/lib/utils'
@@ -82,9 +85,22 @@ const NAV_ROW =
 const NAV_ROW_COLLAPSED = 'gap-0 px-[14px]'
 
 /**
- * 主导航三项：**三条固定项**（所有知识库 / 概览 / 任务中心），**无条件渲染**（上游 R5 的口径照搬）。
+ * 主导航：**固定几项**，**无条件渲染**（上游 R5 的口径照搬）。
  *
- * 顺序与图标照上游「知识库」那一组的三条子项原样搬过来，只是不再有父分组（见文件头）。
+ * | 位置 | 页面 | 为什么在这里 |
+ * | --- | --- | --- |
+ * | 所有知识库 | `/knowledge-bases` | 库清单，进来的第一站 |
+ * | 概览 | `/` | 驾驶舱，与上游同一落地页 |
+ * | 任务中心 | `/tasks` | 流水线任务与运行负载 |
+ * | 工具 | `/tools` | 这个服务对外提供了什么（工具 / MCP 地址 / 技能） |
+ * | API 密钥 | `/api-keys` | 管长期密钥；端点只认管理员，成员进去看到受限态 |
+ *
+ * 前三项是「知识库这个控制台」的日常面；后两项（工具与 API 密钥）是**对外能力**那一面，
+ * 2026-10-09 补进来时排在后面：它们回答的是"外面怎么接进来"，与改库、看任务不同一件事。
+ * 「API 密钥」原来挂在账号菜单上（`AccountMenu`）——它够日常、又要有自己的地址栏入口，
+ * 所以搬成这一页；账号菜单里只剩头像与主题（翻转那一项）。
+ *
+ * 顺序与图标：前三条照上游「知识库」那一组原样搬过来，只是不再有父分组（见文件头）。
  * 这一栏**不列每个库的名字**：库可能几十个，全铺在侧栏上正是"知识库占的地方太多"的根源
  * （上游原话）。
  *
@@ -92,8 +108,12 @@ const NAV_ROW_COLLAPSED = 'gap-0 px-[14px]'
  * 该有的动作）。这一份只留下 `slide`（书脊滑进来）那一族——它是 `layout.css` 里唯一还有
  * 关键帧的：另外三族（气泡落下 / 便签放上 / 记忆歪头）服务的图标长在 agent 域，
  * 随那些条目一并删了。拍平之前它长在分组头那颗书脊图标上，现在**跟着那颗图标留在
- * 「所有知识库」这一项**；另外两项挂一个没有关键帧的类名等于"悬停没反应"，
+ * 「所有知识库」这一项**；另外几项挂一个没有关键帧的类名等于"悬停没反应"，
  * 所以它们的 `motion` 是 `undefined`——不是漏了。
+ *
+ * `page` 是这一项对应的**懒加载入口名**（`app/routes.ts` 的 `PAGES`）：划过/聚焦时按它
+ * 预热那一页的代码。**必须逐项写自己的**——写死某一个的话，划过「工具」预热的是知识库
+ * 那一页，点进去照旧等一次 chunk。
  */
 const NAV_ITEMS = [
   {
@@ -102,24 +122,47 @@ const NAV_ITEMS = [
     icon: RiBook2Line,
     exact: true,
     motion: 'slide',
+    page: 'knowledgeBases',
   },
   // 「概览」= 驾驶舱，住 `/`（与上游一致：落地页就是概览，书签不用改）。
   // `/dashboard` 只是同一页的旧入口，在路由表里是一条重定向。
-  { to: '/', label: '概览', icon: RiDashboardLine, exact: true, motion: undefined },
-  { to: '/tasks', label: '任务中心', icon: RiTaskLine, exact: false, motion: undefined },
+  {
+    to: '/',
+    label: '概览',
+    icon: RiDashboardLine,
+    exact: true,
+    motion: undefined,
+    page: 'dashboard',
+  },
+  {
+    to: '/tasks',
+    label: '任务中心',
+    icon: RiTaskLine,
+    exact: false,
+    motion: undefined,
+    page: 'tasks',
+  },
+  {
+    to: '/tools',
+    label: '工具',
+    icon: RiToolsLine,
+    exact: false,
+    motion: undefined,
+    page: 'tools',
+  },
+  {
+    to: '/api-keys',
+    label: 'API 密钥',
+    icon: RiKey2Line,
+    exact: false,
+    motion: undefined,
+    page: 'apiKeys',
+  },
 ] as const
 
 export function SideNav() {
   const location = useLocation()
   const { collapsed, toggleSidebar } = useSidebar()
-
-  /**
-   * 导航项被划过/聚焦时顺手把那一页的代码拉下来（点进去不必等 chunk，
-   * 与导航项同一条做法）。列表数据由页面自己进页时拉，导航项不替它发请求。
-   */
-  function preloadKnowledgeBases(): void {
-    preloadPage('knowledgeBases')
-  }
 
   function isActive(to: string, exact: boolean): boolean {
     return exact ? location.pathname === to : location.pathname.startsWith(to)
@@ -156,15 +199,16 @@ export function SideNav() {
       </div>
 
       <nav className="flex flex-col px-2 pb-2" aria-label="主导航">
-        {/* 三条**顶层**导航项（所有知识库 / 概览 / 任务中心），**不列库名**、**无条件渲染**：
+        {/* **顶层**导航项（见 `NAV_ITEMS`），**不列库名**、**无条件渲染**：
             没有父分组、没有箭头、没有展开态——这一栏整个就是知识库控制台（见文件头）。 */}
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.to}
             to={item.to}
-            /* 划过就先把知识库那一页的代码、以及"上次看到的那份"一起拿回来（照上游）。 */
-            onMouseEnter={() => preloadKnowledgeBases()}
-            onFocus={() => preloadKnowledgeBases()}
+            /* 划过就把**这一项自己那一页**的代码拉下来（照上游）。列表数据由页面自己进页时拉，
+               导航项不替它发请求。 */
+            onMouseEnter={() => preloadPage(item.page)}
+            onFocus={() => preloadPage(item.page)}
             /* 选中态用**中性 alpha 底**（不是品牌色底，Kimi 的实测值），而且是类名不是内联样式：
                内联样式会压过 `:hover`，鼠标划过当前项就没了反馈 */
             className={cn(

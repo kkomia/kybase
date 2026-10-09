@@ -3004,6 +3004,71 @@
     color: var(--text-tertiary);
   }
 
+  /* ---------------------------------------------------------------- 一行的主列（几行字竖排） */
+
+  /* 通用列表行的"主列"是竖着排的几行字（名称 / 前缀 / 时间…）。
+     **不能借用 `.m-row-main`**：它在本文件后面被任务行改成了横向（同名规则只按出现顺序
+     覆盖），借它这几行字会挤成一排。 */
+  .m-row-lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ---------------------------------------------------------------- 工具页（对外工具面） */
+
+  .m-tool-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+
+  /* 表头与数据行**引用同一批列宽**：`.m-tool-col-name` 是灵活的标题列，
+     另外两列定宽——两处各写一份就会像任务中心那次一样错位。 */
+  .m-tool-col-name {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* 技术标识（工具名）：跟在标签后面，等宽字、比标签轻一档 */
+  .m-tool-id {
+    font-family: var(--font-mono);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .m-tool-col-perm {
+    display: flex;
+    flex: 0 0 96px;
+  }
+
+  .m-tool-col-params {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    flex: 0 0 280px;
+  }
+
+  .m-tool-param {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+  }
+
+  .m-tool-param-required {
+    font-size: var(--text-micro-size);
+    color: var(--status-warning);
+  }
+
   /* ---------------------------------------------------------------- 窄屏 */
 
   @media (max-width: 960px) {

@@ -4,6 +4,10 @@
  *
  * 这一族端点**只认管理员会话**（后端 `require_admin`，明文钥匙自己打不开它）；
  * 明文只在创建响应里出现一次（`ApiKeyIssued.token`），列表里只有展示用的 `prefix`。
+ *
+ * 一把钥匙有三条**并列**的收窄轴，三条都是"空 = 不限"：
+ * `permission`（只读 / 读写）、`knowledge_base_ids`（哪些库）、
+ * `allowed_tool_names`（哪些 MCP 工具）。第三条的候选项只能来自 `GET /tools`。
  */
 
 import { request } from './client'
@@ -24,6 +28,8 @@ export interface ApiKeyCreate {
   permission?: ApiKeyPermission
   /** 空 = 不限定范围（全部知识库都可用这把钥匙）。 */
   knowledge_base_ids?: string[]
+  /** 空 = 不限定工具（这把钥匙能调全部工具）。 */
+  allowed_tool_names?: string[]
 }
 
 export function listApiKeys(): Promise<{ items: ApiKey[] }> {
