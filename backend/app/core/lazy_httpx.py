@@ -24,8 +24,13 @@ httpx.Client(...)                        # 第一次访问属性时才真正导�
 
 ## 判据
 
-``python scripts/sidecar-closure.py``（只读）重跑，看 ``httpx`` / ``click`` / ``pygments``
-是否从导入闭包里消失 ✓ —— "看代码觉得不该有"不算判据 ✗。
+"看代码觉得不该有"不算判据 ✗ ——量一次真导入闭包：
+
+```sh
+python -c "import sys, app.core.http; print('click' in sys.modules, 'pygments' in sys.modules)"
+```
+
+两个都应当是 ``False``（``httpx`` 自身也还没进 ``sys.modules``，第一次访问属性才进）。
 """
 
 from __future__ import annotations

@@ -30,8 +30,7 @@
    （而"库里还有明文"至少是可重跑的状态）；
 3. **失败不清明文**（§4.3-5）：那一条进 ``failed``、库里那份原样留着，
    下次可以重跑——"不清就不算迁完"；
-4. **清页**：迁移完在源库上收一次空闲页（见 :meth:`CredentialsService._shrink`
-   那段"能做的与做不到的"）。
+4. **清页**：迁移完在源库上收一次空闲页（见 :meth:`CredentialsService._shrink`）。
 
 ## 过渡态可观测（§4.2 末段）
 
@@ -48,14 +47,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.exceptions import ConflictError, SecretStoreUnavailable
+from app.core.exceptions import SecretStoreUnavailable
 from app.services.secrets import (
     SecretStore,
     model_provider_target,
     nas_token_target,
     setting_target,
 )
-from app.storage.base import ModelProviderRecord, StorageError, StoreBundle
+from app.storage.base import ModelProviderRecord, StoreBundle
 
 __all__ = [
     "MIGRATED_SETTING_KEYS",
@@ -220,42 +219,15 @@ class CredentialsService:
     def _shrink(self) -> None:
         """清页：把腾出来的那些页**真的**交还给系统（方案 §4.3-3）。
 
-        走 ``StoreBundle.eraser``（``LocalEraser.secure_erase``）：那一个动作里依次做完
-        ``PRAGMA secure_delete = ON`` → ``VACUUM`` → ``PRAGMA wal_checkpoint(TRUNCATE)``。
-        三件事都得做，缺哪一件都留一种残留：
+        清掉库里的行 / 列之后，腾出来的空闲空间还留在表里，所以迁移完在源库上收一次页
+        （``MetaStore.vacuum``；PG 的 ``VACUUM`` 幂等，重跑无害）。
 
-        - 缺抹零：被删的行 / 被清的列还在空闲页里等着被捡走；
-        - 缺 ``VACUUM``：那些页还没还给系统（文件里那块空间仍是这一份数据的历史）；
-        - 缺收 WAL：**WAL 模式下明文最近的一份提交先落在 ``kylab.db-wal`` 里**，前两步只
-          保证主库干净——旧帧还躺在那个文件里（阶段 6 实测：630 KB 的 ``-wal`` 里还能
-          grep 到明文）。这一条正是"迁移完就干净了"与"等边车退出才干净"的分界。
-
-        那套判据（"同一次运行里、不重启、不关库，主库 + ``-wal`` 里 grep 哨兵串 0 命中"）
-        原先由 ``tests/unit/storage/sqlite_impl/test_secure_erase.py`` 钉着——
-        本机档与那个库一起拆除了。
-
-        为什么还要那个 ``None`` 分支：**这个服务里 ``StoreBundle.eraser`` 恒为 ``None``**
-        （它只有本机档有）——真实走到这里的情形不存在（钥匙串不可用时 ``migrate``
-        一开始就抛了），但接口上它是个合法状态，所以退回 ``vacuum()``
-        （至少把空闲页收掉），并在日志里说明"WAL 那一步没做"。
-
-        收 WAL 那一步撞上别的读者（``StorageError``）→ 翻成 ``ConflictError``（409）：
-        迁移**已经完成**了（钥匙串里有值、库里那几行 / 列也清了），只是收尾没做完。
-        原样抛出去会以 500「服务端出错了」的形式落到界面上——那句话把"再点一次就好"
-        藏了起来，而这件事是可重试的（清页那三步都幂等）。
+        **只剩这一步了**：原先还有一条 ``StoreBundle.eraser`` 的
+        ``secure_delete`` → ``VACUUM`` → ``wal_checkpoint(TRUNCATE)`` 三连，
+        那是给 SQLite 主库 + ``-wal`` 收尾用的（本机档与那个库随 v0.1.0 瘦身一起拆除）。
+        PG 的预写日志在服务端，进程内没有"顺手把 WAL 截掉"这件事。
         """
-        eraser = self._stores.eraser
-        if eraser is None:  # pragma: no cover - 服务器档进不到这里（钥匙串不可用就先抛了）
-            logger.warning(
-                "没有可用的安全擦除面（StoreBundle.eraser 为 None）：只做了 VACUUM，"
-                "-wal 里那几帧等下次检查点收掉"
-            )
-            self._stores.meta.vacuum()
-            return
-        try:
-            eraser.secure_erase()
-        except StorageError as exc:
-            raise ConflictError(f"{exc}（凭据那几步已经完成，重跑一次这一步即可）") from exc
+        self._stores.meta.vacuum()
 
     # ------------------------------------------------------------------ 待迁清单
 

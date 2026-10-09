@@ -218,8 +218,8 @@ def platform_store() -> SecretStore:
 class SecretStore(Protocol):
     """一处「秘密来源」：四条操作，三个实现（方案 §4.1）。
 
-    三个实现都满足它（``runtime_checkable`` 与 ``ImportLedger`` / ``SnapshotSource``
-    同一手法：结构满足 + 装配时一句 ``isinstance`` 核对，不靠继承）。
+    三个实现都满足它（``runtime_checkable``：结构满足 + 装配时一句 ``isinstance``
+    核对，不靠继承）。
     """
 
     def available(self) -> bool:
