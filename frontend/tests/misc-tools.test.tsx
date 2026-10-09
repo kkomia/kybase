@@ -1,25 +1,34 @@
 /**
  * 工具页（`features/misc/tools/ToolsPage`）的用例。
  *
- * 覆盖四件"丢了就误导人"的事：
+ * 覆盖五件"丢了就误导人"的事：
  *
  * 1. **一条工具都不写死**：页面上出现哪些行、标签与参数长什么样，全由 `GET /tools` 决定
  *    （用例摆一份三条工具的目录，页面就该出三行）；
  * 2. **MCP 地址没配时照实说没配**，不是留白、也不是拼一个地址；
- * 3. **权限与参数两列**：权限按 `requires_write` 分档；参数列名字 + 必填标记，
+ * 3. **工具面指纹**：整串显示、一键复制——接入方拿它跟自己对的那一版核；
+ * 4. **权限与参数两列**：权限按 `requires_write` 分档；参数列名字 + 必填标记，
  *    参数说明只在非空时挂 `title`；
- * 4. **与 API 密钥的关系**：那一句链到 `/api-keys`（按工具收窄范围的地方）。
+ * 5. **与 API 密钥的关系**：那一句链到 `/api-keys`（按工具收窄范围的地方）。
  */
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/tools', () => ({ getToolCatalogue: vi.fn() }))
 
+vi.mock('@/lib/clipboard', () => ({ copyText: vi.fn(async () => true) }))
+
 import { getToolCatalogue, type ToolCatalog } from '@/api/tools'
 import { ToolsPage } from '@/features/misc/tools/ToolsPage'
 import { renderMisc } from '@/features/misc/testing/harness'
+import { copyText } from '@/lib/clipboard'
 
 const getToolCatalogueMock = vi.mocked(getToolCatalogue)
+const copyTextMock = vi.mocked(copyText)
+
+/** 工具面的指纹：12 位十六进制，工具面一变它就变（后端 `surface_fingerprint()`）。 */
+const FINGERPRINT = '7d10b9d1586e'
 
 function toolCatalog(overrides: Partial<ToolCatalog> = {}): ToolCatalog {
   return {
@@ -50,6 +59,7 @@ function toolCatalog(overrides: Partial<ToolCatalog> = {}): ToolCatalog {
       },
     ],
     mcp_endpoint: 'http://nas:8000/mcp',
+    surface_fingerprint: FINGERPRINT,
     skill: {
       name: 'kylab-knowledge-base',
       summary: '在你的知识库里检索原文段落',
@@ -83,6 +93,19 @@ describe('接入方式', () => {
     renderMisc(<ToolsPage />)
 
     expect(await screen.findByText('这一档没有配 MCP 地址。')).toBeInTheDocument()
+  })
+
+  it('工具面指纹：整串显示 + 一键复制（接入方拿它对契约那一版）', async () => {
+    const user = userEvent.setup()
+    renderMisc(<ToolsPage />)
+
+    expect(await screen.findByText(FINGERPRINT)).toBeInTheDocument()
+    // 那一行说明它什么时候会变（短标签，不是对页面的解释）
+    expect(screen.getByText('工具面一变此值就变。')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '复制工具面指纹' }))
+
+    expect(copyTextMock).toHaveBeenCalledWith(FINGERPRINT)
   })
 })
 

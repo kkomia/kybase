@@ -20,6 +20,7 @@ const CATALOG = {
     },
   ],
   mcp_endpoint: 'http://nas:8000/mcp',
+  surface_fingerprint: '7d10b9d1586e',
   skill: {
     name: 'kylab-knowledge-base',
     summary: '在你的知识库里检索原文段落',
@@ -57,6 +58,8 @@ describe('getToolCatalogue', () => {
     expect(catalog.items[0].name).toBe('search')
     expect(catalog.items[0].params[0].required).toBe(true)
     expect(catalog.skill.transports).toEqual(['mcp', 'rest'])
+    // 工具面指纹原样交回（不做加工、不截断）：接入方靠它判断契约变没变
+    expect(catalog.surface_fingerprint).toBe('7d10b9d1586e')
   })
 
   it('mcp_endpoint 为 null 时照实交回 null（不替它编一个地址）', async () => {

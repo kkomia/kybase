@@ -99,6 +99,7 @@ function toolCatalog(): ToolCatalog {
       },
     ],
     mcp_endpoint: 'http://nas:8000/mcp',
+    surface_fingerprint: '7d10b9d1586e',
     skill: {
       name: 'kylab-knowledge-base',
       summary: '在你的知识库里检索原文段落',

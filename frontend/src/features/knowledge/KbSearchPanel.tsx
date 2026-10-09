@@ -12,6 +12,18 @@
  * **判定排在命中上面**（v0.55 起后端给了 `summary` 与 `fit`）：这个服务的产品口径是
  * "判定在前、原文在后"，控制台里也得是这个顺序——`fit="none"` 表示"这个库答不了
  * 这个问题"，它不是检索失败。
+ *
+ * **逐条那一格读的是余弦**（`similarity`），不是融合分：融合分只反映名次
+ * （`1/(k+rank)` 量级），把它当"相似度"显示是把名次当成了像不像。只有词面通道捞上来的
+ * 命中没有余弦，那一格就写「词面命中」——它们正是 `min_score` 管不到的那一批
+ * （后端把条数记在 `decision.unscored_kept` 里，判定行照实报出来）。
+ *
+ * **一页不是全部**（v0.63 起可翻页）：`next_offset` 非空时判定行写「还有更深的候选」。
+ * 面板自己不翻页——它只把"手里这份是不是全部"说清楚。
+ *
+ * **那一格数字发成两个**：`keep`（这一页几条）与 `top_k`（这次能翻到的池子深浅）都发
+ * 用户填的那个数。只发 `top_k` 的话，一页仍按后端**建议**剪（常常比用户要的少），
+ * 于是"填 8 却回 4"——用户要的是"最多 N 条"，那个上限得自己说出来。
  */
 import { useEffect, useState } from 'react'
 import { RefreshCw, Search } from 'lucide-react'
@@ -107,6 +119,16 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
   const fit = latest?.response?.distribution?.fit
   /** 收敛砍掉的条数（与"元数据过滤掉"不是同一件事：那一刀切在检索之前）。 */
   const dropped = latest?.response?.decision?.dropped ?? 0
+  /**
+   * 这一页里**只有词面通道**捞上来的条数：它们没有余弦（`similarity` 为 `null`），
+   * `min_score` 那一刀对它们不成立——所以高阈值下回来一批这样的命中不是坏了，是那一刀
+   * 管不到它们。数出来的判据与逐条那枚标是同一个（`similarity === null`）。
+   */
+  const wordOnly = latest?.response?.hits.filter((hit) => hit.similarity === null).length ?? 0
+  /** 其中真绕过下限的条数：后端数的（`decision.unscored_kept`），不是这里推的。 */
+  const unscoredKept = latest?.response?.decision?.unscored_kept ?? 0
+  /** 下一页的起点；`null` = 这一页就是全部（翻到底了）。 */
+  const nextOffset = latest?.response?.next_offset ?? null
 
   async function runSearch(raw?: string): Promise<void> {
     const text = (raw ?? query).trim()
@@ -119,11 +141,17 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
     setTurns((current) => [...current, turn])
     setActiveTurn(turns.length)
     try {
+      // 一格数字 → 两个参数：`keep` 是这一页几条、`top_k` 是这次能翻到的池子深浅。
+      // 两个都发同一个数（`top_k` 因此永远不会小于 `keep`）——只发 `top_k` 的话一页
+      // 仍按后端建议剪，用户要 8 条只会回来那一档建议（常常 4 条）。
+      // 空着 / 填不出数按 8 走；负数与小数先夹到 ≥1 的整数，别让它变成一次 422。
+      const wanted = Math.max(1, Math.trunc(Number(topK)) || 8)
       const response = await search({
         query: text,
         kb_ids: [kbId],
         mode,
-        top_k: Number(topK) || 8,
+        keep: wanted,
+        top_k: wanted,
         candidate_k: Number(candidateK) || 40,
         rerank,
       })
@@ -186,11 +214,12 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                   </Select>
                 </label>
                 <label className="field kb-narrow">
-                  <span className="field-label">返回条数</span>
+                  <span className="field-label">返回上限</span>
                   <Input
                     type="number"
+                    min={1}
                     value={topK}
-                    aria-label="返回条数"
+                    aria-label="返回上限"
                     onChange={(event) => setTopK(event.target.value)}
                   />
                 </label>
@@ -302,6 +331,12 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                     </span>
                     {latest.response.reranked ? <span>已 rerank</span> : null}
                     {dropped > 0 ? <span>收敛掉 {formatCount(dropped)} 条</span> : null}
+                    {/* 词面命中没有余弦可比：高阈值下它们照样回来，这一格把原因说出来
+                        （不然那一批 `similarity` 为空的行看起来像个坏掉的分数）。 */}
+                    {wordOnly > 0 ? <span>词面命中 {formatCount(wordOnly)} 条</span> : null}
+                    {unscoredKept > 0 ? <span>未过下限 {formatCount(unscoredKept)} 条</span> : null}
+                    {/* 这一页只是一趟更深检索里的一段：还有就照实说（面板不翻页，只报事实）。 */}
+                    {nextOffset !== null ? <span>还有更深的候选</span> : null}
                     {latest.response.filtered_out > 0 ? (
                       <span>元数据过滤掉 {latest.response.filtered_out} 条</span>
                     ) : null}
@@ -357,7 +392,9 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                               <span className="kb-hit-meta">第 {hit.page} 页</span>
                             ) : null}
                             <span className="kb-hit-score" style={{ marginLeft: 'auto' }}>
-                              {formatScore(hit.score)}
+                              {hit.similarity === null
+                                ? '词面命中'
+                                : `相似度 ${formatScore(hit.similarity)}`}
                             </span>
                           </div>
                           <p

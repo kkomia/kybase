@@ -9,6 +9,11 @@
  * `embedding_is_development=true` 时必须提示用户"向量召回不可信"：
  * 无 API Key 时后端用确定性哈希兜底，只有词面重叠、没有语义，
  * 此时真正可信的信号是 BM25（架构 §6.2）。
+ *
+ * **一页不是全部**（v0.63 起可翻页）：`keep` 现在只管"这一页几条"（上限从 20 抬到 50），
+ * `top_k` 是这次能翻到的总量（上限也是 50），`next_offset` 指下一页的起点。判定
+ * （`summary` / `distribution` / `decision`）在同一个池子的每一页上逐字相同——
+ * 调用方正是靠它决定要不要接着翻。
  */
 
 import { request } from './client'
@@ -23,12 +28,22 @@ export interface SearchFilters {
 export interface SearchRequest {
   query: string
   kb_ids: string[]
+  /**
+   * 这次**能翻到的总量**（1..50，默认 8）。
+   *
+   * 它不是"这一次返回几条"——那个数由 `keep` 说。从前两者是同一个数，v0.63 拆开：
+   * `top_k` 封顶收敛后剩下的那批候选（翻页翻的就是这个池子），上限与 MCP `search`
+   * 广告的是同一个常量。
+   */
   top_k?: number
   mode?: 'hybrid' | 'vector' | 'fulltext'
   candidate_k?: number
   score_threshold?: number
   /**
-   * 收敛后的条数上限（1..20）。
+   * **这一页几条**（1..50）。
+   *
+   * **v0.63 起它是页大小，不是总数**：一共能翻到多少由 `top_k` 封顶，下一页的起点
+   * 在响应的 `next_offset` 里。`offset=0` 时与从前一致（返回的就是前 `keep` 条）。
    *
    * 不给时由后端**按分布建议**（`distribution.suggested`）：那是"这批命中该怎么读"
    * 的判断，调用方自己报一个数只会覆盖它。
@@ -38,6 +53,13 @@ export interface SearchRequest {
   min_score?: number
   /** 每篇文档最多留几条（1..10）——治"同一个问题被同一本手册答好几遍"。 */
   per_doc?: number
+  /**
+   * 翻页的起点（≥0）：跳过前 N 条**幸存者**（收敛之后留下的那一批）。
+   *
+   * 负数不会报错，后端折成 0（顺手给的调节量，不值得一次 422）；越过末尾也不是错，
+   * 回空 `hits` 加 `next_offset: null`。
+   */
+  offset?: number
   rerank?: boolean
   filters?: SearchFilters
 }
@@ -99,7 +121,7 @@ export interface SearchDistribution {
  * （`keep` + `decided_by`），而不是一句"系统自动"。
  */
 export interface SearchDecision {
-  /** 实际生效的条数上限。 */
+  /** 实际生效的**一页条数**上限（v0.63：它不随 `offset` 变，翻页也不改它）。 */
   keep: number
   min_score: number | null
   per_doc: number | null
@@ -108,6 +130,14 @@ export interface SearchDecision {
   fit: SearchFit
   /** 收敛砍掉的条数。 */
   dropped: number
+  /**
+   * 返回的命中里**没被 `min_score` 切**的条数：它们没有余弦可比（词面通道捞上来的），
+   * 所以那一刀对它们不成立。
+   *
+   * 与 `dropped` 是一对：`dropped` 说切掉了几条，它说有几条**没被切**、以及为什么。
+   * 缺了它，"阈值提到 0.99 却回来一批 `similarity: null`"就只剩"看不懂"这一种解释。
+   */
+  unscored_kept: number
 }
 
 export interface SearchHit {
@@ -116,7 +146,22 @@ export interface SearchHit {
   document_name: string | null
   knowledge_base_id: string
   text: string
+  /**
+   * **融合分**（RRF 家族：`1/(k+rank)` 量级）：只反映名次、随排名走。
+   *
+   * 向量档第 1 名恒为 0.0164、hybrid 档第 1 名恒为 0.0328——**它不是相似度**，
+   * 也不该拿来跟相关度下限比（那是 `similarity` 的活）。
+   */
   score: number
+  /** **真实余弦相似度**（向量通道的原始分）；`null` = 这条只被词面通道捞到。 */
+  similarity: number | null
+  /** 这条是哪条通道捞上来的：`"vector"` / `"fulltext"`（就是 `raw_scores` 的键名）。 */
+  basis: string
+  /**
+   * 词面（全文）通道的原始分，**与 `similarity` 不同量纲、不可互相比较**（越大越相关）；
+   * `null` = 这条不是词面捞上来的。交出来是让调用方自己筛：相关度下限只认余弦。
+   */
+  lexical_score: number | null
   page: number | null
   heading_path: string | null
   image_ids: string[]
@@ -138,16 +183,23 @@ export interface SearchResponse {
    *
    * **判定在前**要照原样显示：它是这个服务的产品口径，也是"资料里没有"这句最要紧的话
    * 唯一说得准的地方（空查询 / 没有库那种提前返回是空串）。
+   *
+   * 同一批候选的每一页上它逐字相同（翻页不改判定）。
    */
   summary: string
   /** 兜底阈值之上的命中分布；空查询 / 没有库时是 `null`。 */
   distribution: SearchDistribution | null
   /** 这次实际按什么收敛的；与 `distribution` 同去同留。 */
   decision: SearchDecision | null
+  /** **这一页**的命中（一共能翻到多少由 `top_k` 封顶，见 `next_offset`）。 */
   hits: SearchHit[]
   mode: string
   reranked: boolean
   filtered_out: number
+  /** 这一页从第几条幸存者开始（**回显实际生效的那个数**：请求负数时折成 0）。 */
+  offset: number
+  /** 下一页的起点；`null` = 没有更多了（空页也是 `null`）。照它填回 `offset` 继续翻。 */
+  next_offset: number | null
   stats: ChannelStat[]
   /** 为假时本次只做了全文通道，界面要如实说明。 */
   embedding_configured: boolean

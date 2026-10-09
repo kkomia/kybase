@@ -3,8 +3,9 @@
  *
  * 一条只读端点（`GET /tools`）把三样东西一起给全，这一页照着渲染，**一个工具名都不写死**：
  *
- * 1. **接入方式**：MCP 地址与那份随服务一起发出去的技能（名字 / 路径 / 两条通路）。
- *    MCP 地址没配时后端回 `null`——这里照实说没配，不拼一个"看起来能用"的地址；
+ * 1. **接入方式**：MCP 地址、**工具面指纹**与那份随服务一起发出去的技能（名字 / 路径 /
+ *    两条通路）。MCP 地址没配时后端回 `null`——这里照实说没配，不拼一个"看起来能用"的
+ *    地址；指纹是整张工具面的摘要，接入方据此判断契约有没有变，故它整串可复制；
  * 2. **对外工具**：一行一个工具，标签（技术标识跟在旁边）、摘要、权限、参数。
  *    顺序就是后端登记顺序（与 MCP 客户端看到的顺序一致），所以这一页**不排序**；
  * 3. **按工具收窄**：一把 API 密钥可以只开其中一部分工具，那一页负责勾选，这里给一条去路。
@@ -20,10 +21,12 @@ import { RefreshCw } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { getToolCatalogue } from '@/api/tools'
+import { copyText } from '@/lib/clipboard'
 import { Button } from '@/ui/button'
 
 import { TOOLS_QUERY_KEY } from '../queryKeys'
 import { EmptyState, ErrorLine, PageShell, SkeletonBlock, StatusTag } from '../shared/composites'
+import { notifyError, notifySuccess } from '../shared/toast'
 
 function messageOf(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback
@@ -34,6 +37,16 @@ export function ToolsPage() {
 
   const data = catalogue.data
   const tools = data?.items ?? []
+
+  /** 指纹要能整串复制走：接入方拿它跟自己对的那一版核。 */
+  async function copyFingerprint(): Promise<void> {
+    if (!data) return
+    if (await copyText(data.surface_fingerprint)) {
+      notifySuccess('工具面指纹已复制')
+      return
+    }
+    notifyError('复制失败，请手动选中复制')
+  }
 
   return (
     <PageShell
@@ -57,6 +70,22 @@ export function ToolsPage() {
               <h2 className="m-block-title">接入方式</h2>
               <div className="panel">
                 <ul className="m-list">
+                  <li className="m-list-item">
+                    <div className="m-list-row">
+                      <div className="m-row-lines">
+                        <span className="m-row-label">工具面指纹</span>
+                        <code className="m-row-value">{data.surface_fingerprint}</code>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label="复制工具面指纹"
+                        onClick={() => void copyFingerprint()}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                  </li>
                   <li className="m-list-item">
                     <div className="m-list-row">
                       <div className="m-row-lines">
@@ -85,6 +114,7 @@ export function ToolsPage() {
                   </li>
                 </ul>
               </div>
+              <p className="m-muted">工具面一变此值就变。</p>
             </section>
 
             <section className="m-block m-section-gap">

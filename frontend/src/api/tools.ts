@@ -30,6 +30,11 @@ export type Skill = Required<components['schemas']['SkillOut']>
  * `mcp_endpoint` 是 `string | null`：**没配部署地址时后端回 `null`**，界面照实说没配，
  * 不拼一个"看起来能用"的地址（拼出来的端口多半是错的）。
  *
+ * `surface_fingerprint` 是**整张工具面的摘要**（12 位十六进制，后端
+ * `services.tools.surface_fingerprint()`）：任何一个工具的名字 / 说明 / 入参 / 出参变了
+ * 它就变，客户端据此判断"对外契约有没有变"（MCP 侧同一个值跟在 `serverInfo.version`
+ * 后面）。界面照原样显示、让接入方读得到、复制得走——**不解释它由什么算出来**。
+ *
  * `items` / `skill` 两处再收一次 `Required`：`Required<…>` 只剥**顶层**的可选，
  * 而 `ToolOut.params` 与 `SkillOut.transports` 都是带默认值的可选字段——
  * 不放宽的话，页面上每一处读它们都要先防一次 `undefined`，而契约上后端一定会给。

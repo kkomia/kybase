@@ -4,6 +4,11 @@
  * 对应旧用例里的逻辑型条目：`UploadDialog.test.ts` 的上限/去重/串行/结果清单、
  * `ShareDialog`（若有）、`SourcePanel` 的"登记与拉取分开"、
  * `KbSearchPanel` 的检索参数与"向量召回不可信"提示。
+ *
+ * 检索面板那几条还钉着 v0.63 的三件新事实：逐条那一格读的是**余弦**（没有余弦的
+ * 词面命中写「词面命中」）、判定行报**绕过 `min_score` 的条数**、还有 `next_offset`
+ * 非空时那句「还有更深的候选」。另有两条钉住「返回上限」那一格的**发法**：填的数
+ * 同时进 `keep`（一页几条）与 `top_k`（这次能翻到的池子），清空则两者都回默认 8。
  */
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -418,6 +423,8 @@ describe('库内检索面板', () => {
         decided_by: 'suggested',
         fit: 'strong',
         dropped: 3,
+        // 没被 `min_score` 切的条数：这一页每条都有余弦（都是向量捞上来的），所以为 0
+        unscored_kept: 0,
       },
       hits: [
         {
@@ -427,6 +434,10 @@ describe('库内检索面板', () => {
           knowledge_base_id: 'kb-1',
           text: '这是命中的一段',
           score: 0.812,
+          // 逐条那一格显示的是**余弦**（不是融合分 0.812）：0.71 就是向量那一路的原始分
+          similarity: 0.71,
+          basis: 'vector',
+          lexical_score: 12.5,
           page: 3,
           heading_path: '第一章',
           image_ids: [],
@@ -439,6 +450,8 @@ describe('库内检索面板', () => {
       mode: 'hybrid',
       reranked: false,
       filtered_out: 2,
+      offset: 0,
+      next_offset: null,
       stats: [{ channel: 'vector', count: 40, elapsed_ms: 12.5 }],
       embedding_configured: false,
       embedding_is_development: false,
@@ -454,6 +467,8 @@ describe('库内检索面板', () => {
         query: '怎么安装',
         kb_ids: ['kb-1'],
         mode: 'hybrid',
+        // 用户没动那一格：默认 8 条要**两个都发**（`keep` 一页几条、`top_k` 能翻到多少）
+        keep: 8,
         top_k: 8,
         candidate_k: 40,
         rerank: false,
@@ -463,16 +478,171 @@ describe('库内检索面板', () => {
       expect(document.querySelector('.kb-hit-summary')?.textContent).toContain('1 条命中'),
     )
     expect(screen.getByText('说明书.pdf')).toBeInTheDocument()
-    expect(screen.getByText('0.812')).toBeInTheDocument()
+    // 逐条那一格给的是**余弦**（0.710），不是融合分 0.812——融合分只反映名次，
+    // 把它当"相似度"显示是把名次当成了像不像（后端文档里专门写明这一条）
+    expect(screen.getByText('相似度 0.710')).toBeInTheDocument()
     expect(screen.getByText(/元数据过滤掉 2 条/)).toBeInTheDocument()
     // 收敛砍掉的条数与"元数据过滤掉"不是同一件事，各说各的
     expect(screen.getByText('收敛掉 3 条')).toBeInTheDocument()
+    // 这一页没有词面命中、也没有下一页：三件新事实都不该出现（有才说有）
+    expect(screen.queryByText(/词面命中/)).toBeNull()
+    expect(screen.queryByText(/未过下限/)).toBeNull()
+    expect(screen.queryByText('还有更深的候选')).toBeNull()
     // 判定排在命中上面：`summary` 原文 + `fit` 的标都在
     const verdict = document.querySelector('.kb-verdict') as HTMLElement
     expect(verdict.textContent).toContain('资料很对得上')
     expect(verdict.textContent).toContain('候选 40 条')
     // 没配嵌入模型：必须明说"向量召回不可信"，否则用户会把兜底结果当成真实效果
     expect(screen.getByText(/本次只做了关键词检索/)).toBeInTheDocument()
+  })
+
+  it('「返回上限」填几就发几：`keep` 与 `top_k` 一起发同一个数', async () => {
+    searchMock.mockResolvedValue({
+      summary: '',
+      distribution: null,
+      decision: null,
+      hits: [],
+      mode: 'hybrid',
+      reranked: false,
+      filtered_out: 0,
+      offset: 0,
+      next_offset: null,
+      stats: [],
+      embedding_configured: true,
+      embedding_is_development: false,
+    })
+    const user = userEvent.setup()
+    renderDialog(<KbSearchPanel open kbId="kb-1" kbName="产品手册" onClose={vi.fn()} />)
+
+    const limit = screen.getByLabelText('返回上限')
+    await user.clear(limit)
+    await user.type(limit, '20')
+    await user.type(screen.getByLabelText('检索内容'), '怎么安装')
+    await user.click(screen.getByRole('button', { name: '检索' }))
+
+    await waitFor(() => expect(searchMock).toHaveBeenCalledOnce())
+    const body = searchMock.mock.calls[0]?.[0]
+    // 只发 `top_k` 的话，一页仍按后端建议剪（要 8 条只回来建议档那几条）；
+    // 两个都发用户填的数，`top_k` 就不可能出现"比 `keep` 小"这种组合
+    expect(body?.keep).toBe(20)
+    expect(body?.top_k).toBe(20)
+  })
+
+  it('那一格清空后按默认 8 发，检索按钮照旧能用', async () => {
+    searchMock.mockResolvedValue({
+      summary: '',
+      distribution: null,
+      decision: null,
+      hits: [],
+      mode: 'hybrid',
+      reranked: false,
+      filtered_out: 0,
+      offset: 0,
+      next_offset: null,
+      stats: [],
+      embedding_configured: true,
+      embedding_is_development: false,
+    })
+    const user = userEvent.setup()
+    renderDialog(<KbSearchPanel open kbId="kb-1" kbName="产品手册" onClose={vi.fn()} />)
+
+    await user.clear(screen.getByLabelText('返回上限'))
+    await user.type(screen.getByLabelText('检索内容'), '近视')
+    await user.click(screen.getByRole('button', { name: '检索' }))
+
+    await waitFor(() => expect(searchMock).toHaveBeenCalledOnce())
+    const body = searchMock.mock.calls[0]?.[0]
+    expect(body?.keep).toBe(8)
+    expect(body?.top_k).toBe(8)
+    expect(await screen.findByText('没有命中')).toBeInTheDocument()
+  })
+
+  it('词面命中：没有余弦就直说，并把未过下限与更深的候选报出来', async () => {
+    searchMock.mockResolvedValue({
+      summary:
+        '候选 12 条（兜底阈值 0.150 之上 4 条），收敛后留 4 条，收敛参数按调用方：词面命中一批。',
+      distribution: {
+        floor: 0.15,
+        baseline: 0.531,
+        basis: 'vector',
+        count: 4,
+        above_baseline: 0,
+        fit: 'weak',
+        suggested: { keep: 2, min_score: 0.9, per_doc: null },
+        note: '只有词面够像',
+      },
+      decision: {
+        keep: 2,
+        min_score: 0.9,
+        per_doc: null,
+        decided_by: 'model',
+        fit: 'weak',
+        dropped: 0,
+        // 阈值提到 0.9，回来的这两条却都是词面捞上来的：它们没有余弦，那一刀对它们不成立
+        unscored_kept: 2,
+      },
+      hits: [
+        {
+          chunk_id: 'c-1',
+          document_id: 'doc-1',
+          document_name: '郭正茂.docx',
+          knowledge_base_id: 'kb-1',
+          text: '词面命中的一段',
+          // 融合分只反映名次（向量档第 1 名恒为这个量级），它**不是**相似度
+          score: 0.0164,
+          similarity: null,
+          basis: 'fulltext',
+          lexical_score: 12.5,
+          page: null,
+          heading_path: null,
+          image_ids: [],
+          channels: ['fulltext'],
+          ranks: { fulltext: 1 },
+          raw_scores: { fulltext: 12.5 },
+          rerank_score: null,
+        },
+        {
+          chunk_id: 'c-2',
+          document_id: 'doc-2',
+          document_name: '缩写表.xlsx',
+          knowledge_base_id: 'kb-1',
+          text: '词面命中的另一段',
+          score: 0.0164,
+          similarity: null,
+          basis: 'fulltext',
+          lexical_score: 9.1,
+          page: null,
+          heading_path: null,
+          image_ids: [],
+          channels: ['fulltext'],
+          ranks: { fulltext: 2 },
+          raw_scores: { fulltext: 9.1 },
+          rerank_score: null,
+        },
+      ],
+      mode: 'hybrid',
+      reranked: false,
+      filtered_out: 0,
+      offset: 0,
+      // 幸存者不止这一页：面板不翻页，但要把"手里这份不是全部"说清楚
+      next_offset: 2,
+      stats: [{ channel: 'vector', count: 12, elapsed_ms: 8 }],
+      embedding_configured: true,
+      embedding_is_development: false,
+    })
+    const user = userEvent.setup()
+    renderDialog(<KbSearchPanel open kbId="kb-1" kbName="产品手册" onClose={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('检索内容'), '郭正茂')
+    await user.click(screen.getByRole('button', { name: '检索' }))
+
+    // 逐条那一格：两条都没有余弦，写「词面命中」——不留空、也不拿融合分冒充相似度
+    await waitFor(() => expect(screen.getAllByText('词面命中')).toHaveLength(2))
+    // 判定行三件新事实：词面条数、绕过下限的条数、这一页只是更深那一趟的一段
+    expect(screen.getByText('词面命中 2 条')).toBeInTheDocument()
+    expect(screen.getByText('未过下限 2 条')).toBeInTheDocument()
+    expect(screen.getByText('还有更深的候选')).toBeInTheDocument()
+    expect(screen.queryByText('0.016')).toBeNull()
   })
 
   it('判定说"资料里没有"：那不是检索失败，命中为空也要把这句话摆在最上面', async () => {
@@ -496,11 +666,14 @@ describe('库内检索面板', () => {
         decided_by: 'suggested',
         fit: 'none',
         dropped: 0,
+        unscored_kept: 0,
       },
       hits: [],
       mode: 'hybrid',
       reranked: false,
       filtered_out: 0,
+      offset: 0,
+      next_offset: null,
       stats: [],
       embedding_configured: true,
       embedding_is_development: false,
@@ -545,6 +718,8 @@ describe('库内检索面板', () => {
       mode: 'hybrid',
       reranked: false,
       filtered_out: 0,
+      offset: 0,
+      next_offset: null,
       stats: [],
       embedding_configured: true,
       embedding_is_development: false,
