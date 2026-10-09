@@ -1,24 +1,24 @@
-"""旧明文收编：把本机库里那几处凭据搬进系统钥匙串（M5 阶段 6，方案 §4.2 / §4.3）。
+"""旧明文收编：把库里那几处凭据搬进系统钥匙串（M5 阶段 6，方案 §4.2 / §4.3）。
+
+**v0.1.0 瘦身之后这个服务在 NAS 部署里是"空转"的**：系统钥匙串只存在于桌面机器上，
+而这个进程只有服务器形态（`NullSecretStore`，R14）——所以 :meth:`status` 如实报
+``store: unavailable``、``pending_migration: 0``，:meth:`migrate` 则抛
+``SecretStoreUnavailable``（绝不退回库里写明文）。它跟着共享底座留下，
+是因为钥匙串那一整套读写（含 :meth:`nas_token` 三个方法）本身没有业务语义。
 
 ## 搬哪几处、不搬哪几处（方案 §4.2 那张表）
 
-**收编这两处**（读路径也跟着改道了，见 ``runtime_config`` / ``model_registry``）：
+**收编这一处**（读路径也跟着改道了，见 ``model_registry``）：
 
-1. ``app_settings['web.search_api_key']`` → ``kylab:setting:web.search_api_key``
-   （联网搜索真的在读它；迁完**删掉库里那一行**）；
-2. ``model_providers.api_key`` → ``kylab:model_provider:<id>``
-   （模型注册表在读；迁完**清列**，行本身留着）。
+- ``model_providers.api_key`` → ``kylab:model_provider:<id>``
+  （模型注册表在读；迁完**清列**，行本身留着）。
 
-**壳侧那一处**（``config.json.api_key`` → ``kylab:nas_token:<origin>``）由壳自己迁
-（方案 §4.2 #1：首次运行读到明文 → 写钥匙串 → 清 ``config.json`` 那一栏）；
-这一层只把读写备好（:meth:`CredentialsService.nas_token` 三个方法），供壳与阶段 8 用。
+原先还有 ``app_settings['web.search_api_key']`` 那一处——联网搜索随 Agent 侧代码
+拆除了，那个键不复存在（见 `runtime_config.KEYCHAIN_SETTING_KEYS`：现在是空集）。
 
 **只登记、不迁**（这里一行代码都没有——留在库里是**有意的**，不是漏了）：
-
-- ``mineru.token`` / ``paddleocr.token`` —— 本机档不解析文档，没人读它；
-- ``mcp_servers.env`` / ``headers`` —— 本机档没接 MCP，且任意键值对可能超单条上限；
-- NAS 服务端引导级（PG 口令 / S3 密钥 / 解析 token）—— 那是服务器档的家当，
-  **不进本机钥匙串**（R14 的边界）。
+``mineru.token`` / ``paddleocr.token`` 与服务器引导级（PG 口令 / S3 密钥）都不进钥匙串，
+它们的家就是库与 ``.env``。
 
 这份清单写在这里，是为了让下一个人不必重新判一遍"哪些该收、哪些不该收"。
 
@@ -36,32 +36,23 @@
 ## 过渡态可观测（§4.2 末段）
 
 **不静默迁移**：改用户的存储位置要有意识。所以有一个能读到的数
-（:meth:`CredentialsService.status` → ``pending_migration``）与一个显式入口
-（端点 ``POST /local/secrets/migrate``、面板按钮、CLI
-``python -m app.services.credentials migrate``）——迁移完成前"库里有值、钥匙串没有"
-是唯一允许的中间态，而它就等于 ``pending_migration > 0``。
+（:meth:`CredentialsService.status` → ``pending_migration``）：
+迁移完成前"库里有值、钥匙串没有"是唯一允许的中间态，
+而它就等于 ``pending_migration > 0``。
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import logging
-import os
-import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from app.core.exceptions import ConflictError, KylabError, SecretStoreUnavailable
-from app.services.runtime_config import mask_secret
+from app.core.exceptions import ConflictError, SecretStoreUnavailable
 from app.services.secrets import (
     SecretStore,
     model_provider_target,
     nas_token_target,
-    normalize_origin,
-    platform_store,
     setting_target,
 )
 from app.storage.base import ModelProviderRecord, StorageError, StoreBundle
@@ -71,12 +62,11 @@ __all__ = [
     "REGISTERED_ONLY_CELLS",
     "CredentialsService",
     "MigrationReport",
-    "main",
 ]
 
 logger = logging.getLogger(__name__)
 
-MIGRATED_SETTING_KEYS: tuple[str, ...] = ("web.search_api_key",)
+MIGRATED_SETTING_KEYS: tuple[str, ...] = ()
 """``app_settings`` 里**真的会被搬走**的那几个键（收编档）。
 
 加一个新键之前先回答两个问题：**谁在读它**（本机档上真的有人读吗）、
@@ -240,12 +230,13 @@ class CredentialsService:
           保证主库干净——旧帧还躺在那个文件里（阶段 6 实测：630 KB 的 ``-wal`` 里还能
           grep 到明文）。这一条正是"迁移完就干净了"与"等边车退出才干净"的分界。
 
-        判据（``tests/unit/storage/sqlite_impl/test_secure_erase.py``）：**同一次运行里、
-        不重启、不关库**，主库 + ``-wal``（+ ``-shm``）里 grep 哨兵串全部 0 命中。
+        那套判据（"同一次运行里、不重启、不关库，主库 + ``-wal`` 里 grep 哨兵串 0 命中"）
+        原先由 ``tests/unit/storage/sqlite_impl/test_secure_erase.py`` 钉着——
+        本机档与那个库一起拆除了。
 
-        为什么还要那个 ``None`` 分支：``StoreBundle.eraser`` 只有本机档有（服务器档恒
-        ``None``）。走到这里而它是 ``None`` 的情形在真实部署里不存在（钥匙串不可用时
-        ``migrate`` 一开始就抛了），但接口上它是个合法状态——那时退回 ``vacuum()``
+        为什么还要那个 ``None`` 分支：**这个服务里 ``StoreBundle.eraser`` 恒为 ``None``**
+        （它只有本机档有）——真实走到这里的情形不存在（钥匙串不可用时 ``migrate``
+        一开始就抛了），但接口上它是个合法状态，所以退回 ``vacuum()``
         （至少把空闲页收掉），并在日志里说明"WAL 那一步没做"。
 
         收 WAL 那一步撞上别的读者（``StorageError``）→ 翻成 ``ConflictError``（409）：
@@ -355,131 +346,3 @@ class _ClearProviderKey:
             return
         fresh.api_key = ""
         self._stores.meta.update_model_provider(fresh)
-
-
-# ------------------------------------------------------------------ CLI
-
-
-def _local_stores(data_dir: Path) -> StoreBundle:
-    """CLI 这条路的装配：**按本机档**建库（与 ``legacy_import`` / ``backup_restore``
-    那两处同一手法）。
-
-    环境变量四个与 ``sidecar.pin_local_deployment`` 一模一样（``KYLAB_DATABASE_URL``
-    **设空串**而不是删掉——本机 ``.env`` 里真的配了它，删掉会让它"复活"）。
-    """
-    from app.core.config import get_settings
-    from app.core.storage import build_stores
-
-    os.environ["KYLAB_DEPLOYMENT"] = "local"
-    os.environ["KYLAB_DATABASE_URL"] = ""
-    os.environ["KYLAB_DATA_DIR"] = str(data_dir)
-    get_settings.cache_clear()
-    return build_stores(get_settings())
-
-
-def _parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(
-        prog="python -m app.services.credentials",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "把本机库里的旧明文凭据收进 Windows 凭据管理器（M5 阶段 6）。\n"
-            "\n"
-            "  status     这台机器有没有钥匙串、还有几处明文等着迁（不改任何东西）\n"
-            "  migrate    逐项搬进钥匙串并清掉库里那份（幂等，可重跑）\n"
-            "  nas-token  NAS 长期钥匙（kylab:nas_token:<origin>）的读 / 写 / 删\n"
-            "\n"
-            "边车在跑的时候也能跑：迁移是「写钥匙串 + 清库」两步，不碰库文件本身。\n"
-            "清页那一步会 VACUUM 一次（几 GB 的库可能要几十秒）。"
-        ),
-    )
-
-
-def _build(data_dir: Path) -> CredentialsService:
-    return CredentialsService(_local_stores(data_dir), platform_store())
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """CLI 入口：``status`` 只看不动、``migrate`` 真迁、``nas-token`` 读写壳那把钥匙。"""
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
-    parser = _parser()
-    parser.add_argument("command", choices=("status", "migrate", "nas-token"), help="要做什么")
-    parser.add_argument("--data-dir", required=True, help="本机数据目录（库就在它下面）")
-    parser.add_argument("--origin", default="", help="nas-token：NAS 地址（如 http://nas:8090）")
-    parser.add_argument("--set", default="", help="nas-token：写这一把（与 --delete 互斥）")
-    parser.add_argument("--delete", action="store_true", help="nas-token：删掉那一条")
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        help="nas-token：把值打出来（默认只打掩码；跨侧对拍时用它）",
-    )
-    args = parser.parse_args(argv)
-    # nas-token 不需要库（它只碰钥匙串）——但为了与另外两个子命令同一套装配，仍然建库：
-    # "边车在跑的时候也能跑"是这三个命令共同的前提，多开一条连接不值得省。
-    service = _build(Path(args.data_dir))
-    try:
-        if args.command == "status":
-            return _status_command(service)
-        if args.command == "migrate":
-            return _migrate_command(service)
-        return _nas_token_command(service, args)
-    except SecretStoreUnavailable as exc:
-        print(f"这台机器收不了：{exc}", file=sys.stderr)
-        return 1
-    except KylabError as exc:
-        # 迁移本身跑完了、只是收尾那一步没成（比如收 WAL 撞上别的读者）——CLI 也要
-        # 说清"哪一步没成、下一步做什么"，而不是甩一份 traceback 出去。
-        print(f"这一轮没能收尾：{exc}", file=sys.stderr)
-        return 1
-
-
-def _nas_token_command(service: CredentialsService, args: argparse.Namespace) -> int:
-    """``nas-token``：壳那半写的那把钥匙，后端这一侧读得到吗（阶段 8 的对拍用这一条）。"""
-    origin = (args.origin or "").strip()
-    if not origin:
-        print("要给出 NAS 地址：--origin http://nas:8090", file=sys.stderr)
-        return 1
-    if args.set and args.delete:
-        print("--set 与 --delete 只能给一个", file=sys.stderr)
-        return 1
-    if args.set:
-        service.set_nas_token(origin, args.set)
-        print(f"已写入 kylab:nas_token:{normalize_origin(origin)}")
-        return 0
-    if args.delete:
-        service.delete_nas_token(origin)
-        print(f"已删除 kylab:nas_token:{normalize_origin(origin)}")
-        return 0
-    value = service.nas_token(origin)
-    if value is None:
-        print(f"{normalize_origin(origin)}：没配（壳还没登录过，或者那把钥匙没迁进来）")
-        return 1
-    print(value if args.show else mask_secret(value), end="\n")
-    return 0
-
-
-def _status_command(service: CredentialsService) -> int:
-    status = service.status()
-    print(json.dumps(status, ensure_ascii=False, indent=2))
-    if status["store"] == "unavailable":
-        print("本机没有可用的系统钥匙串：凭据只能留在本机库里", file=sys.stderr)
-        return 0
-    print(f"还有 {status['pending_migration']} 处明文等着迁（跑 migrate 收编）")
-    return 0
-
-
-def _migrate_command(service: CredentialsService) -> int:
-    report = service.migrate()
-    print(json.dumps(report.as_dict(), ensure_ascii=False, indent=2))
-    for item in report.failed:
-        print(f"没迁成：{item['item']}（{item['reason']}）", file=sys.stderr)
-    print(
-        f"迁了 {len(report.migrated)}、跳过 {len(report.skipped)}、失败 {len(report.failed)}；"
-        f"还剩 {report.pending_migration} 处明文"
-    )
-    return 0 if report.ok else 1
-
-
-if __name__ == "__main__":  # pragma: no cover - 进程入口
-    raise SystemExit(main())

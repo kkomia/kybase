@@ -22,7 +22,7 @@ from app.api.v1.schemas import (
     WikiPageOut,
     WikiSourceOut,
 )
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 
 router = APIRouter(tags=["wiki"])
@@ -45,7 +45,7 @@ def _page_out(record) -> WikiPageOut:  # type: ignore[no-untyped-def]
     )
 
 
-def _sources_out(services: KbServices, sources) -> list[WikiSourceOut]:  # type: ignore[no-untyped-def]
+def _sources_out(services: Services, sources) -> list[WikiSourceOut]:  # type: ignore[no-untyped-def]
     """把出处的 ``document_id`` 解析成文档名（一次批量查，不逐条）。
 
     ``heading_path`` / ``page`` 不在这里回查 chunks——它们是生成时抄下来的快照，
@@ -77,7 +77,7 @@ def _sources_out(services: KbServices, sources) -> list[WikiSourceOut]:  # type:
 )
 def get_wiki(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> WikiOverviewOut:
     check_kb_scope(services, caller, [kb_id])
@@ -104,7 +104,7 @@ def get_wiki(
 )
 def get_wiki_page(
     page_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> WikiPageDetailOut:
     record = services.wiki.page(page_id)
@@ -129,7 +129,7 @@ def get_wiki_page(
 )
 def generate_wiki(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> WikiGenerateOut:
     """入队一次重建。已在队列里时**返回同一个任务**（幂等，避免连点堆任务）。
@@ -148,7 +148,7 @@ def generate_wiki(
 )
 def clear_wiki(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> None:
     """只删页面，**不动库形态开关**：用户可能只是想重来一次。"""

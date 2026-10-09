@@ -65,8 +65,9 @@
 #
 # ## TZ 一定要设（不是可选项）
 #
-# 容器默认 UTC，而定时任务的 cron 按容器本地时间解释——不设 `TZ`，"每天 9 点的早报"
-# 会在北京时间 17 点跑，而这种现象几乎不会被归因到"容器的时区"。
+# 容器默认 UTC。日志时间戳、`/tasks` 上的时刻、对象存储与快照的命名都按容器本地时间
+# 落下来——不设 `TZ`，你在 NAS 上看到的"14:23"与手机上对不上，而这种现象几乎不会被
+# 归因到"容器的时区"。
 name: kybase-app
 
 # ---------------------------------------------------------------- 共用片段
@@ -91,7 +92,7 @@ x-backend-env: &backend-env
   # 非 root 且 HOME 指向镜像里那个 10001 的家目录时，任何"往家目录写"都会失败；
   # 指到我们自己的可写目录，省得以后为某个库的缓存目录再查一遍
   HOME: /data
-  # 定时任务的 cron 按这个时区解释（容器默认 UTC，见文件头那段）
+  # 与日志/时间戳的时区口径一致（容器默认 UTC，见文件头那段）
   TZ: ${TZ:-Asia/Shanghai}
   # ---- 存储（与旧 kylab-app 同一套，为的是零迁移，见文件头）----
   KYLAB_DATABASE_URL: postgresql://kylab:${KYLAB_PG_PASSWORD}@kylab-postgres:5432/kylab
@@ -102,11 +103,6 @@ x-backend-env: &backend-env
   KYLAB_S3_REGION: ${KYLAB_S3_REGION:-us-east-1}
   # 容器内网互通走 http
   KYLAB_S3_SECURE: "false"
-  # 备份快照桶：**与知识库那个桶分开**，同一个 MinIO、同一对凭据。
-  # 这台机器上的桶是 1Panel 那份 MinIO 里的，**不在这份 compose 里建**——
-  # 建桶的命令见同目录 README 的「备份桶」一节。缺桶不会阻塞启动：
-  # 后端"启动不校验桶"，握手会如实报不可用 + 下一步；第一次上传时顺手补建。
-  KYLAB_BACKUP_BUCKET: ${KYLAB_BACKUP_BUCKET:-kylab-backup}
   # ---- 应用 ----
   # 内嵌消费线程：**必须开着**，否则上传的文档只会排队
   KYLAB_RUN_WORKER: "true"
@@ -118,10 +114,6 @@ x-backend-env: &backend-env
   KYLAB_LOG_LEVEL: ${KYLAB_LOG_LEVEL:-INFO}
   # 留空则由首次 setup 自动生成一条并落库（库里已经有就用库里的）
   KYLAB_URL_SIGNING_SECRET: ${KYLAB_URL_SIGNING_SECRET:-}
-  # 仓库自带的技能在镜像里（/app/skills），镜像里已把这个变量设成它。
-  # 这里显式写出来是为了**可覆盖**：想让技能目录指向别处（挂一份自己的、
-  # 或复现"技能列表是空的"这类问题时换个目录）改这一行即可。
-  KYLAB_SKILLS_DIR: ${KYLAB_SKILLS_DIR:-/app/skills}
 
 services:
   backend:

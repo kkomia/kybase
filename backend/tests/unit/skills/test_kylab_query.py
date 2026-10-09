@@ -296,19 +296,6 @@ def test_skill_frontmatter_is_parseable() -> None:
     assert "知识库" in description
 
 
-#: 说明书**刻意不提**的对外工具（与 ``_NOT_DOCUMENTED_REASON`` 一一对应）。
-#:
-#: ``ingest_artifact`` 要的是一份**已经导出的会话产物**，而外部 MCP 通道
-#: **没有会话上下文**——它在这个服务上只可能回"产物不存在"。说明书不提它是有意的：
-#: 把一条必然失败的路写进操作手册，等于教模型去踩。工具本身留着（剥离方案 §7.5
-#: 的 10 个之一），失败时给的是诚实错误（``NotFoundError`` → MCP 层的 JSON ``error``）。
-_NOT_DOCUMENTED: frozenset[str] = frozenset({"ingest_artifact"})
-
-_NOT_DOCUMENTED_REASON = (
-    "``ingest_artifact`` 需要会话产物，外部 MCP 通道没有会话：说明书提它只会教模型去踩"
-)
-
-
 def test_every_mcp_tool_is_mentioned_by_some_skill() -> None:
     """**对外 MCP 面上的每个工具都要被某一份说明书点到**，漏掉的那个等于不存在。
 
@@ -317,9 +304,12 @@ def test_every_mcp_tool_is_mentioned_by_some_skill() -> None:
     两边都会变糊；而"没有任何一份说明书提到它"仍然是真问题——
     模型在工具表里能看到名字，却不知道什么时候该用、有什么边界。
 
-    **比的是 ``MCP_TOOL_NAMES`` 而不是 ``TOOL_NAMES``**（v0.1.0 收窄）：这个仓里
-    只有知识库那一份技能，让它去覆盖 Agent 侧那 11 个工具既做不到、也不该做——
-    那些工具根本不在对外面上。唯一与它同名的例外见 :data:`_NOT_DOCUMENTED`。
+    **比的是 ``MCP_TOOL_NAMES``**（对外面那批名字）：说明书要给"工具表里的每个名字"
+    一个"什么时候用它"的说法，而 Agent 侧那批工具既不在这张表里、也就用不着它覆盖。
+
+    **例外表已经没有了**（v0.1.0 瘦身）：原先唯一那个例外是 ``ingest_artifact``
+    （它要一份会话产物，而外部 MCP 通道没有会话上下文），那个工具本身已经随着
+    Agent 侧代码拆除——现在对外那 8 个**每一个都必须被点到**。
     """
     from app.mcp_server.server import MCP_TOOL_NAMES
 
@@ -328,17 +318,8 @@ def test_every_mcp_tool_is_mentioned_by_some_skill() -> None:
     assert manuals, "一份技能都没扫到，这条用例就没意义了"
     text = "\n".join(path.read_text(encoding="utf-8") for path in manuals)
 
-    expected = [name for name in MCP_TOOL_NAMES if name not in _NOT_DOCUMENTED]
-    missing = [name for name in expected if name not in text]
+    missing = [name for name in MCP_TOOL_NAMES if name not in text]
     assert not missing, f"没有任何技能说明书提到这些工具：{missing}"
-    assert set(MCP_TOOL_NAMES) >= _NOT_DOCUMENTED, (
-        f"例外表里的名字已经不在对外面上了，该删掉：{sorted(_NOT_DOCUMENTED)}（"
-        f"{_NOT_DOCUMENTED_REASON}）"
-    )
-    for name in _NOT_DOCUMENTED:
-        assert name not in text, (
-            f"{name} 已写进说明书，那就该从例外表里移走：{_NOT_DOCUMENTED_REASON}"
-        )
 
 
 def test_skill_does_not_claim_there_is_no_authentication() -> None:

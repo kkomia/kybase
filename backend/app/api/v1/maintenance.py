@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from app.api.auth import require_read
 from app.api.v1.schemas import StorageOverviewOut
 from app.core.exceptions import ForbiddenError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 
 router = APIRouter(tags=["maintenance"])
@@ -27,7 +27,7 @@ def _require_admin(caller: Caller) -> None:
 
 @router.get("/maintenance/storage", response_model=StorageOverviewOut, summary="存储空间概览")
 def storage_overview(
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> StorageOverviewOut:
     """文件占用、可回收空间、向量分区数，以及无主分区。
@@ -42,7 +42,7 @@ def storage_overview(
 
 @router.post("/maintenance/compact", response_model=StorageOverviewOut, summary="整理存储")
 def compact_storage(
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> StorageOverviewOut:
     """丢掉无主向量分区并 VACUUM，返回整理**之后**的概览。

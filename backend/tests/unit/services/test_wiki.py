@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.models.enums import DataSourceKind, DocumentStage
 from app.services.wiki import (
     WikiService,
@@ -33,7 +35,7 @@ class FakeChat:
         self.citations = citations
         self.calls: list[str] = []
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         prompt = messages[-1].content
         self.calls.append(prompt)
         if "文档清单" in prompt:
@@ -138,7 +140,7 @@ def test_generate_writes_overview_topic_pages_and_sources(bundle) -> None:
     _doc(bundle, "kb_wiki")
     chat = FakeChat()
     retrieval = FakeRetrieval(per_query=2)
-    service = WikiService(bundle, chat=chat, retrieval=retrieval)
+    service = WikiService(bundle, runtime=chat, retrieval=retrieval)
 
     count = service.generate("kb_wiki")
 
@@ -170,12 +172,12 @@ def test_generate_replaces_the_previous_pages(bundle) -> None:
     """整库重建：第二次生成不该留下上一版多出来的页面。"""
     _kb(bundle)
     _doc(bundle, "kb_wiki")
-    first = WikiService(bundle, chat=FakeChat(), retrieval=FakeRetrieval())
+    first = WikiService(bundle, runtime=FakeChat(), retrieval=FakeRetrieval())
     first.generate("kb_wiki")
     before = len(first.pages("kb_wiki"))
 
     shorter = WikiService(
-        bundle, chat=FakeChat(plan="1. 只有一个主题 | 说明"), retrieval=FakeRetrieval()
+        bundle, runtime=FakeChat(plan="1. 只有一个主题 | 说明"), retrieval=FakeRetrieval()
     )
     shorter.generate("kb_wiki")
 
@@ -193,7 +195,7 @@ def test_generate_falls_back_when_the_plan_is_unparsable(bundle) -> None:
     _doc(bundle, "kb_wiki", "doc_b")
     service = WikiService(
         bundle,
-        chat=FakeChat(plan="我不知道该怎么分，这批资料看起来都差不多。"),
+        runtime=FakeChat(plan="我不知道该怎么分，这批资料看起来都差不多。"),
         retrieval=FakeRetrieval(per_query=1),
     )
 
@@ -207,7 +209,7 @@ def test_generate_skips_topics_without_any_source(bundle) -> None:
     """主题检索不到原文就不成页：宁可少一页，也不写一篇没有出处的文章。"""
     _kb(bundle)
     _doc(bundle, "kb_wiki")
-    service = WikiService(bundle, chat=FakeChat(), retrieval=FakeRetrieval(empty=True))
+    service = WikiService(bundle, runtime=FakeChat(), retrieval=FakeRetrieval(empty=True))
 
     count = service.generate("kb_wiki")
 
@@ -224,7 +226,7 @@ def test_generate_requires_the_flag_and_indexed_documents(bundle) -> None:
 
     _kb(bundle, enabled=False)
     _doc(bundle, "kb_wiki")
-    service = WikiService(bundle, chat=FakeChat(), retrieval=FakeRetrieval())
+    service = WikiService(bundle, runtime=FakeChat(), retrieval=FakeRetrieval())
     with pytest.raises(InvalidRequestError, match="Wiki"):
         service.generate("kb_wiki")
 
@@ -243,7 +245,7 @@ def test_enqueue_is_idempotent_and_checks_the_flag(bundle) -> None:
     from app.core.exceptions import ConflictError
 
     _kb(bundle)
-    service = WikiService(bundle, chat=FakeChat(), retrieval=FakeRetrieval())
+    service = WikiService(bundle, runtime=FakeChat(), retrieval=FakeRetrieval())
 
     first = service.enqueue("kb_wiki")
     assert service.enqueue("kb_wiki").id == first.id  # 连点不堆任务
@@ -258,7 +260,7 @@ def test_enqueue_is_idempotent_and_checks_the_flag(bundle) -> None:
 def test_status_walks_idle_generating_ready(bundle) -> None:
     _kb(bundle)
     _doc(bundle, "kb_wiki")
-    service = WikiService(bundle, chat=FakeChat(), retrieval=FakeRetrieval())
+    service = WikiService(bundle, runtime=FakeChat(), retrieval=FakeRetrieval())
 
     assert service.status("kb_wiki") == ("idle", None)
     service.enqueue("kb_wiki")
@@ -267,3 +269,14 @@ def test_status_walks_idle_generating_ready(bundle) -> None:
     service.generate("kb_wiki")
     bundle.meta.update_document_stage("doc_1", DocumentStage.INDEXED)
     assert service.status("kb_wiki")[0] == "generating"
+
+@pytest.fixture(autouse=True)
+def _chat_for_is_the_object_itself(monkeypatch):  # type: ignore[no-untyped-def]
+    """把这些服务用的 `llm.chat_for` 换成"原样返回入参"的那个。
+
+    这些用例传进来的 `FakeChat` 只需要实现 `.complete(messages)`——生产那条链上
+    `chat_for(runtime)` 负责按运行期配置建真客户端，而这里要测的是**提示词与编排**，
+    不是"客户端怎么建的"（那条由 `test_llm.py` 与 `test_runtime_config.py` 钉住）。
+    """
+    monkeypatch.setattr("app.services.wiki.chat_for", lambda runtime, model_pk=None: runtime)
+

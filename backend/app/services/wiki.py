@@ -34,8 +34,7 @@ from datetime import UTC, datetime
 
 from app.core.exceptions import ConflictError, InvalidRequestError, NotFoundError
 from app.models.enums import TaskKind, TaskState
-from app.services.chat import ChatService
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, LLMSource, chat_for
 from app.services.retrieval.service import RetrievalService
 from app.services.retrieval.types import RetrievalQuery
 from app.storage.base import (
@@ -111,11 +110,13 @@ class WikiService:
         self,
         stores: StoreBundle,
         *,
-        chat: ChatService,
+        runtime: LLMSource,
         retrieval: RetrievalService,
     ) -> None:
         self._stores = stores
-        self._chat = chat
+        #: 对话模型的来源（`RuntimeConfigService`）：与摘要 / 出题 / 库提示词同一口径，
+        #: 每次生成现取配置快照（见 `llm.chat_for`）。
+        self._runtime = runtime
         self._retrieval = retrieval
 
     # ------------------------------------------------------------------ 读
@@ -302,12 +303,11 @@ class WikiService:
             + _PLAN_INSTRUCTION.format(n=wanted)
         )
         try:
-            raw = self._chat.ask_raw(
+            raw = chat_for(self._runtime).complete(
                 [
                     ChatMessage(role="system", content=_PLAN_SYSTEM),
                     ChatMessage(role="user", content=prompt),
-                ],
-                model_pk=None,
+                ]
             )
         except Exception:
             logger.warning("Wiki 主题规划失败，回落到按文档名分主题", exc_info=True)
@@ -340,12 +340,11 @@ class WikiService:
         ask = _WRITE_INSTRUCTION.format(title=title)
         if brief:
             ask = f"这一页的大意（供你把握重点）：{brief}\n{ask}"
-        raw = self._chat.ask_raw(
+        raw = chat_for(self._runtime).complete(
             [
                 ChatMessage(role="system", content=_WRITE_SYSTEM),
                 ChatMessage(role="user", content=f"资料片段：\n{snippets}\n\n{ask}"),
-            ],
-            model_pk=None,
+            ]
         )
         return _sanitize_citations(raw, len(hits))
 
@@ -355,12 +354,11 @@ class WikiService:
             title=f"{kb.name}{_OVERVIEW_SUFFIX}"
         )
         try:
-            raw = self._chat.ask_raw(
+            raw = chat_for(self._runtime).complete(
                 [
                     ChatMessage(role="system", content=_WRITE_SYSTEM),
                     ChatMessage(role="user", content=prompt),
-                ],
-                model_pk=None,
+                ]
             )
         except Exception:
             # 总览页挂了不该带走整个 Wiki：退化成一份纯目录

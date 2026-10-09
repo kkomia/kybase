@@ -12,41 +12,66 @@ import ast
 import inspect
 from pathlib import Path
 
-from app.mcp_server.server import MCP_TOOL_NAMES, build_server
-from app.services.agent_tools import _KB_TOOLS
-from app.services.tools import TOOL_NAMES
+from app.mcp_server.server import MCP_TOOL_NAMES, build_server, main
 
 SERVER_PATH = Path(inspect.getfile(build_server))
 
 
-def test_server_registers_exactly_the_kb_face() -> None:
-    """挂上去的**正好是知识库那一侧的工具**（v0.1.0 收窄）。
+#: 对外面就应该是这 8 个（v0.1.0 瘦身后的**名字清单**）。
+#:
+#: 写死一份是刻意的：上面那条说的是"注册的 == `MCP_TOOL_NAMES`"，
+#: 而 `MCP_TOOL_NAMES` 现在直接取 `TOOL_NAMES`——只靠它的话，往 `tools.py`
+#: 里加一个 Agent 侧工具会**一路绿着**通过。这一份就是那个刹车：
+#: 变工具面必须是有意识的动作，而不是顺手加一个函数。
+KB_TOOL_NAMES = (
+    "list_knowledge_bases",
+    "create_knowledge_base",
+    "upload_document",
+    "add_data_source",
+    "search",
+    "list_documents",
+    "get_document_status",
+    "delete_document",
+)
 
-    两个方向都查：注册的那些必须是 ``MCP_TOOL_NAMES``，且 ``MCP_TOOL_NAMES`` 必须
-    **正好等于** ``_KB_TOOLS``——后半句是那份"过滤"的护栏：``_KB_TOOLS`` 里哪天多出
-    一个不在 ``TOOL_NAMES`` 里的名字，过滤会把它安静地丢掉，而这里当场红。
+
+def test_server_registers_exactly_the_kb_face() -> None:
+    """挂上去的**正好是纯知识库那 8 个工具**（v0.1.0 瘦身收口）。
+
+    两个方向都查：注册的那些必须是 ``MCP_TOOL_NAMES``，而 ``MCP_TOOL_NAMES``
+    （= ``TOOL_NAMES``）必须**正好等于**下面那份名字清单——后半句是刹车，
+    见 ``KB_TOOL_NAMES`` 的说明。
     """
     server = build_server()
 
     names = {tool.name for tool in server._tool_manager.list_tools()}
     assert names == set(MCP_TOOL_NAMES)
-    assert set(MCP_TOOL_NAMES) == set(_KB_TOOLS)
+    assert set(MCP_TOOL_NAMES) == set(KB_TOOL_NAMES)
 
 
-def test_server_never_registers_an_agent_tool() -> None:
-    """**Agent 侧的工具一个都不许出现在对外面上**（剥离方案 §7.5）。
-
-    这条是收窄那一次改动的验收本身：``create_note`` 会真写笔记、``remember`` /
-    ``forget`` 会真动用户档案、``export_*`` 会把文件落进别人的会话产物区——
-    它们都是 **agent 的权限面**，从这个知识库服务里拿不到才对。
-
-    判据取 ``TOOL_NAMES`` 减去 ``_KB_TOOLS``：**不写死一份黑名单**，
-    哪天 ``tools.py`` 长出新的 Agent 工具，它自动进这条断言。
+def test_an_agent_tool_is_nowhere_in_the_face() -> None:
+    """**Agent 侧的工具一个都不在**（剥离方案 §6 阶段 1 第 5 步）：
+    ``create_note`` 会真写笔记、``remember`` / ``forget`` 会真动用户档案、
+    ``export_*`` 会把文件落进别人的会话产物区——它们的实现都已拆除，
+    名字也不该出现在这个服务里。
     """
     server = build_server()
 
     names = {tool.name for tool in server._tool_manager.list_tools()}
-    assert not (names & (set(TOOL_NAMES) - _KB_TOOLS))
+    assert not (names & {"create_note", "attach_note_to_kb", "ingest_artifact", "export_file"})
+    assert not (names & {"recall", "remember", "forget", "web_search", "web_fetch"})
+
+
+def test_list_tools_prints_the_registered_face(capsys) -> None:  # type: ignore[no-untyped-def]
+    """``--list-tools`` 打的就是**要挂上去的那批**（一屏能核对的排障入口）。
+
+    它原先打的是 ``TOOL_NAMES``（合体期 21 个）——那种"打出来的比挂上去的多"
+    会让排障的人以为服务漏挂了工具。
+    """
+    assert main(["--list-tools"]) == 0
+
+    printed = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert printed == list(MCP_TOOL_NAMES) == list(KB_TOOL_NAMES)
 
 
 def test_every_tool_has_a_description() -> None:

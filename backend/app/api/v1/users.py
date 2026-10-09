@@ -24,7 +24,7 @@ from app.api.v1.schemas import (
 )
 from app.core.config import get_settings
 from app.core.exceptions import InvalidRequestError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import UserRole
 from app.services.api_key import Caller
 from app.services.users import OPERATOR_HEADER
@@ -32,7 +32,7 @@ from app.services.users import OPERATOR_HEADER
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _out(services: KbServices, record) -> UserOut:  # type: ignore[no-untyped-def]
+def _out(services: Services, record) -> UserOut:  # type: ignore[no-untyped-def]
     avatar_url, _expires = services.avatars.url_for(
         record, secret=signing_secret(get_settings(), services)
     )
@@ -51,7 +51,7 @@ def _out(services: KbServices, record) -> UserOut:  # type: ignore[no-untyped-de
 
 @router.get("", response_model=UserListOut, summary="使用者名册")
 def list_users(
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_read)],
 ) -> UserListOut:
     return UserListOut(
@@ -68,7 +68,7 @@ def list_users(
 )
 def create_user(
     payload: UserCreateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> UserOut:
     if payload.username:
@@ -94,7 +94,7 @@ def create_user(
 def reset_password(
     user_id: str,
     payload: UserPasswordIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> None:
     services.auth.reset_password(user_id, payload.password)
@@ -108,7 +108,7 @@ def reset_password(
 def set_disabled(
     user_id: str,
     payload: UserDisabledIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> UserOut:
     services.auth.set_disabled(user_id, payload.disabled)
@@ -122,7 +122,7 @@ def set_disabled(
 )
 def delete_user(
     user_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> None:
     services.users.delete(user_id)

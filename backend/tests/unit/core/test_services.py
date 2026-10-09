@@ -15,7 +15,6 @@ _EXPECTED = (
     "documents",
     "ingest",
     "retrieval",
-    "chat",
     "stats",
     "runtime",
     "api_keys",
@@ -30,7 +29,12 @@ _EXPECTED = (
     "sources",
     "observability",
     "tabular",
-    "conversations",
+    "folders",
+    "batch",
+    "maintenance",
+    "summaries",
+    "kb_prompt",
+    "wiki",
     "suggested_questions",
     "webhooks",
     "embedder",
@@ -58,11 +62,22 @@ def test_build_services_is_pure_wiring_when_stores_are_given(bundle) -> None:  #
     assert bundle.meta.list_knowledge_bases() == before
 
 
-def test_suggested_questions_and_chat_share_the_same_chat_service(bundle) -> None:  # type: ignore[no-untyped-def]
-    """示例问题用的是同一个对话服务（否则两处的模型选择与未配置报错口径会分叉）。"""
+def test_generative_services_all_go_through_the_same_llm_entry(bundle) -> None:  # type: ignore[no-untyped-def]
+    """KB 侧四处生成式（摘要 / 出题 / Wiki / 库提示词）**共用同一个模型来源**。
+
+    它们原先各自拿着一个 `ChatService` 当 LLM 网关；现在拿的是同一个
+    `runtime`（`RuntimeConfigService`），每次调用经 `llm.chat_for(runtime)` 现取配置
+    ——**一处口径**：模型选择、没配时那句可操作的报错、思考开关的翻译都只有一份。
+    """
     services = build_services(stores=bundle)
 
-    assert services.suggested_questions._chat is services.chat
+    for service in (
+        services.summaries,
+        services.suggested_questions,
+        services.wiki,
+        services.kb_prompt,
+    ):
+        assert service._runtime is services.runtime
 
 
 def test_worker_pool_size_follows_the_concurrency_setting(bundle) -> None:  # type: ignore[no-untyped-def]
@@ -96,41 +111,24 @@ def test_single_worker_is_the_default(bundle) -> None:  # type: ignore[no-untype
     assert len(services.workers) == 1
 
 
-def test_server_deployment_keeps_the_real_pipeline(bundle, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """**服务器档一切不变**（M3 阶段 3 / R11）：本机档那条换线一个字都不许漏过来。
+def test_the_pipeline_is_the_real_one(bundle, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """**摄入流水线是进程内那套真服务**（M3 阶段 3 / R11）。
 
-    本机档在组合根新增的那一支（建提供者、把 `ingest` / `documents` 换成两个网关）如果
-    写漏了档位判断，服务器档会**静默地**失去摄入流水线：`Services.ingest` 变成那个
-    只有 `submit` 的窄视图、`ChatService` 拿着一个远端 KB 客户端（于是"进程内检索"
-    这条主路径被悄悄换掉）。这一条按**可观察的结果**钉住它（组合根里那个 `provider`
-    是局部变量，不对外露）：
+    本机档在组合根里曾把 `ingest` / `documents` 换成两个"打远端"的窄网关，
+    那一整支随边车拆除了——这一条钉住"换线没有以任何形式漏回来"：
 
-    - KB 接缝是 `None`（服务器档走进程内检索）；
-    - `Services.ingest` / `Services.documents` 仍是真服务；
-    - 笔记与产物拿到的是**同一个**真 `IngestService`（三个构造点仍然是"一份实现"）。
-
-    （本机档那一半在 `tests/unit/services/test_client_seams.py` 的守卫用例里：它要建
-    本机档的 SQLite 图，所以标了 `local`；这一条跟着本文件用 PG 夹具。）
+    - `Services.ingest` / `Services.documents` 是真服务（不是只有 `submit` 的窄视图）；
+    - 数据源与批量动作拿到的也是它们（一份实现，不是各建各的）。
     """
-    from app.core.config import get_settings
     from app.core.services import reset_services
     from app.services.documents import DocumentService
     from app.services.ingest import IngestService
 
-    # 档位是**启动时定一次**的东西（``Settings`` 与 ``get_services`` 都是单例缓存）：
-    # 这里把前提钉死，不吃上一条用例留下的档位
-    monkeypatch.setenv("KYLAB_DEPLOYMENT", "server")
-    get_settings.cache_clear()
     reset_services()
-
     services = build_services(stores=bundle)
 
-    assert get_settings().deployment == "server"
-    assert services.chat._knowledge is None, "服务器档不该有远端 KB 客户端"
     assert isinstance(services.ingest, IngestService)
     assert isinstance(services.documents, DocumentService)
-    # 三个构造点**仍是同一份**（本机档那对网关没有漏到这里来）
-    assert services.notes._ingest is services.ingest
-    assert services.artifacts._ingest is services.ingest
-    assert services.notes._documents is services.documents
-    assert services.artifacts._documents is services.documents
+    assert services.sources._ingest is services.ingest
+    assert services.sources._documents is services.documents
+    assert services.batch._documents is services.documents

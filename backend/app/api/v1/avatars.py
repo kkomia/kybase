@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from app.api.auth import signing_secret_or_raise
 from app.core.config import Settings, get_settings
 from app.core.exceptions import UnauthorizedError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.core.signing import SigningError, verify_resource
 from app.services.avatars import resource
 
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/avatars", tags=["avatars"])
 @router.get("/{user_id}", summary="取一张头像（签名链接）")
 def get_avatar(
     user_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     settings: Annotated[Settings, Depends(get_settings)],
     expires: Annotated[int, Query(description="到期时间戳；由签发方给出")] = 0,
     signature: Annotated[str, Query(description="签名；见 core/signing.py")] = "",

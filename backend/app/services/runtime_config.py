@@ -29,7 +29,6 @@ from app.core.config import Settings
 from app.core.exceptions import InvalidRequestError
 from app.parsers.mineru_cloud import MinerUConfig
 from app.parsers.paddleocr_api import PaddleOCRConfig
-from app.services import modes
 from app.services.embedding.protocols import (
     DEFAULT_PROTOCOL,
     PROTOCOL_OPTIONS,
@@ -38,10 +37,8 @@ from app.services.embedding.protocols import (
     protocol_for_model,
     supports_media,
 )
-from app.services.llm import LLMConfig
+from app.services.llm import LLMConfig, normalize_effort
 from app.services.secrets import SecretStore, setting_target, use_keychain
-from app.services.thinking import normalize_effort
-from app.services.web import SEARCH_PROVIDERS
 from app.storage.base import StoreBundle
 
 __all__ = [
@@ -59,26 +56,17 @@ SECRET_KEYS = frozenset(
     {
         "mineru.token",
         "paddleocr.token",
-        # 联网搜索的密钥（v0.22）：与解析节点同一处置——只回显掩码
-        "web.search_api_key",
     }
 )
 
-KEYCHAIN_SETTING_KEYS = frozenset({"web.search_api_key"})
+KEYCHAIN_SETTING_KEYS: frozenset[str] = frozenset()
 """``SECRET_KEYS`` 里**已经收编进系统钥匙串**的那几个（M5 阶段 6，方案 §4.2）。
 
-读路径的改道**只覆盖这一个集合**，而不是整个 ``SECRET_KEYS``——口径的差别在这里：
-
-- 收编过的键（``web.search_api_key``）**只问钥匙串**：读不到 = 没配，绝不回退去读库里那份
-  （回退等于留着两条真相源，"收编"就白做了）；
-- 只登记、没收编的两个（``mineru.token`` / ``paddleocr.token``）**照旧走库与 ``.env``**：
-  它们的家没有变（方案 §4.2 把它们划成"只登记不迁"）。把它们的读也改成"只看钥匙串"，
-  用户原先配好的那份会当场变成"没配"（连设置页都显示未配置），而迁移器又不去搬它们
-  ——那个值等于被静默丢掉，而"静默丢凭据"是这一整套收编里最不该出现的后果。
-
-两份清单必须一致：改道的那几个 == 迁移器真正会搬的那几个。用例
-``test_the_redirect_list_matches_the_migrator`` 钉着这条（加一处收编就要同时改两处，
-或者当场红）。
+**瘦身后是空集**：原先唯一收编过的是联网搜索的密钥（``web.search_api_key``），
+而联网那一族随 Agent 侧代码一起拆除了（自己的进程里没有"替用户搜网页"这件事）。
+剩下的两个解析节点 token 是**只登记、不迁**：它们的家就是库与 ``.env``
+（方案 §4.2 的原分类）。这一格留着是因为 `credentials.py` 的迁移器读它——
+"没有可收编的键"是一个合法状态，不是配置漏项。
 """
 
 #: 分组与字段定义。前端设置页按这个结构渲染，不自己硬编码字段名。
@@ -135,73 +123,6 @@ SETTING_GROUPS: dict[str, Any] = {
             },
         ],
     },
-    "chat": {
-        "label": "对话行为",
-        "fields": [
-            {"key": "chat.top_k", "label": "带入资料的条数", "type": "int"},
-            {
-                "key": "chat.section_chars",
-                "label": "每条资料的小节长度上限",
-                "type": "int",
-            },
-            {
-                "key": "chat.agent_enabled",
-                "label": "启用工具循环",
-                "type": "bool",
-            },
-            {
-                "key": "chat.mode",
-                "label": "任务模式（目标 / 计划）",
-                "type": "select",
-                # 两档的取值与文案**只有一处来源**（services/modes.py）：在这里再抄一份，
-                # 界面上的名字与引擎判定的档迟早会对不上。
-                # **它管的是"怎么干活"（要不要先给计划），不是"能碰多少"**——后者是
-                # 下一项 `chat.permission`。两根轴是用户 2026-09-27 明确分开的。
-                "options": [
-                    {"value": item["name"], "label": f"{item['label']}（{item['hint']}）"}
-                    for item in modes.describe_modes()
-                ],
-            },
-            {
-                "key": "chat.permission",
-                "label": "权限（仅查看 / 手动批准 / 默认 / 全自动）",
-                "type": "select",
-                # 四档权限的取值与文案同样只有 `services/modes.py` 一处来源。
-                # 输入区那一颗「权限」胶囊读写的也是这一项——与这里同一份数据。
-                "options": [
-                    {"value": item["name"], "label": f"{item['label']}（{item['hint']}）"}
-                    for item in modes.describe_permissions()
-                ],
-            },
-            {
-                "key": "chat.context_window",
-                "label": "上下文窗口（token）",
-                "type": "int",
-            },
-            {
-                "key": "chat.compress_at",
-                "label": "上下文压缩阈值（占用百分比）",
-                "type": "int",
-            },
-            {
-                "key": "chat.compress_keep",
-                "label": "压缩时保留的最近消息条数",
-                "type": "int",
-            },
-            {
-                # 与上面那条百分比**取小的那个**（D37）：窗口调到很大时（例如 1M），
-                # 70% 就是 70 万 token，等于永远不压缩——绝对值这条才是真正的兜底。
-                "key": "chat.compress_max_tokens",
-                "label": "压缩预算的绝对上限（token）",
-                "type": "int",
-            },
-        ],
-    },
-    # 联网（v0.22，见 services/web.py 的模块头）。
-    # **搜索需要一个服务商**：没有免密钥又稳定的通用搜索接口，所以它是一项配置。
-    # 没配时工具会明确说"去哪配"，而不是返回空结果——空结果会被模型读成
-    # "网上没有这件事"，那比报错坏得多。
-    # 抓网页（web_fetch）**不需要**这里的任何配置，它只认公网地址。
     # 检索（v0.54 动态返回，见 services/retrieval/distribution.py 的模块头）。
     # **这两项是"用户可配的基础阈值"**：兜底阈值决定统计窗口看多宽，基线是判"这个问题
     # 与库对不对得上"的参照线。它们的默认值来自本机实测（医学库 21580 chunk），
@@ -223,127 +144,6 @@ SETTING_GROUPS: dict[str, Any] = {
             },
         ],
     },
-    "web": {
-        "label": "联网",
-        "fields": [
-            {
-                "key": "web.search_provider",
-                "label": "搜索服务商",
-                # 两家的名字与取值**只有一处来源**（`services/web.py` 的 SEARCH_PROVIDERS）：
-                # 在这里再抄一份，加第三家时就会漏掉一处（与嵌入协议那张表同一个理由）。
-                # 它是 `select` 而不是自由文本：原先标签里写着「（tavily / bocha）」
-                # 让人照着**手打**，打错一个字母就是一句"不认识的搜索供应商"。
-                "type": "select",
-                "options": [
-                    {"value": value, "label": spec["label"]}
-                    for value, spec in SEARCH_PROVIDERS.items()
-                ],
-            },
-            {
-                "key": "web.search_api_key",
-                "label": "搜索 API 密钥",
-                "type": "secret",
-            },
-        ],
-    },
-    # 沙箱执行（v0.16，见 docs/设计/Agent-工作区与能力层设计-v0.1.md §4）。
-    #
-    # **2026-09-27：「命令执行策略」这一项已折进权限轴**（用户在输入区那颗「权限」上选
-    # 仅查看 / 手动批准 / 默认 / 全自动，见 services/modes.py 的模块头）——
-    # 它原来那一项（allow / ask / deny / sandbox）与权限档说的是同一件事，
-    # 摆两处必然出现"界面上写着允许、实际还是被拒"。老值仍然认（`coerce_permission` 映射）。
-    # 三张清单留在这里，它们不是"策略"而是**规则**（逐条 `Bash(git status:*)`），
-    # 与权限档是两回事：档决定"要不要问"，规则决定"这种命令一律不许/一律放行"。
-    "sandbox": {
-        "label": "沙箱执行",
-        "fields": [
-            # 三张清单，语法照抄 Claude Code 的权限模型（见 services/command_policy.py）：
-            # `Bash(git status:*)` 那样的规则，**deny 永远优先**。
-            {
-                "key": "sandbox.rules_allow",
-                "label": "放行清单（每行一条，如 Bash(git status:*)）",
-                "type": "text",
-            },
-            {
-                "key": "sandbox.rules_ask",
-                "label": "需确认清单（每行一条）",
-                "type": "text",
-            },
-            {
-                "key": "sandbox.rules_deny",
-                "label": "拒绝清单（每行一条，优先级最高）",
-                "type": "text",
-            },
-            {
-                "key": "sandbox.bind_ro",
-                "label": "只读挂载目录（逗号分隔；留空用默认清单）",
-                "type": "text",
-            },
-            # v0.55：无内核隔离时**默认降级为直接执行**；**D16（2026-09-29）翻转了默认**：
-            # 现在**默认拒绝**（没有 bwrap / sandbox-exec / docker 就不执行），
-            # 裸跑必须**显式关掉本项**——用户点名的会话里"上一步被拦、下一步整机裸跑"就是这么来的
-            # （见 services/sandbox.py 里 REQUIRE_ISOLATION_KEY 的注释）。
-            {
-                "key": "sandbox.require_isolation",
-                "label": (
-                    "无内核隔离时拒绝执行（**默认关** = 无隔离时直接执行；"
-                    "打开 = 没有内核隔离就拒绝跑）"
-                ),
-                "type": "bool",
-            },
-        ],
-    },
-    # 记忆（v0.14，档案制见 docs/设计/记忆档案-设计-v0.1.md；旧的《记忆层设计 v0.1》
-    # 已移入 docs/归档/）。
-    # **默认开**（v0.56 改，档案制 §7.3）：旧口径默认关，是因为打开它会启动**定期捕获**
-    # （一次捕获就是一次模型调用）；档案制把"注入"与"捕获"拆成两个开关之后，
-    # "默认关"就成了"这个功能默认不存在"——而注入本身**一次模型调用都不产生**
-    # （只是把档案拼进这一轮的上下文）。
-    # **这一组里没有"服务地址"**（v0.46）：记忆在我们自己的进程里跑，没有第二个
-    # 进程可连——那个设置项随 ReMe 一起删了，"测试连接"也随之删掉。
-    #
-    # 旧的四项（``capture_every`` / ``dream_after_hours`` / ``vector_*``）**已删**
-    # （期五清理）：定时捕获、整理、向量那一路整条退场，键留在注册表里会让设置页
-    # 显示几个"改了没有任何效果"的开关——那比看不见它们更糟。
-    "memory": {
-        "label": "长期记忆",
-        "fields": [
-            {"key": "memory.enabled", "label": "启用长期记忆", "type": "bool"},
-            {
-                "key": "memory.capture",
-                "label": "自动记（把长期有效的话自动写进档案）",
-                "type": "bool",
-            },
-            {
-                "key": "memory.capture_model",
-                "label": "自动记用的模型（留空 = 用对话模型）",
-                "type": "text",
-            },
-            {
-                "key": "memory.workspace",
-                "label": "记忆工作区目录（相对数据目录）",
-                "type": "text",
-            },
-            {
-                "key": "memory.persona_files",
-                "label": "每轮注入的人设文件与顺序（逗号分隔）",
-                "type": "text",
-            },
-        ],
-    },
-    # 备份提供者（M5 阶段 4）。四个字段都是**本机档**的："快照打给谁、含不含工作区、
-    # 多久自动打一份"——服务器档自己就是备份的目的地，这一组对它没有意义
-    # （与知识库那两个运行期键同源；那一组的端点只有本机档有，见 ``api/v1/local.py``）。
-    #
-    # **凭据不在这一组里**：token 只从引导级来（壳的 ``--token`` / ``KYLAB_TOKEN``），
-    # 落库的键因此永远只有这四个（R3/R14：本机库里存不下凭据）。
-    # **备份那一组不在这里**（M5 阶段 4 落地、阶段 5 收口）：它是**本机档独有**的配置，
-    # 而这份注册表同时是服务器档 `GET /settings` 的渲染来源——加进来会让 NAS 网页端的
-    # 设置页长出一条对它毫无意义的「备份」（那一档**就是**备份的目的地）。
-    # 与「知识库连接」那一节同一条处置：本机档由前端自绘
-    # （`frontend/src/features/misc/settings/KnowledgeConnectionSection.tsx` 那个先例），
-    # 读写走 `/local/backup`（GET 整包 / PATCH 白名单四键）。
-    # 四个键本身照旧有代码默认值（见下面的 `DEFAULTS`），运行期可改。
 }
 
 #: 代码默认值。**只有行为参数**：模型身份来自注册表，没有默认模型这回事。
@@ -366,7 +166,6 @@ DEFAULTS: dict[str, str] = {
     # 思考**默认开**：主流模型默认都思考，这里的开关只用来"临时关掉"。
     "llm.enable_thinking": "true",
     "llm.thinking_effort": "medium",
-    "chat.top_k": "6",
     # 动态返回的两个基础阈值（v0.54，见 services/retrieval/distribution.py）。
     # **两个数都在"真余弦"刻度上**（2026-09-29 换了口径：以前"相似度"按欧氏公式算，
     # 整体虚高，见 services/retrieval/service.py 的 `similarity_from_distance`）。
@@ -382,112 +181,9 @@ DEFAULTS: dict[str, str] = {
     # 本机开发库里这一项没被改过（`retrieval.floor_score` 走默认）。
     "retrieval.floor_score": "0.37",
     "retrieval.baseline_score": "0",
-    # 检索按块命中，但**喂给模型的是整段小节**（v17，见 services/chat.py
-    # 的「小块检索、大块阅读」）：0 = 关闭，只给命中的那一块
-    "chat.section_chars": "1800",
-    # 整块资料的字数预算（v25）：按条数均摊，每条不低于 400 字。
-    # 摘要（见 services/summary.py）补上了"这篇文档在讲什么"这层背景，
-    # 于是片段本身可以更短——这是本轮省 token 的主要落点。
-    "chat.material_chars": "6000",
     # 入库时给每篇文档生成摘要（v25）。它是**省 token 的机制**而不是锦上添花：
-    # 一次提问复用一篇摘要，能省掉成倍的资料 token。关掉它只会让问答更贵。
+    # 一次提问复用一篇摘要，能省掉成倍的资料 token。关掉它只会让检索更贵。
     "ingest.summary_enabled": "true",
-    # 对话主流程（见 services/tool_loop.py）：默认走工具循环，知识库检索、联网、
-    # Office 导出、子 Agent 都是其中的工具。关掉就退回"原问题单轮检索"的旧路径
-    # （services/chat.py::answer_stream）——那条路径还在，用于排查与省钱。
-    "chat.agent_enabled": "true",
-    # 任务模式两档（2026-09-27 由四档收敛而来，见 services/modes.py 的模块头）。
-    # **默认 goal**：直接干活；"要不要先给计划"是用户的活法偏好，而默认该是能干活的那个。
-    "chat.mode": modes.DEFAULT_MODE,
-    # 权限四档（2026-09-29，见 services/modes.py 的模块头）：
-    # **默认「默认（智能）」**——默认要能干活（"仅查看"当默认，产品一上来就是废的；
-    # "手动批准"当默认，每一步弹一次），而"出工作区 / 联网 / 说不清"仍然要问一句，
-    # 风险留在看得见的地方。
-    #
-    # 这一项替代了原来的 `sandbox.exec_policy`（那一项的三档已折进权限轴）。
-    # **旧键的值不再被读取**，所以升级上来的部署如果原来把它设成 `allow`，
-    # 命令的行为会从"直接跑"变成"按智能档判"——**变化的方向是更安全的那一侧**，
-    # 而界面上显示的档（默认）与实际行为一致。要全放行就在权限那颗上改成"全自动"。
-    # （认旧**值**的映射还在 `modes.coerce_permission` 里：那是给"有人照旧写法写在
-    #   `chat.permission` 上"这种情况用的。）
-    "chat.permission": modes.DEFAULT_PERMISSION,
-    # 上下文压缩（v20.1，见 services/chat.py::prepare_context）：
-    # 占用达到阈值就把更早的对话折成摘要，避免长会话撑爆窗口或悄悄失忆。
-    # 窗口做成本设置项是因为**没有统一的 API 能查到模型的真实窗口**。
-    "chat.context_window": "65536",
-    "chat.compress_at": "70",
-    "chat.compress_keep": "6",
-    # 绝对上限（D37）：比默认窗口的 70%（45875）高，所以**默认配置下一字不改**既有行为；
-    # 只有用户把窗口调到很大时它才会先到线（12 万 token）。
-    "chat.compress_max_tokens": "120000",
-    # **三张清单默认都空**，也就是"一律先问"。
-    # 抄的是 Claude Code 的默认：它也不预置放行清单——预置一张"看起来安全"的
-    # 只读命令表是危险的，因为**只读不等于无害**：`cat /etc/passwd` 是只读的，
-    # 而它能读到工作区外面的东西（内核隔离只管住了写与网络，见设计文档 §4）。
-    # 所以放行清单由用户按自己的环境决定，界面上提供"以后都允许"一键写入。
-    # 只读挂载清单：留空用 services/isolation.DEFAULT_BIND_RO（只挂运行所需的目录）。
-    # **不给"挂整个 /"这个选项**：那正是这一层想避免的形态（见设计文档 §4）。
-    "sandbox.bind_ro": "",
-    "sandbox.rules_allow": "",
-    "sandbox.rules_ask": "",
-    "sandbox.rules_deny": "",
-    # 2026-09-30 用户裁定：**默认改回 false（无隔离时直接执行）** —— 不装 Docker 也该能跑命令；
-    # 要严格拒绝就显式打开本项（下面那一行）。默认开会让 Windows 本地跑什么都跑不动。
-    # 无内核隔离时是否拒绝执行（v0.55）。**D16（2026-09-29）默认改成 true = 拒绝**：
-    # 用户点名的会话里，降级直执的表现是"上一步被拦、下一步 `find /` 整机裸跑、网络不受限" ✗ ——
-    # 那与"没有隔离就不执行"这条纪律正好相反。裸跑现在是显式开关（关掉本项）。
-    "sandbox.require_isolation": "false",
-    "web.search_provider": "tavily",
-    # 留空 = 没配。**默认不填任何密钥**：预置一个"看起来能用"的值会让
-    # 用户以为联网已经开了，然后在第一次搜索时得到一个别人的额度错误。
-    "web.search_api_key": "",
-    # **默认开**（v0.56 改，档案制 §7.3）：它管的是**用户档案的注入与 recall**——
-    # 注入一次模型调用都不产生（只是把档案拼进这一轮上下文），所以"默认关"没有
-    # 任何省钱的收益，只等于"这个功能默认不存在"。
-    # **它不管编辑**：档案与变更流照样可读可改（界面上编辑不看这个开关）；
-    # `SOUL.md`/`AGENTS.md` 的注入也不看它（§7.2）。
-    "memory.enabled": "true",
-    # 记忆工作区放在数据目录下（相对路径）：与其它数据一起备份/迁移，
-    # 一个部署只有一处要备份。
-    "memory.workspace": "memory",
-    # **隐式捕获的总开关**（§4.1 第②路）。**默认关**，三条理由：
-    # ① 它是这条链路上**唯一会自动花钱**的地方（信号命中的那一轮要问一次模型），
-    #    与本项目"凡是会花钱的都默认关"这条口径一致；
-    # ② 默认关之后，"**默认配置下每轮零额外模型调用**"这条判据才成立（§9.2 第 9 条）
-    #    ——档案制的目标不靠它也能达成（显式 + 界面两条路是完整的，不是降级）；
-    # ③ 产品的画像本来就是"少的、稳的"：一开着就自动写，最容易写进一堆噪音。
-    #
-    # 打开之后还有一道**零成本的机械前置筛**（`MemoryService` 的 ``CAPTURE_SIGNALS``）：
-    # 只有用户消息里出现强信号词时才发起那一次判定。词表必然脆，但它的代价只是漏，
-    # 方向与"宁可漏不可滥"一致。
-    "memory.capture": "false",
-    # 判定用哪个模型。**默认留空 = 用运行期绑定给「对话生成」的那个模型**
-    # （记忆是对话的副产品，没理由另配一个必须存在的模型；留空也不引入
-    # "没配记忆模型 → 记忆功能不可用"这种半死状态）。允许填一个更便宜的模型。
-    "memory.capture_model": "",
-    # **每轮注入哪几份人设文件、按什么顺序**（v0.51，照 QwenPaw 的 ``system_prompt_files``）。
-    #
-    # v0.56（档案制 §7.2）起只剩两份：``PROFILE.md``（= 档案）走**独立的贡献者**
-    # （开关是 ``memory.enabled``）、``MEMORY.md`` 退场（不再注入、不再写入）。
-    # 理由是这两条各自的：把档案挂在这一行上，用户从清单里删掉一个名字，
-    # 档案就**静默停止注入**了；而 ``MEMORY.md`` 的内容已经折进档案，
-    # 再注入一遍就是把同一件事说两次。
-    #
-    # 只认那几份核心文件（``memory_files.CORE_FILES``）且只认人设那两份，
-    # 别的名字会被丢掉并记日志：让任意路径进 system prompt 等于绕过"哪些是设定"
-    # 这条分界。空值 = 默认顺序（不是"一份都不注入"）；想去掉哪一份就从这一行里删掉它。
-    "memory.persona_files": "SOUL.md,AGENTS.md",
-    # 备份提供者（M5 阶段 4）。两个**有默认值**的行为参数（决策点 D3 + 方案 §2.2-2）；
-    # 地址与开关没有默认值：没有地址 = 不配、没有开关键 = 开（与知识库那两个键同一条口径，
-    # 见 ``services/backup_provider.resolve_backup_target`` 的四路解析）。
-    #
-    # 自动快照默认 **24 小时**（D3 批准）：这一格是"断网也不丢"的价值所在，关掉就只剩手动。
-    # 判据是"距最近一条快照记录（不论成败）超过 N 小时"——那只钟由阶段 3 的补传节拍
-    # 顺带看（方案 §3.2 的口径修正），不另起计时器。
-    "provider.backup.every_hours": "24",
-    # 工作区产物**默认不进快照**（方案 §2.2-2）：工作区里是用户的项目文件，
-    # v0.3 §4 那条"本机工作区文件 永不上传"是底线。打开之后才按额度备。
-    "provider.backup.include_workspace": "0",
 }
 
 
@@ -750,8 +446,8 @@ class RuntimeConfigService:
         """取一个布尔设置。
 
         取值口径在这里统一：**空值回落默认**，否则认 ``1/true/yes/on``（不区分大小写）。
-        此前这个判断在 ``api/v1/chat.py`` 里手写过一遍，记忆层的开关会是第二遍——
-        而"同一件事两处判断"正是这类开关最容易分叉的地方（一处把空当关、另一处当开）。
+        此前这个判断在调用点手写过好几遍——而"同一件事两处判断"正是这类开关最容易
+        分叉的地方（一处把空当关、另一处当开）。
         """
         raw = self.get(key)
         if raw is None or not raw.strip():
@@ -1008,31 +704,6 @@ class RuntimeConfigService:
         effort = normalize_effort(values["llm.thinking_effort"])
         return temperature, None, thinking, effort
 
-    def normalize_modes(self) -> list[str]:
-        """把**旧取值**写回新档（一次迁移，启动时跑）；返回改过的键与前后值。
-
-        为什么不是"只在读的时候映射"：设置页下拉项是按**新**取值生成的，库里留着
-        旧的 `build` 时那一格会显示成**空**——界面与引擎不一致正是最难查的一类问题。
-        写回之后三处（库、界面、引擎）说的是同一个词。
-
-        只动确实需要改的键：库里没有那一项时什么都不做（**不**替用户写一条新记录，
-        那会让"这一项从来没配过"变成"配过且等于默认"）。
-        """
-        changed: list[str] = []
-        pairs = (
-            ("chat.mode", modes.coerce),
-            ("chat.permission", modes.coerce_permission),
-        )
-        for key, coerce in pairs:
-            raw = self._cached(key)
-            if raw is None:
-                continue
-            fixed = coerce(raw)
-            if fixed != raw:
-                self.set({key: fixed})
-                changed.append(f"{key}: {raw} → {fixed}")
-        return changed
-
     # ------------------------------------------------------------------ 引导值
 
     def _bootstrap_value(self, key: str) -> str:
@@ -1052,16 +723,6 @@ class RuntimeConfigService:
             "llm.temperature": settings.llm_temperature,
             "llm.enable_thinking": settings.llm_enable_thinking,
             "llm.thinking_effort": settings.llm_thinking_effort,
-            # 长期记忆（v0.1.1）：容器部署要在 .env/compose 里一次写清"开关 / 落点"，
-            # 而这些键原先在映射表里没有——写进 .env 也**不生效**。
-            # 两项默认都是 None（没设），于是不设时照旧回落到 DEFAULTS。
-            # **服务地址那一项已删**（v0.46）：记忆跑在我们自己的进程里，
-            # 没有第二个进程可连（见 services/memory.py 的模块头）。
-            "memory.enabled": settings.memory_enabled,
-            "memory.workspace": settings.memory_workspace,
-            # Agent 模式（P1-1）同一套口径：容器部署可以在 compose 里一次写清
-            # "这一部署默认用哪一档"（``KYLAB_CHAT_MODE``），网页上改的仍然覆盖它。
-            "chat.mode": settings.chat_mode,
         }
         value = mapping.get(key)
         return "" if value is None else str(value)

@@ -9,33 +9,23 @@
 import pytest
 
 from app.storage.base import FullTextStore, MetaStore, ObjectStore, TabularStore, VectorStore
+from app.storage.duckdb_impl.tabular_store import DuckDbTabularStore
 from app.storage.postgres_impl.fulltext_store import PostgresFullTextStore
+from app.storage.postgres_impl.meta_store import PostgresMetaStore
 from app.storage.postgres_impl.vector_store import PostgresVectorStore
 from app.storage.s3_impl.object_store import S3ObjectStore
-from app.storage.split_impl import (
-    RouterMetaStore,
-    UnavailableFullTextStore,
-    UnavailableTabularStore,
-    UnavailableVectorStore,
-)
 
 #: 同一接口的每个实现都要在这里登记。新增实现忘了登记时，
 #: "抽象方法有没有漏实现"这条守卫就会漏掉它——所以这份清单要跟着实现一起长。
 #:
-#: M2 阶段 2 登记了四个：``RouterMetaStore`` 是 `MetaStore` 的**分档**实现（本机域走
-#: SQLite、KB 域转给 KB 侧，见 ``app/storage/split_impl/router.py``）；三个
-#: ``Unavailable*`` 是本机档里"这个能力在 NAS 上"那一半的完整实现（每个方法都抛）。
-#: ``UnavailableMetaStore`` / ``SqliteMetaStore`` / ``RemoteMetaStore``（M3 阶段 4）
-#: **不在这个清单里**：它们各自只覆盖 MetaStore 的一半（KB 域 / 本机域），不是完整的接口
-#: 实现——"是否完整"由 ``tests/unit/storage/test_split_impl.py`` 逐名核对。
+#: v0.1.0 瘦身后只剩这些：本机档那一整套（``RouterMetaStore`` / ``SqliteMetaStore``
+#: 与三个 ``Unavailable*``）已随边车一起拆除，这一份服务只有服务器形态。
 IMPLEMENTATIONS = (
+    (PostgresMetaStore, MetaStore),
     (PostgresVectorStore, VectorStore),
     (PostgresFullTextStore, FullTextStore),
     (S3ObjectStore, ObjectStore),
-    (RouterMetaStore, MetaStore),
-    (UnavailableVectorStore, VectorStore),
-    (UnavailableFullTextStore, FullTextStore),
-    (UnavailableTabularStore, TabularStore),
+    (DuckDbTabularStore, TabularStore),
 )
 
 

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from app.models.enums import DataSourceKind, DocumentStage
 from app.services.suggested_questions import (
     _CHUNKS_PER_CALL,
@@ -25,7 +27,7 @@ from app.storage.base import ChunkRecord, DocumentRecord, KnowledgeBaseRecord
 
 
 class FakeChat:
-    """假的对话模型：只实现 ``ask_raw``，记录调用次数、收到的提示词与 model_pk。"""
+    """假的对话模型：只实现 ``complete``，记录调用次数与收到的提示词。"""
 
     def __init__(self, reply: str = "1. 第一个问题？\n2. 第二个问题？") -> None:
         self.reply = reply
@@ -33,10 +35,9 @@ class FakeChat:
         self.last_prompt = ""
         self.last_model: str | None = None
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         self.calls += 1
         self.last_prompt = messages[-1].content
-        self.last_model = model_pk
         return self.reply
 
 
@@ -44,7 +45,7 @@ class BoomChat:
     def __init__(self) -> None:
         self.calls = 0
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         self.calls += 1
         raise RuntimeError("上游挂了")
 
@@ -360,7 +361,7 @@ class SlowChat:
         self._fail_on = fail_on
         self._lock = threading.Lock()
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         with self._lock:
             self.calls += 1
             index = self.calls
@@ -418,3 +419,19 @@ def test_a_failed_batch_does_not_take_the_others_down(bundle, kb, document) -> N
     # **不断言"哪一批"炸**：并发下调用顺序不确定，钉具体 chunk_id 会变成随机失败的用例。
     assert chat.calls == 3
     assert len(generated) == 2
+
+@pytest.fixture(autouse=True)
+def _chat_for_is_the_object_itself(monkeypatch):  # type: ignore[no-untyped-def]
+    """把这些服务用的 `llm.chat_for` 换成"原样返回入参"的那个。
+
+    这些用例传进来的 `FakeChat` 只需要实现 `.complete(messages)`——生产那条链上
+    `chat_for(runtime)` 负责按运行期配置建真客户端，而这里要测的是**提示词与编排**，
+    不是"客户端怎么建的"（那条由 `test_llm.py` 与 `test_runtime_config.py` 钉住）。
+    """
+    def _bind(runtime, model_pk=None):  # type: ignore[no-untyped-def]
+        # 把这一轮用的模型登记到假客户端上：用例据此验"model_pk 一路传到了网关"
+        runtime.last_model = model_pk
+        return runtime
+
+    monkeypatch.setattr("app.services.suggested_questions.chat_for", _bind)
+

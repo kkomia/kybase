@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.api.auth import require_read, require_write
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import SharePermission
 from app.services.api_key import Caller
 from app.services.share import ShareView
@@ -59,7 +59,7 @@ def _actor(caller: Caller) -> tuple[str | None, bool]:
 @router.get("", response_model=ShareListOut, summary="库的分享列表")
 def list_shares(
     kb_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> ShareListOut:
     actor_id, is_admin = _actor(caller)
@@ -71,7 +71,7 @@ def list_shares(
 def grant_share(
     kb_id: str,
     payload: ShareGrantIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ShareOut:
     actor_id, is_admin = _actor(caller)
@@ -89,7 +89,7 @@ def grant_share(
 def revoke_share(
     kb_id: str,
     user_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> None:
     actor_id, is_admin = _actor(caller)

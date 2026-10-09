@@ -20,15 +20,18 @@ import re
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from app.core.exceptions import UpstreamError
 from app.core.http import shared_client
 from app.core.lazy_httpx import httpx  # 惰性代理：不让 click/pygments/rich 进导入闭包（P4-3）
 from app.core.text_hygiene import sanitize_prompt_text
-from app.services.thinking import DEFAULT_EFFORT, build_thinking_payload, echoes_reasoning
 
 __all__ = [
+    "DEFAULT_EFFORT",
+    "DIALECTS",
+    "ECHO_DIALECTS",
+    "EFFORTS",
     "RETRYABLE_REASONS",
     "STREAM_IDLE_TIMEOUT_SECONDS",
     "ChatError",
@@ -40,9 +43,71 @@ __all__ = [
     "TextToolCalls",
     "ToolCallDelta",
     "assemble_tool_calls",
+    "build_thinking_payload",
+    "detect_dialect",
+    "echoes_reasoning",
+    "normalize_effort",
     "split_text_tool_calls",
     "tidy_text",
 ]
+
+# ------------------------------------------------------- 思考方言（供应商适配）
+#
+# **为什么这一层与 llm.py 住在一起**（v0.1.0 瘦身后的归位）：主流对话模型都支持
+# "开/关思考"，多数还支持"思考强度"，但**参数名与取值没有任何统一**——同一个
+# OpenAI 兼容协议下，各家自己加字段：
+#
+# ===========================  ==========================================================
+# DeepSeek                     ``thinking: {type: enabled|disabled}`` + ``reasoning_effort``
+# Qwen / 百炼（DashScope）      ``enable_thinking: bool`` + ``thinking_budget: int``
+# OpenAI（GPT-5 / o 系）        ``reasoning_effort: minimal|low|medium|high``
+# 智谱 GLM                     ``thinking: {type: enabled|disabled}``
+# 月之暗面 Kimi                ``thinking: {type: enabled|disabled}``（k3 另收 reasoning_effort）
+# Google Gemini                ``thinking_config.thinking_budget`` / Gemini 3 的 ``thinking_level``
+# Anthropic Claude             ``thinking: {type: enabled, budget_tokens: int}``
+# ===========================  ==========================================================
+#
+# **实测教训**：DeepSeek 接受 ``enable_thinking`` 却**完全忽略它**——传 ``false`` 时
+# ``reasoning_content`` 照样有 86 字。所以"统一发一个字段"这条路走不通，
+# 必须按方言发对应的字段。
+#
+# **识别策略**：显式覆盖（模型 ``options.thinking_dialect``）> 主机名 > 模型名特征 > 兜底。
+# 兜底只发 ``enable_thinking``（旧行为），**不给不认识它的端点发新字段**——宁可这个
+# 开关对未知供应商无效，也不要因为多发一个字段把请求打成 400。
+
+#: 归一化后的三档强度。各家取值不同，界面只暴露这三档。
+EFFORTS: tuple[str, ...] = ("low", "medium", "high")
+DEFAULT_EFFORT = "medium"
+
+#: 知道的方言。``generic`` 是兜底（只发 ``enable_thinking``）。
+DIALECTS: tuple[str, ...] = (
+    "generic",
+    "qwen",
+    "deepseek",
+    "openai",
+    "glm",
+    "kimi",
+    "gemini",
+    "anthropic",
+)
+
+#: 强度 → 思考预算 token 数。给用 ``thinking_budget`` 的方言（Qwen / Gemini / Anthropic）。
+#: 数值取整千档：够拉开差距，又不至于让一次"低强度"也烧掉几万 token。
+_EFFORT_BUDGET: dict[str, int] = {"low": 1024, "medium": 4096, "high": 16384}
+
+#: Anthropic 要求 ``budget_tokens`` 小于 ``max_tokens``，留一点给正文。
+_ANTHROPIC_MIN_ANSWER_TOKENS = 1024
+
+#: 哪些方言**要求把上一轮的推理原样回传**（不带就整条请求 400）。
+#:
+#: **实测（2026-09-19，api.deepseek.com / deepseek-flash）**：思考模式下，凡是带
+#: ``tool_calls`` 的助手消息，只要缺 ``reasoning_content`` 这个**字段**就 400
+#: （``The `reasoning_content` in the thinking mode must be passed back to the API.``）；
+#: 补一个空串就 200（同一条请求原样重放，只加这一个字段，两次都能复现）。
+#: 也就是说它要的不是内容，是"字段在"。代价对比很悬殊：多发一个字段的成本是零，
+#: 不回传的成本是整轮对话直接失败。所以宁可宽一点——但**只限有证据的方言**：
+#: 未知供应商多发字段可能被打成 400（见上面那条"宁可开关无效，也不要请求非法"）。
+ECHO_DIALECTS = frozenset({"deepseek"})
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +151,7 @@ class ChatError(UpstreamError):
     **P2-2 起它多带一个"能不能重试"**：``reason`` 是失败原因（取值见
     ``RETRYABLE_REASONS``），``retryable`` 由它算出来。分类在这一层、重试在上层——
     这一层只知道"这次失败是什么"，不知道该重试几次、还能不能重试（已经吐了一半
-    正文的时候重试会把回答写两份），那些是策略，见 ``tool_loop._answer``。
+    正文的时候重试会把回答写两份），那些是策略，属于调用方的判断。
     """
 
     code = "chat_error"
@@ -115,7 +180,7 @@ class ToolCall:
 
     ``arguments`` 保留**原始字符串**，不在这里解析成 dict：模型可能给出不完整或
     不合法的 JSON（尤其是流式拼起来时），而"解析失败"要作为一次可上报的工具错误
-    回到循环里，而不是在构造消息时就抛。解析放在执行那一步（见 services/tool_loop.py）。
+    回到循环里，而不是在构造消息时就抛。解析放在执行那一步（由调用方决定）。
     """
 
     id: str
@@ -153,7 +218,7 @@ class LLMReply:
 
     三者可能同时非空（模型先说一句再做），所以不是一个"二选一"的联合类型。
 
-    **产出者只有一处**：工具循环那一步（``tool_loop._answer``）把流式增量拼成这个形状
+    **产出者只有一处**：流式那一步（``OpenAICompatChat.stream_events``）把增量拼成这个形状
     ——正文与思考是攒出来的字符串，工具调用由 :func:`assemble_tool_calls` 按 ``index``
     拼回完整调用。v0.40 之前这里还有一条非流式产线（``complete_with_tools``），
     合并"选工具"与"作答"两次调用之后就没人用了，已删除。
@@ -349,8 +414,8 @@ class OpenAICompatChat:
         **可以带工具表**（v0.34）：收尾那次作答也把工具发出去——走到那里不等于
         "模型已经不想用工具了"，而不带工具表时它会**把调用写进正文**
         （实测 DeepSeek Flash：同一个请求带 tools 回结构化 ``tool_calls``，
-        去掉 tools 就把 ``<｜｜DSML｜｜ invoke …>`` 写进 content，见
-        ``tool_loop._answer``）。带工具时这一路只负责**原样转出碎片**
+        去掉 tools 就把 ``<｜｜DSML｜｜ invoke …>`` 写进 content）。
+        带工具时这一路只负责**原样转出碎片**
         （``LLMDelta.tool_calls``），拼装与执行在工具循环那边。
 
         **一个字正文都没吐出来就报错**，不能静默收尾：静默的后果是上层存下一条空回答，
@@ -740,8 +805,7 @@ def assemble_tool_calls(fragments: Sequence[ToolCallDelta]) -> tuple[ToolCall, .
     而模型下一轮通常还会正常再调一次；缺 id 的自己编一个稳定的，好让工具结果配对。
 
     参数是碎片拼起来的，这里**不判断 JSON 合不合法**：那是执行那一步的事，
-    拼坏了会作为"工具参数不是合法 JSON"回给模型让它自己改
-    （见 ``tool_loop._parse_arguments``）。
+    拼坏了会作为"工具参数不是合法 JSON"回给模型让它自己改（解析归调用方）。
     """
     order: list[int] = []
     grouped: dict[int, list[ToolCallDelta]] = {}
@@ -982,7 +1046,7 @@ class TextMarkerFilter:
     为什么要在**流**这一层也做一遍（协议层已经会剥掉收尾那条全文了）：正文增量是
     **边到边发**的，而用户看的就是增量——只在收尾处剥，等于"库里干净、屏幕上脏过"，
     实测那 5 条消息的正文**整条**都是标记，于是"闪一下"几乎等于整段回答。
-    已经发出去的字收不回来（见 ``tool_loop._answer`` 里"吐过了就不能重试"那段），
+    已经发出去的字收不回来（"吐过了就不能重试"），
     所以只能在这层**先不发**。
 
     三档处置（``_pending`` 里逐块判）：
@@ -994,7 +1058,7 @@ class TextMarkerFilter:
     - **放行**：不是标记（``<b>`` 这种、或引用这个标签的正常句子），照常发。
 
     丢掉的东西**不静默**：``dropped`` / ``names`` 由调用方读走，用来补一条说明
-    （见 ``tool_loop.text_marker_step``）——"我们压掉了模型的一段输出"必须让人知道。
+    ——"我们压掉了模型的一段输出"必须让人知道。
     """
 
     def __init__(self) -> None:
@@ -1127,3 +1191,162 @@ def _error_hint(response: httpx.Response) -> str:
     if response.status_code == 429:
         return f"对话端点限流（429）：免费模型额度可能已用尽，稍后重试。{body}"
     return f"对话端点返回 {response.status_code}：{body}"
+
+
+# ------------------------------------------------------------ 思考方言的实现
+
+
+def normalize_effort(value: object, default: str = DEFAULT_EFFORT) -> str:
+    """把任意来源的强度值收进三档；不认识就退回默认值。"""
+    text = str(value or "").strip().lower()
+    return text if text in EFFORTS else default
+
+
+def echoes_reasoning(base_url: str, model_id: str, dialect: str | None = None) -> bool:
+    """这个端点要不要把助手消息里的推理回传给下一轮请求（见 ``ECHO_DIALECTS``）。"""
+    return detect_dialect(base_url, model_id, dialect) in ECHO_DIALECTS
+
+
+def detect_dialect(base_url: str, model_id: str, override: str | None = None) -> str:
+    """猜这家端点说哪种"思考方言"。
+
+    ``override``（模型 ``options.thinking_dialect``）优先——识别猜错时，
+    用户可以在注册模型时写一个明确值把它掰回来，不必等我们改代码。
+    """
+    if override:
+        cleaned = str(override).strip().lower()
+        if cleaned in DIALECTS:
+            return cleaned
+
+    host = (base_url or "").lower()
+    name = (model_id or "").lower()
+
+    # 主机名是最可靠的线索：同一个网关通常只代理一家的模型。
+    # **顺序有讲究**：Gemini 的 OpenAI 兼容地址是 ``.../v1beta/openai``，
+    # 含 "openai" 子串——把 gemini 排前面才不会把它认成 OpenAI。
+    host_map = (
+        ("generativelanguage", "gemini"),
+        ("vertex", "gemini"),
+        ("deepseek", "deepseek"),
+        ("dashscope", "qwen"),
+        ("aliyuncs", "qwen"),
+        ("bigmodel", "glm"),
+        ("zhipu", "glm"),
+        ("moonshot", "kimi"),
+        ("anthropic", "anthropic"),
+        ("openai", "openai"),
+    )
+    for needle, dialect in host_map:
+        if needle in host:
+            return dialect
+
+    # 主机名看不出（自建网关、聚合站）：退回模型名特征。
+    # 顺序有讲究——"deepseek-r1" 同时含 "qwen" 的情形不存在，但 "glm" 别被别的词误伤。
+    name_map = (
+        ("deepseek", "deepseek"),
+        ("qwen", "qwen"),
+        ("glm", "glm"),
+        ("kimi", "kimi"),
+        ("moonshot", "kimi"),
+        ("claude", "anthropic"),
+        ("gemini", "gemini"),
+        ("gpt-5", "openai"),
+        ("o1", "openai"),
+        ("o3", "openai"),
+        ("o4", "openai"),
+    )
+    for needle, dialect in name_map:
+        if needle in name:
+            return dialect
+    return "generic"
+
+
+def build_thinking_payload(
+    *,
+    base_url: str,
+    model_id: str,
+    enabled: bool,
+    effort: str = DEFAULT_EFFORT,
+    dialect: str | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    """按方言拼出这一轮要附加的思考参数。
+
+    只返回**该方言认识的字段**；空字典表示"这家没有对应开关，什么都不发"。
+    """
+    resolved = detect_dialect(base_url, model_id, dialect)
+    strength = normalize_effort(effort)
+    budget = _EFFORT_BUDGET[strength]
+    name = (model_id or "").lower()
+
+    if resolved == "deepseek":
+        # 只有它懂 "关了就是关了"；开着才谈强度。
+        payload: dict[str, Any] = {"thinking": {"type": "enabled" if enabled else "disabled"}}
+        if enabled:
+            payload["reasoning_effort"] = strength
+        return payload
+
+    if resolved == "qwen":
+        # ``enable_thinking`` 是官方字段；预算超上限时服务端会自己截断。
+        return {"enable_thinking": enabled, "thinking_budget": budget if enabled else 0}
+
+    if resolved == "glm":
+        return {"thinking": {"type": "enabled" if enabled else "disabled"}}
+
+    if resolved == "kimi":
+        payload = {"thinking": {"type": "enabled" if enabled else "disabled"}}
+        # k3 才收 reasoning_effort，且只认 low|high|max；别的模型发了会 400。
+        if enabled and "k3" in name:
+            payload["reasoning_effort"] = {"low": "low", "medium": "high", "high": "max"}[strength]
+        return payload
+
+    if resolved == "openai":
+        # OpenAI 系没有真正的"关闭"：o 系只能降 effort，GPT-5 最低到 minimal。
+        # 关闭时不发这个字段（等同模型默认），而不是硬塞一个可能被 400 的值。
+        return {"reasoning_effort": strength} if enabled else {}
+
+    if resolved == "gemini":
+        if "3" in name:
+            # Gemini 3 用档位而不是 token 预算；medium 在 Pro 上不接受，落到 high。
+            level = "high" if strength == "medium" else strength
+            return {"thinking_level": level}
+        return {"thinking_config": {"thinking_budget": budget if enabled else 0}}
+
+    if resolved == "anthropic":
+        if not enabled:
+            # Anthropic 的思考是"不传即关"，没有 disabled 取值。
+            return {}
+        # budget_tokens 必须小于 max_tokens，否则报错；留一段给正文。
+        cap = budget
+        if max_tokens:
+            cap = min(budget, max(1024, max_tokens - _ANTHROPIC_MIN_ANSWER_TOKENS))
+        return {"thinking": {"type": "enabled", "budget_tokens": cap}}
+
+    # generic：旧行为。SiliconFlow 等网关认 enable_thinking；不认的会忽略未知字段。
+    return {"enable_thinking": enabled}
+
+
+class LLMSource(Protocol):
+    """取一份对话配置的东西（其实就是 ``RuntimeConfigService``）。
+
+    写成协议而不是直接标注那个类：``runtime_config`` 反过来要 import 本模块的
+    ``LLMConfig``，直接互相 import 就是循环。这里只要这一个方法。
+    """
+
+    def llm_for(self, model_pk: str | None = None) -> LLMConfig: ...
+
+
+def chat_for(runtime: LLMSource, model_pk: str | None = None) -> OpenAICompatChat:
+    """按运行期配置建一个对话客户端（KB 侧生成式那几处共用的唯一入口）。
+
+    **不检索、不拼资料**：知识库的摘要 / Wiki / 库提示词 / 示例问题要的是模型的
+    语言能力本身，不是检索结果——它们各自拼好自己的消息，这里只负责"通路 + 没配时
+    那句可操作的报错"。与已拆除的 ``ChatService`` 相比，这里只剩这一件事。
+    """
+    config = runtime.llm_for(model_pk)
+    if not config.is_configured:
+        raise ChatError(
+            "尚未配置对话模型，请到设置 → 模型配置里填写 API Key 与模型 ID",
+            reason="not_configured",
+        )
+    return OpenAICompatChat(config)

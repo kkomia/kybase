@@ -44,8 +44,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.core.exceptions import InvalidRequestError
-from app.services.chat import ChatService
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, LLMSource, chat_for
 from app.storage.base import StoreBundle
 
 __all__ = [
@@ -114,9 +113,11 @@ class KBPromptDraft:
 class KBPromptService:
     """读文档摘要 → 调模型 → 返回草稿与溯源。"""
 
-    def __init__(self, stores: StoreBundle, chat: ChatService) -> None:
+    def __init__(self, stores: StoreBundle, runtime: LLMSource) -> None:
         self._stores = stores
-        self._chat = chat
+        #: 对话模型的来源（`RuntimeConfigService`）：与摘要 / 出题同一口径，
+        #: 每次生成现取配置快照（见 `llm.chat_for`）。
+        self._runtime = runtime
 
     def generate(self, kb_id: str, *, model_pk: str | None = None) -> KBPromptDraft:
         docs = self._summaries(kb_id)
@@ -124,12 +125,11 @@ class KBPromptService:
             raise InvalidRequestError(
                 "这个库还没有可用的文档摘要：先上传并解析文档，摘要生成之后再来，或者直接手写提示词"
             )
-        raw = self._chat.ask_raw(
+        raw = chat_for(self._runtime, model_pk).complete(
             [
                 ChatMessage(role="system", content=_META_PROMPT),
                 ChatMessage(role="user", content=_build_user_prompt(docs)),
-            ],
-            model_pk=model_pk,
+            ]
         )
         prompt = _clean(raw)
         if len(prompt) < MIN_PROMPT_CHARS:

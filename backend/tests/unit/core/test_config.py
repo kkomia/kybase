@@ -3,14 +3,12 @@
 镜像同构：``app/core/config.py`` → ``tests/unit/core/test_config.py``（工程规范 §5.1）。
 
 ``local`` 标记：这个文件里的用例全是"读一遍配置对象"，既不需要 PostgreSQL 也不需要
-SQLite。不标的话它们会在没有测试库的机器上被 ``conftest`` 的兜底夹具整批跳过——
-而"本机档配了 ``database_url`` 要当场拒绝"正是那台机器最该验的一条。
+SQLite。不标的话它们会在没有测试库的机器上被 ``conftest`` 的兜底夹具整批跳过，
+而"配置解析对不对"跟有没有库毫不相干。
 """
 
-from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from app.core.config import API_VERSION, Settings, get_settings
 
@@ -48,48 +46,22 @@ def test_get_settings_is_cached() -> None:
     assert get_settings() is get_settings()
 
 
-# ------------------------------------------------------------------ 部署档（M2 §4.1）
+# ---------------------------------------------------------------- 只有一个部署形态
+#
+# 原先这一节验的是"服务器档 / 本机档"两选一（默认 server、本机档拒绝连接串、
+# 未知档位不许静默退回）。**本机档与 `deployment` 这个字段随边车一起拆除了**：
+# 这个进程就是知识库服务本体，只跑在服务器上，所以"这一份数据写哪儿"不再有两处答案。
+# 留下的是一条朴素的守卫：连接串仍然是普通的可配字段（不给它加第二条路由）。
 
 
-def test_deployment_defaults_to_server() -> None:
-    """**默认必须还是服务器档**：既有部署（NAS 上的网页端与 API）一位行为都不变。"""
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    assert settings.deployment == "server"
-    assert settings.local_db is None
+def test_database_url_is_the_only_place_metadata_lives() -> None:
+    """元数据只有一个家：``KYLAB_DATABASE_URL``。
 
-
-def test_server_deployment_keeps_accepting_a_database_url() -> None:
+    "本机档用 SQLite"那一档已经不存在了——所以这里不再有任何"另一个真相源"可拒绝。
+    """
     settings = Settings(  # type: ignore[call-arg]
-        _env_file=None, deployment="server", database_url="postgresql://u:p@nas:5432/kylab"
+        _env_file=None, database_url="postgresql://u:p@nas:5432/kylab"
     )
     assert settings.database_url == "postgresql://u:p@nas:5432/kylab"
-
-
-def test_local_deployment_accepts_the_local_db_path(tmp_path: Path) -> None:
-    target = tmp_path / "elsewhere" / "kylab.db"
-    settings = Settings(  # type: ignore[call-arg]
-        _env_file=None, deployment="local", local_db=target
-    )
-    assert settings.local_db == target
-
-
-def test_local_deployment_rejects_a_database_url() -> None:
-    """两个真相源要**当场**拒绝：本机档说"元数据在 SQLite"，连接串说"在 PostgreSQL"。
-
-    两个都在场时，"会话写到哪儿"取决于哪段代码先读哪个字段——而失败形态是
-    **数据被写进另一个库**（不报错的那一类）。所以这条必须在构造 Settings 时就红，
-    而不是等到某个请求才发现。
-    """
-    with pytest.raises(ValidationError) as excinfo:
-        Settings(  # type: ignore[call-arg]
-            _env_file=None,
-            deployment="local",
-            database_url="postgresql://kylab:secret@nas:5432/kylab",
-        )
-    assert "KYLAB_DATABASE_URL" in str(excinfo.value)
-
-
-def test_unknown_deployment_is_rejected() -> None:
-    """档位是两选一的字面量：写错（比如 ``local-free``）不许静默退回服务器档。"""
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, deployment="local-first")  # type: ignore[call-arg]
+    assert not hasattr(settings, "deployment")
+    assert not hasattr(settings, "local_db")

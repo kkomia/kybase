@@ -5,7 +5,7 @@
 `agent-harness` 的六步是：任务接入 → 提示词组装 → 动作解析 → 执行与观察 → 控制流 →
 **记录与评分**；读分三原则是**防数据污染**、**警惕古德哈特定律**、**必须附 harness 名**
 （`docs/归档/调研/Kimi-Resources-能力与实现-照搬清单.md` 第 11 条，出处 L36-42/48-58/74-78）。
-我们前五步都有（`isolation.py` / `prompt.py` / `tool_loop.py` 的拒执行、截断标注、
+我们前五步都有（拒执行、截断标注、
 步数与墙钟），**第六步只有 `session_events` 的只追加日志**——于是"改 harness 有没有用"
 不可度量（§12.338 那批是人工跑的）。这个脚本补的就是那一步。
 
@@ -13,7 +13,7 @@
 
 | 原则 | 落法 |
 | --- | --- |
-| **必须附 harness 名** | 每份记分卡带 `harness_id = <git 短哈希[-dirty]> + <配置摘要>`；摘要覆盖模型档 / 思考档 / 权限档 / `kb_ids` 与从 `tool_loop.py` 读出的步数与墙钟预算。**两份结果能不能比，先看这两串名字** |
+| **必须附 harness 名** | 每份记分卡带 `harness_id = <git 短哈希[-dirty]> + <配置摘要>`；摘要覆盖模型档 / 思考档 / 权限档 / `kb_ids`。（原先还带上从 `tool_loop.py` 读出的步数与墙钟预算——那个文件随 Agent 侧代码拆除了，这几档参数由 `kb_ids` 与模型档代表。）**两份结果能不能比，先看这两串名字** |
 | **防数据污染** | 每条用例**新建一条会话**、记分卡逐条写明会话 id；输出目录非空必须 `--force`（不默认盖上一轮） |
 | **警惕古德哈特** | 分数只由**过程**算（步数 / 工具次数 / 是否报错 / 是否交付），**不评回答好坏**——评正确性会把模型能力混进 harness 分数。判据全在 `harness_cases.py`（改它＝改卷子） |
 
@@ -42,7 +42,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import statistics
 import subprocess
@@ -71,15 +70,6 @@ DEFAULT_TURN_TIMEOUT = 600.0
 CONFIG_KEYS: tuple[str, ...] = (
     "model_pk", "thinking", "thinking_effort", "permission", "agent_mode", "kb_ids",
 )
-
-#: 从 `tool_loop.py` 抠出来的预算常量。它们**不在任何配置里**，但改一个数字就换了 harness
-#: （`CONVERGE_RATIO` 那条就是 §12.338 方案 3），所以也在摘要里。
-BUDGET_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("max_steps", r"^DEFAULT_MAX_STEPS\s*=\s*(\d+)"),
-    ("max_seconds", r"^DEFAULT_MAX_SECONDS\s*=\s*([\d.]+)"),
-    ("converge_ratio", r"^CONVERGE_RATIO\s*=\s*([\d.]+)"),
-)
-
 
 # ---------------------------------------------------------------- 评分（纯函数）
 
@@ -189,23 +179,10 @@ def _git_revision() -> str:
     return f"{head or 'unknown'}{'-dirty' if dirty else ''}"
 
 
-def _budget_digest() -> dict[str, str]:
-    try:
-        text = (BACKEND / "app" / "services" / "tool_loop.py").read_text(encoding="utf-8")
-    except OSError:
-        return {name: "" for name, _ in BUDGET_PATTERNS}
-    found: dict[str, str] = {}
-    for name, pattern in BUDGET_PATTERNS:
-        match = re.search(pattern, text, re.MULTILINE)
-        found[name] = match.group(1) if match else ""
-    return found
-
-
 def config_digest(config: dict[str, Any]) -> dict[str, Any]:
     """这一轮跑在什么配置下 + 它的摘要。**摘要只用来"一眼看出不是同一个"**，
     每一项的值也存下来——人要能读到改的是什么，不能只看见一串哈希。"""
     facts: dict[str, Any] = {key: config.get(key) for key in CONFIG_KEYS}
-    facts.update(_budget_digest())
     facts["api"] = config.get("api")
     facts["digest"] = hashlib.sha1(
         json.dumps(facts, sort_keys=True, ensure_ascii=False).encode("utf-8")

@@ -73,14 +73,8 @@ URL_SIGNING_SECRET_SETTING = "auth.url_signing_secret"  # noqa: S105
 def ensure_url_signing_secret(meta: MetaStore) -> str:
     """把那条下载签名密钥准备好，回它的值（**幂等**：已经有就不动）。
 
-    两个档都要它，但入口不同：
-
-    - **服务器档**：``POST /auth/setup`` 里调它（``AuthService.setup`` 的第一步），
-      所以那一档的密钥从"首次初始化"来；
-    - **本机档**：**没有任何初始化流程**（它不挂 ``/auth/*``，也就永远跑不到 setup），
-      而它的 ``kylab.db`` 是全新的——不在组合根补这一下，那条键就永远是空的，
-      于是"下载签名"这条线上的每一个端点都回 401（头像 / 笔记配图 / 文档下载 /
-      产物预览），前端再把它当"登录失效"把人踢到登录页。
+    入口是 ``POST /auth/setup``（``AuthService.setup`` 的第一步）：密钥从"首次初始化"来。
+    （原先本机档那条路是"组合根在装配时补一下"——那一档与它的边车一起拆除了。）
 
     **幂等是硬要求**：已有就原样返回，绝不每次启动换一把——换了的话，所有已经发出去
     的签名链接会一起失效（而"凭据轮换、链接不失效"正是这条键独立存在的原因）。
@@ -90,7 +84,7 @@ def ensure_url_signing_secret(meta: MetaStore) -> str:
         return str(current)
     generated = secrets.token_urlsafe(32)
     meta.set_setting(URL_SIGNING_SECRET_SETTING, generated)
-    logger.info("已生成下载签名密钥并落库（这条键原来没有：本机档由组合根补，服务器档来自初始化）")
+    logger.info("已生成下载签名密钥并落库（这条键原来没有；首次 setup 时生成一次）")
     return generated
 
 
@@ -176,9 +170,9 @@ class AuthService:
     def _ensure_signing_secret(self) -> None:
         """下载签名密钥独立落库：它是密钥，不该复用任何用户凭据。
 
-        生成那一段在 :func:`ensure_url_signing_secret` 里（本机档的组合根调的是**同一个**
-        函数）：两处各写一遍 token_urlsafe 就是两个"这把钥匙怎么来"的答案，
-        而它们迟早会漂（一处换了长度、另一处没换，签名就再也验不过）。
+        生成那一段在 :func:`ensure_url_signing_secret` 里：两处各写一遍 token_urlsafe
+        就是两个"这把钥匙怎么来"的答案，而它们迟早会漂（一处换了长度、另一处没换，
+        签名就再也验不过）。
         """
         ensure_url_signing_secret(self._stores.meta)
 

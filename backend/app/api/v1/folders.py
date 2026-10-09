@@ -22,7 +22,7 @@ from app.api.v1.schemas import (
     FolderOut,
     FolderRenameIn,
 )
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import WRITE, Caller
 
 router = APIRouter(tags=["folders"])
@@ -45,7 +45,7 @@ def _folder_out(record, counts: dict[str, int]) -> FolderOut:  # type: ignore[no
 )
 def list_folders(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> FolderListOut:
     check_kb_scope(services, caller, [kb_id])
@@ -64,7 +64,7 @@ def list_folders(
 def create_folder(
     kb_id: str,
     payload: FolderCreateIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> FolderOut:
     check_kb_scope(services, caller, [kb_id], need=WRITE)
@@ -76,7 +76,7 @@ def create_folder(
 def rename_folder(
     folder_id: str,
     payload: FolderRenameIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> FolderOut:
     folder = services.folders.get(folder_id)
@@ -92,7 +92,7 @@ def rename_folder(
 )
 def delete_folder(
     folder_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> None:
     folder = services.folders.get(folder_id)
@@ -108,7 +108,7 @@ def delete_folder(
 def move_document(
     document_id: str,
     payload: DocumentFolderIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> DocumentOut:
     """成员拿到只读分享时不该能移动文档——那会改掉 owner 的库结构。"""

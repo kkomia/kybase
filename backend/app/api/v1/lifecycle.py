@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, status
 from app.api.auth import READ, WRITE, check_kb_scope, require_read, require_write
 from app.api.v1.schemas import ImpactOut, TrashEntryOut, TrashListOut
 from app.core.exceptions import ForbiddenError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import ApiKeyPermission
 from app.services.api_key import Caller
 
@@ -32,7 +32,7 @@ router = APIRouter(tags=["lifecycle"])
 
 
 def _guard_document(
-    services: KbServices, caller: Caller, document_id: str, *, need: ApiKeyPermission = READ
+    services: Services, caller: Caller, document_id: str, *, need: ApiKeyPermission = READ
 ) -> None:
     """先取文档再判范围（顺序不能反，反了 404 会变成 403，等于泄露"这个 id 存在"）。"""
     document = services.documents.get(document_id)
@@ -76,7 +76,7 @@ def _impact_out(report) -> ImpactOut:  # type: ignore[no-untyped-def]
 )
 def document_impact(
     document_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> ImpactOut:
     _guard_document(services, caller, document_id)
@@ -90,7 +90,7 @@ def document_impact(
 )
 def knowledge_base_impact(
     kb_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> ImpactOut:
     check_kb_scope(services, caller, [kb_id])
@@ -107,7 +107,7 @@ def knowledge_base_impact(
 )
 def delete_document(
     document_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> TrashEntryOut:
     """删除文档。
@@ -127,7 +127,7 @@ def delete_document(
 )
 def delete_knowledge_base(
     kb_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ImpactOut:
     """删除整个知识库。
@@ -148,7 +148,7 @@ def delete_knowledge_base(
 
 @router.get("/trash", response_model=TrashListOut, summary="回收站")
 def list_trash(
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> TrashListOut:
     _require_admin_for_trash(caller)
@@ -164,7 +164,7 @@ def list_trash(
 )
 def restore_from_trash(
     trash_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> dict[str, str]:
     """恢复文档骨架与原文，并**重新入队摄入**。
@@ -181,7 +181,7 @@ def restore_from_trash(
 @router.delete("/trash/{trash_id}", status_code=status.HTTP_204_NO_CONTENT, summary="彻底删除")
 def drop_trash(
     trash_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> None:
     _require_admin_for_trash(caller)

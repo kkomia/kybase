@@ -28,8 +28,7 @@ import re
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 
-from app.services.chat import ChatService
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, LLMSource, chat_for
 from app.storage.base import ChunkRecord, StoreBundle
 
 __all__ = [
@@ -102,12 +101,14 @@ class SuggestedQuestionsService:
     def __init__(
         self,
         stores: StoreBundle,
-        chat: ChatService,
+        runtime: LLMSource,
         *,
         batch_concurrency: int = DEFAULT_BATCH_CONCURRENCY,
     ) -> None:
         self._stores = stores
-        self._chat = chat
+        #: 对话模型的来源（`RuntimeConfigService`）：与摘要 / 库提示词同一口径，
+        #: 每次出题现取配置快照（见 `llm.chat_for`）。
+        self._runtime = runtime
         # 至少 1：0 会让"出题"静默变成什么都不做（并发度写成 0 的配置错误
         # 不该表现成"这个功能不见了"，而应该退化成串行）
         self._batch_concurrency = max(1, int(batch_concurrency))
@@ -172,12 +173,11 @@ class SuggestedQuestionsService:
         prompt: str,
     ) -> dict[str, list[str]]:
         try:
-            raw = self._chat.ask_raw(
+            raw = chat_for(self._runtime, model_pk).complete(
                 [
                     ChatMessage(role="system", content=_SYSTEM_PROMPT),
                     ChatMessage(role="user", content=_build_prompt(batch, count, prompt)),
-                ],
-                model_pk=model_pk,
+                ]
             )
         except Exception:
             logger.warning("分段问题生成失败（%d 段没有出题）", len(batch), exc_info=True)

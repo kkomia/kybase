@@ -84,14 +84,11 @@ SERVICE_LAYER_MSG = "业务层不得依赖协议适配层（api / mcp_server）�
 # 等于分层纪律对它不存在**：它 import 谁都不会红——而那块代码恰好管着工具准入与会话
 # 范围收口，是全项目最需要护栏的地方。规则靠"命名空间白名单"而不是"记得加清单"。
 #
-# `sidecar` 是**第二个入口**（与 main.py 同级）：桌面壳由
-# `sidecar-runtime\Scripts\python.exe -m app.sidecar` 起进程（`desktop/src-tauri/src/sidecar.rs`），
-# 它自己装配运行时、自己钉死部署档位，不属于 api/ services/ 任何一层。
-# M2 阶段 0 实测它确实触发本规则，按实施方案 §0.6-2 收进白名单（另一条路是把它归入
-# 某个分层，但那会把它塞进一个它并不属于的依赖方向）。
-APP_ROOT_ALLOWED = {"__init__", "main", "sidecar"}
+# `sidecar`（桌面壳那第二个入口）**已随 Agent 侧代码拆除**（v0.1.0 瘦身），
+# 白名单里不再留它——这个仓只有一个入口。
+APP_ROOT_ALLOWED = {"__init__", "main"}
 APP_ROOT_MSG = (
-    "app/ 根下不得放游离模块（只允许 main.py / sidecar.py 两个入口与 __init__.py）："
+    "app/ 根下不得放游离模块（只允许 main.py 与 __init__.py）："
     "请归入 api/ services/ storage/ parsers/ workers/ core/ models/ pipeline/ 之一"
 )
 

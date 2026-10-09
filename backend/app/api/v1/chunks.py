@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, status
 from app.api.auth import READ, WRITE, check_kb_scope, require_read, require_write
 from app.api.v1.schemas import ChunkOut, ChunkToggleIn, ChunkUpdateIn
 from app.core.exceptions import NotFoundError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import ApiKeyPermission
 from app.services.api_key import Caller
 
@@ -34,7 +34,7 @@ router = APIRouter(tags=["chunks"])
 
 
 def _guard_by_chunk(
-    services: KbServices, caller: Caller, chunk_id: str, *, need: ApiKeyPermission = READ
+    services: Services, caller: Caller, chunk_id: str, *, need: ApiKeyPermission = READ
 ) -> None:
     """按块所属的知识库做范围判定。
 
@@ -47,7 +47,7 @@ def _guard_by_chunk(
 
 
 def _guard_by_ordinal(
-    services: KbServices,
+    services: Services,
     caller: Caller,
     document_id: str,
     ordinal: int,
@@ -73,7 +73,7 @@ def _guard_by_ordinal(
 @router.get("/chunks/{chunk_id}", response_model=ChunkOut, summary="切块详情")
 def get_chunk(
     chunk_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> ChunkOut:
     _guard_by_chunk(services, caller, chunk_id)
@@ -84,7 +84,7 @@ def get_chunk(
 def update_chunk(
     chunk_id: str,
     payload: ChunkUpdateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ChunkOut:
     """改正文并重新 embedding。
@@ -102,7 +102,7 @@ def update_chunk(
 def toggle_chunk(
     chunk_id: str,
     payload: ChunkToggleIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ChunkOut:
     """禁用或恢复。
@@ -123,7 +123,7 @@ def toggle_chunk(
 )
 def delete_chunk(
     chunk_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> None:
     _guard_by_chunk(services, caller, chunk_id, need=WRITE)
@@ -141,7 +141,7 @@ def delete_chunk(
 def get_chunk_by_ordinal(
     document_id: str,
     ordinal: int,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> ChunkOut:
     chunk_id = _guard_by_ordinal(services, caller, document_id, ordinal)
@@ -157,7 +157,7 @@ def update_chunk_by_ordinal(
     document_id: str,
     ordinal: int,
     payload: ChunkUpdateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ChunkOut:
     chunk_id = _guard_by_ordinal(services, caller, document_id, ordinal, need=WRITE)
@@ -173,7 +173,7 @@ def toggle_chunk_by_ordinal(
     document_id: str,
     ordinal: int,
     payload: ChunkToggleIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> ChunkOut:
     chunk_id = _guard_by_ordinal(services, caller, document_id, ordinal, need=WRITE)
@@ -190,7 +190,7 @@ def toggle_chunk_by_ordinal(
 def delete_chunk_by_ordinal(
     document_id: str,
     ordinal: int,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> None:
     chunk_id = _guard_by_ordinal(services, caller, document_id, ordinal, need=WRITE)

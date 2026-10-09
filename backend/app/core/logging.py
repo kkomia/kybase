@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import ClassVar
 
 _LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
-#: 文件那一份的格式：多**相对路径:行号**（`app/services/chat.py:1234`）。
+#: 文件那一份的格式：多**相对路径:行号**（`app/services/retrieval/service.py:1234`）。
 #: 与 console 那份分开是有意的——终端的宽度要留给消息本身，
 #: 而文件是拿来 grep 与回溯的，"哪一行打的"在那里才值钱。
 _FILE_FORMAT = "%(asctime)s | %(levelname)s | %(pathname)s:%(lineno)d | %(message)s"

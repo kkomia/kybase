@@ -235,14 +235,19 @@ pnpm@11.21.0` 钉版本），`.dockerignore` 排掉了 `node_modules`——**别
 构建完可以就地验两件事：
 
 ```bash
-# 1) 镜像里真的带了仓库自带的技能（走 KYLAB_SKILLS_DIR=/app/skills，见 backend/Dockerfile）
-docker compose exec -T backend python -c "from pathlib import Path; from app.services.skills import SkillService; print(sorted(r.name for r in SkillService(Path('/data')).list()))"
-#    期望里有 'kylab-knowledge-base'——本仓只带这一份官方技能
+# 1) 后端活着且 schema 就位（健康探针不鉴权，容器编排也是打它）
+curl -fsS http://127.0.0.1:8081/api/v1/health
+#    期望：{"status":"ok","app":"kylab","version":"...","api_version":"v1"}
 
-# 2) 记忆/人设模板已经在数据目录里铺好（启动时幂等补的，落在挂载卷上）
-ls -l /vol1/1000/docker/kybase/data/memory
-#    期望：AGENTS.md / MEMORY.md / PROFILE.md / SOUL.md
+# 2) MCP 那条通道的工具面正好是纯知识库那 8 个
+docker compose exec -T mcp python -m app.mcp_server.server --list-tools
+#    期望：list_knowledge_bases / create_knowledge_base / upload_document /
+#         add_data_source / search / list_documents / get_document_status / delete_document
 ```
+
+> **2026-10-09 后端瘦身后的变化**：原先这两条检查打的是 `services/skills.py` 的技能清单与
+> `<data>/memory/` 的人设模板——那一整套（技能 / 记忆）随 Agent 侧代码拆除了，
+> `KYLAB_SKILLS_DIR` 这个变量后端也不再读。
 
 界面：`http://192.168.31.18:8081`（首次打开会让你创建管理员账号）。
 接口文档：`http://192.168.31.18:8081/api/v1/docs`；健康检查：`/api/v1/health`（不鉴权）。
@@ -323,13 +328,9 @@ docker exec kylab-minio sh -c \
 docker exec kylab-minio sh -c 'mc ls kybase'
 ```
 
-想换个桶名就**两处一起改**：`app/.env` 里加 `KYLAB_BACKUP_BUCKET=你的桶名`
-（compose 已经把它透传进后端），再把上面那条 `mc mb` 的最后一段换成同一个名字。
-
-**没有建桶也能先把应用起起来**：后端"**启动不校验桶**"，缺桶时备份握手仍然 200，
-只是如实报 `capabilities.snapshot.available=false` 加一句可执行的下一步；
-第一次真的上传时它还会顺手补建（要有 `s3:CreateBucket` 权限）。所以建桶是一步
-**有意识的部署动作**，不是启动的前提。
+**这一节在 2026-10-09 之后已经不需要做**：备份提供者（`/backup/*`）与快照桶随 Agent 侧
+代码拆除了——这个服务只对知识库那个桶（`kylab`）负责，没有第二个桶的语义。
+上面两条命令留着只是给"桶里还有历史快照"的机器做查看参考。
 
 ## 持久化
 

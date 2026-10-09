@@ -20,7 +20,7 @@ from app.api.v1.schemas import (
     ApiKeyOut,
 )
 from app.core.security import API_KEY_PREFIX
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -45,7 +45,7 @@ def _to_out(record) -> dict:  # type: ignore[no-untyped-def]
 
 @router.get("", response_model=ApiKeyListOut, summary="API Key 列表")
 def list_api_keys(
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> ApiKeyListOut:
     return ApiKeyListOut(items=[ApiKeyOut(**_to_out(item)) for item in services.api_keys.list()])
@@ -59,7 +59,7 @@ def list_api_keys(
 )
 def create_api_key(
     payload: ApiKeyCreateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> ApiKeyIssuedOut:
     issued = services.api_keys.create(
@@ -77,7 +77,7 @@ def create_api_key(
 )
 def revoke_api_key(
     key_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> None:
     services.api_keys.revoke(key_id)

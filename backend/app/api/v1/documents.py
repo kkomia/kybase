@@ -49,7 +49,7 @@ from app.api.v1.schemas import (
 )
 from app.core.config import Settings, get_settings
 from app.core.exceptions import PayloadTooLargeError, UnauthorizedError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.core.signing import SigningError, verify_resource
 from app.models.enums import ApiKeyPermission, DataSourceKind, DocumentStage
 from app.services.api_key import Caller
@@ -104,7 +104,7 @@ def _to_out(
     )
 
 
-def document_out(services: KbServices, record) -> DocumentOut:  # type: ignore[no-untyped-def]
+def document_out(services: Services, record) -> DocumentOut:  # type: ignore[no-untyped-def]
     """单个文档的完整响应（切块数、上传者名字、出题情况都由后端补）。
 
     公开出来给别的路由复用（如"移动到目录"要回一份文档）——两处各拼一遍
@@ -122,7 +122,7 @@ def document_out(services: KbServices, record) -> DocumentOut:  # type: ignore[n
     )
 
 
-def _uploader_names(services: KbServices, records) -> dict[str, str]:  # type: ignore[no-untyped-def]
+def _uploader_names(services: Services, records) -> dict[str, str]:  # type: ignore[no-untyped-def]
     """把一批文档的 ``uploaded_by`` 一次解析成名字（G6）。
 
     **批量解析而不是逐条查**：文档列表一页几十条，逐条查就是 N+1；
@@ -159,7 +159,7 @@ async def upload_document(
             "而名字可能是中文（实测浏览器与 curl 都会报编码错）"
         ),
     ),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> UploadAccepted:
     """上传文档。
@@ -230,7 +230,7 @@ async def upload_document(
 
 
 def _do_upload(
-    services: KbServices,
+    services: Services,
     *,
     kb_id: str,
     filename: str,
@@ -276,7 +276,7 @@ def _do_upload(
 )
 def list_documents(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
     folder_id: str | None = Query(default=None, description="只看这个目录里的文档"),
     root: bool = Query(default=False, description="只看未归档（根目录）的文档"),
@@ -350,7 +350,7 @@ def list_documents(
 def batch_documents(
     kb_id: str,
     payload: DocumentBatchIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> DocumentBatchOut:
     """对选中的一批文档执行同一个动作。
@@ -379,7 +379,7 @@ def batch_documents(
 
 
 def _guard_document(
-    services: KbServices, caller: Caller, document_id: str, *, need: ApiKeyPermission = READ
+    services: Services, caller: Caller, document_id: str, *, need: ApiKeyPermission = READ
 ) -> object:
     """按文档归属的知识库做范围判定，**并把它已经读出来的那条文档返回**。
 
@@ -402,7 +402,7 @@ def _guard_document(
 @router.get("/documents/{document_id}", response_model=DocumentOut, summary="文档详情")
 def get_document(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> DocumentOut:
     _guard_document(services, caller, document_id)
@@ -419,7 +419,7 @@ def get_document(
 )
 def document_timeline(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> DocumentTimelineOut:
     """给列表行的分段进度条与右侧抽屉的明细喂数据。
@@ -442,7 +442,7 @@ def document_timeline(
 def rename_document(
     document_id: str,
     payload: DocumentRenameIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> DocumentOut:
     """改显示名。只读分享的成员改不了——那是 owner 的库。"""
@@ -459,7 +459,7 @@ def rename_document(
 def set_document_disabled(
     document_id: str,
     payload: DocumentDisabledIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> DocumentOut:
     """停用后文档**不参与检索**（全文与向量两条通道都过滤），其余一切保留：
@@ -479,7 +479,7 @@ def set_document_disabled(
 )
 def cancel_document(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> DocumentOut:
     """用户主动叫停。**不是删除**：已产出的东西留着，随时可以重新摄入。
@@ -499,7 +499,7 @@ def cancel_document(
 )
 def list_document_parts(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> DocumentPartList:
     _guard_document(services, caller, document_id)
@@ -515,7 +515,7 @@ def list_document_parts(
 def list_document_chunks(
     document_id: str,
     limit: int = Query(default=20, ge=1, le=MAX_CHUNK_PREVIEW, description="最多返回多少块"),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> ChunkList:
     """按 ``ordinal`` 升序返回切块。
@@ -539,7 +539,7 @@ def list_document_chunks(
 )
 def reprocess_document(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> UploadAccepted:
     _guard_document(services, caller, document_id, need=WRITE)
@@ -598,7 +598,7 @@ _RENDERABLE_KINDS = frozenset({"pdf", "image", "docx", "pptx", "excel"})
 )
 def preview_document(
     document_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
     source: str = Query(
         default="auto",
@@ -668,7 +668,7 @@ def document_download_url(
         pattern="^(original|markdown)$",
         description="original=原文件（默认），markdown=解析产物",
     ),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> DownloadUrlOut:
     """签发一条短期下载链接。
@@ -717,7 +717,7 @@ def download_document_content(
         pattern="^(attachment|inline)$",
         description="inline 供页面内直接渲染（PDF / 位图）；其余类型服务端强制 attachment",
     ),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """签名内容端点（下载 / 页面内渲染共用）。

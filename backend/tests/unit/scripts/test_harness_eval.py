@@ -144,20 +144,21 @@ def test_pass_rate_is_computed_per_run_not_per_case() -> None:
     assert card["cases"][0]["runs"] == 2
 
 
-def test_harness_name_changes_with_config_and_with_the_budget_constants() -> None:
+def test_harness_name_changes_with_the_config() -> None:
     """harness 名 = git 版本 + 配置摘要：**改一项配置必须换一个摘要**。
 
     摘要不变就意味着两份记分卡会顶着同一个名字比——而它们本来不是同一个 harness。
-    预算常量（`DEFAULT_MAX_STEPS` / `CONVERGE_RATIO`…）从源码里读，也在摘要里：
-    改一个数字就换了 harness，尽管配置项一个都没动。
+    原先摘要里还带着从 `tool_loop.py` 读出的步数与墙钟预算（改一个数字就换 harness），
+    那个文件随 Agent 侧代码拆除了；现在这一档由**配置项本身**代表。
     """
     baseline = harness_eval.config_digest({"model_pk": "m1", "thinking_effort": "medium"})
     changed = harness_eval.config_digest({"model_pk": "m1", "thinking_effort": "high"})
+    scoped = harness_eval.config_digest({"model_pk": "m1", "kb_ids": ["kb_1"]})
 
     assert baseline["digest"] != changed["digest"]
+    assert baseline["digest"] != scoped["digest"], "换库就是换 harness"
     # 摘要里必须能读到**改的是什么**，不能只留一串哈希
     assert baseline["thinking_effort"] == "medium"
-    assert baseline["max_steps"] and baseline["converge_ratio"]
 
 
 def test_unknown_case_does_not_pass_on_an_empty_rubric() -> None:

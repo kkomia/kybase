@@ -19,14 +19,14 @@ from app.api.v1.schemas import (
     KnowledgeBaseOut,
     KnowledgeBaseUpdate,
 )
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import UserRole
 from app.services.api_key import Caller
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
 
 
-def kb_access_flags(record: Any, caller: Caller, services: KbServices) -> tuple[bool, bool]:
+def kb_access_flags(record: Any, caller: Caller, services: Services) -> tuple[bool, bool]:
     """``(can_manage, can_write)``——**这两条判定的唯一定义**。
 
     `record` 标成 `Any` 而不是具体记录类型：协议层不允许 import 存储
@@ -49,7 +49,7 @@ def kb_access_flags(record: Any, caller: Caller, services: KbServices) -> tuple[
     return managed, managed or services.api_keys.can_write(caller, record.id)
 
 
-def visible_knowledge_bases(services: KbServices, caller: Caller) -> list[Any]:
+def visible_knowledge_bases(services: Services, caller: Caller) -> list[Any]:
     """调用方**看得见**的知识库记录——范围过滤的唯一定义。
 
     受限密钥只看到自己范围内的库：**列表也要过滤**，否则光看名字就能探出
@@ -70,7 +70,7 @@ def visible_knowledge_bases(services: KbServices, caller: Caller) -> list[Any]:
 def _out(
     record: Any,
     caller: Caller,
-    services: KbServices,
+    services: Services,
     *,
     document_count: int = 0,
     last_activity: Any = None,
@@ -96,7 +96,7 @@ def _out(
 @router.post("", response_model=KnowledgeBaseOut, status_code=201, summary="创建知识库")
 def create_knowledge_base(
     payload: KnowledgeBaseCreate,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> KnowledgeBaseOut:
     # 建库是写操作。注意**不把新库塞进密钥范围**：密钥能建库不代表它能碰新库，
@@ -123,7 +123,7 @@ def create_knowledge_base(
 
 @router.get("", response_model=KnowledgeBaseList, summary="知识库列表")
 def list_knowledge_bases(
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> KnowledgeBaseList:
     records = visible_knowledge_bases(services, caller)
@@ -146,7 +146,7 @@ def list_knowledge_bases(
 @router.get("/{kb_id}", response_model=KnowledgeBaseOut, summary="知识库详情")
 def get_knowledge_base(
     kb_id: str,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> KnowledgeBaseOut:
     check_kb_scope(services, caller, [kb_id])
@@ -164,7 +164,7 @@ def get_knowledge_base(
 def update_knowledge_base(
     kb_id: str,
     payload: KnowledgeBaseUpdate,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> KnowledgeBaseOut:
     """改名称、简介或切分参数。**与"删除知识库"同一档权限**（WRITE）——都是库级结构动作，
@@ -230,7 +230,7 @@ def update_knowledge_base(
 def generate_kb_prompt(
     kb_id: str,
     payload: KBPromptGenerateIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> KBPromptDraftOut:
     """让对话模型**只依据库里已生成的文档摘要**写一版库提示词。

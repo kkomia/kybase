@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.auth import require_read
 from app.api.v1.schemas import DashboardOut, UsageOut
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 from app.services.stats import DEFAULT_WINDOW_DAYS
 
@@ -27,7 +27,7 @@ def dashboard(
         le=MAX_WINDOW_DAYS,
         description="活跃度观察窗口（天）",
     ),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> DashboardOut:
     # 成员（v10）的驾驶舱只统计自己可见的库：库名、文档数都是私有数据
@@ -39,7 +39,7 @@ def dashboard(
 @router.get("/stats/usage", response_model=UsageOut, summary="用量（token 与调用量，含检索）")
 def usage_summary(
     days: int = Query(default=30, ge=1, le=MAX_WINDOW_DAYS, description="观察窗口（天）"),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     _: Caller = Depends(require_read),
 ) -> UsageOut:
     """最近 N 天的用量（对话 / 向量化 / 检索 / 重排）。

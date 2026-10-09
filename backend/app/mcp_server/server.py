@@ -8,14 +8,13 @@
 两者的差别只在"消息怎么走"，工具集与实现**完全共用** ``tools.call_tool``。
 这是把工具实现抽出去的唯一理由：写在某个入口里就得复制两份，而两份迟早会漂。
 
-**对外面只有知识库那 10 个工具**（v0.1.0，剥离方案 §7.5）：这个服务是**知识库服务**，
+**对外面就是知识库那 8 个工具**（v0.1.0 瘦身收口）：这个服务是**知识库服务**，
 而 ``services/tools.py`` 那张表是 kylab 合体期的产物——里面有 ``create_note`` 这类
 会真写笔记、``remember`` / ``forget`` 这类会真动用户档案的工具。把它们留在对外 MCP 面上，
-等于让外部客户端从这个服务里拿到 agent 的权限面。所以注册时按
-:data:`MCP_TOOL_NAMES`（= ``agent_tools._KB_TOOLS``）过滤一遍：名单**只有一处定义**，
-它已经在那儿（对话侧"关掉知识库开关就收工具"用的是同一份），不在这里另抄一遍。
-``services.tools.TOOL_NAMES`` 本身**不动**——它还有别的消费方（本机档、定时任务、
-内部脚本那条"看得见就能调"的完整表）。
+等于让外部客户端从这个服务里拿到 agent 的权限面。**瘦身之后 Agent 侧的实现已整体拆除**
+（剥离方案 §6 阶段 1 第 5 步），``services.tools.TOOL_NAMES`` 剩下的正好就是纯知识库
+那 8 个工具，所以 :data:`MCP_TOOL_NAMES` 直接取它——**名单只有一处定义**，
+不在这里另抄一遍。
 
 **SDK 版本注意**：本模块按 **mcp 2.x** 的 ``MCPServer`` 写。
 1.x 里这个类叫 ``FastMCP``；官方迁移指南给的选项是
@@ -28,34 +27,28 @@ import argparse
 import asyncio
 import logging
 
-from app.services.agent_tools import _KB_TOOLS
 from app.services.tools import TOOL_NAMES, call_tool
 
 __all__ = ["MCP_TOOL_NAMES", "build_server", "main", "serve_http", "serve_stdio"]
 
 logger = logging.getLogger(__name__)
 
-#: **对外 MCP 面**：``TOOL_NAMES`` 里属于知识库那一侧的那些（顺序与 ``TOOL_NAMES`` 一致）。
+#: **对外 MCP 面**：就是 ``TOOL_NAMES`` 那张纯知识库工具表（顺序也一致）。
 #:
-#: 名单来源是 ``agent_tools._KB_TOOLS``——它与"用户关掉知识库开关时收起哪些工具"
-#: 是**同一份**定义。抄一份到这里的话，两处迟早相漂，而漂出来的形态是
-#: "开关管得住对话、管不住 MCP"，从外面看不出来。
+#: 为什么不在这里另写一份名单：抄一份到这里，两处迟早相漂，而漂出来的形态是
+#: "挂上去的工具在实现表里没有"（``make_handler`` 取 spec 当场 KeyError）或反过来
+#: （安静地少挂一个工具）。既然 ``services/tools.py`` 现在只剩知识库工具，
+#: 这张表本身就是那份名单。
 #:
-#: 按 ``TOOL_NAMES`` 过滤（而不是直接用 ``_KB_TOOLS``）是刻意的：顺序稳定、且挂上去的
-#: 名字一定是 ``tool_definitions()`` 里有的（否则 ``make_handler`` 取 spec 就会 KeyError）。
-#: 代价是"``_KB_TOOLS`` 里出现一个不在 ``TOOL_NAMES`` 里的名字"会**安静地**少挂一个工具，
-#: 所以那条不变量由用例兜住（``tests/unit/mcp_server/test_server.py`` 断言它正好等于
-#: ``_KB_TOOLS``）——app 代码里不写 assert（``ruff`` 的 S101），而这里也没有别的
-#: 失败点能把它暴露出来。
-MCP_TOOL_NAMES: tuple[str, ...] = tuple(
-    name for name in TOOL_NAMES if name in _KB_TOOLS
-)
+#: 那条不变量由用例兜住（``tests/unit/mcp_server/test_server.py`` 断言它正好等于
+#: ``TOOL_NAMES`` 与那 8 个名字）——app 代码里不写 assert（``ruff`` 的 S101）。
+MCP_TOOL_NAMES: tuple[str, ...] = tuple(TOOL_NAMES)
 
 #: 每个工具接受的参数名。**用来丢掉 schema 之外的参数**：
 #: 服务层对未知关键字会直接 TypeError，而模型偶尔会多带一个字段——
 #: 为此让整个工具失败不值得。
 #:
-#: **只列 :data:`MCP_TOOL_NAMES` 那 10 个**（v0.1.0 收窄后）：这里多列一个不会有事
+#: **只列 :data:`MCP_TOOL_NAMES` 那 8 个**：这里多列一个不会有事
 #: （它挂不上），少一个会直接 KeyError（服务起不来），而两者的门禁是同一条用例
 #: （见 ``tests/unit/services/test_tools.py::test_every_tool_has_a_parameter_whitelist``
 #: 与 ``tests/unit/mcp_server/test_server.py``）。
@@ -68,13 +61,11 @@ _PARAMS: dict[str, tuple[str, ...]] = {
     "list_documents": ("knowledge_base_id", "query", "limit"),
     "get_document_status": ("document_id",),
     "delete_document": ("document_id",),
-    "attach_note_to_kb": ("note_id", "knowledge_base_id"),
-    "ingest_artifact": ("artifact_id", "knowledge_base_id"),
 }
 
 
 def build_server():  # type: ignore[no-untyped-def]
-    """组装 MCP server，把 :data:`MCP_TOOL_NAMES`（对外面那 10 个知识库工具）挂上去。
+    """组装 MCP server，把 :data:`MCP_TOOL_NAMES`（对外面那批纯知识库工具）挂上去。
 
     延迟 import：``mcp`` 在可选 extra 里。顶层 import 会让没装 extra 的用户
     连主服务都起不来——而 MCP 是**可选能力**，不该成为主链路的硬依赖。
@@ -89,7 +80,7 @@ def build_server():  # type: ignore[no-untyped-def]
 
     from app.core.config import get_settings
     from app.core.exceptions import KylabError
-    from app.core.services import get_kb_services, get_services
+    from app.core.services import get_services
     from app.mcp_server.auth import CallerMiddleware, current_caller
     from app.services.tools import tool_definitions
 
@@ -105,8 +96,8 @@ def build_server():  # type: ignore[no-untyped-def]
         ),
         # 身份解析：HTTP 读 Authorization 头，stdio 读 KYLAB_MCP_KEY（见 auth.py）。
         # 挂在这里而不是每个工具里：判定只写一处，漏判才不会成为可能。
-        # **它要的是 KB 根**：中间件读 `services.knowledge_bases`（KB 域的库清单）。
-        middleware=[CallerMiddleware(get_kb_services())],
+        # **中间件读的那张脸**：`services.knowledge_bases`（库清单）与 `services.api_keys`。
+        middleware=[CallerMiddleware(get_services())],
     )
 
     # 描述从 tool_definitions 读，不在这里另写一份：那份清单已经是唯一真相，
@@ -129,11 +120,9 @@ def build_server():  # type: ignore[no-untyped-def]
                 # 同步的服务层调用扔到线程池：MCP 的请求处理跑在事件循环里，
                 # 而检索与入库都是阻塞的，直接在循环里调会把整个服务卡住。
                 #
-                # **喂它的是 Agent 根**（不是上面中间件那个 KB 根，2026-10-08）：
-                # `tools.py` 是混合体（§4 第 3 条，本轮不对切）——它的一半（`search` /
-                # `upload_document` …）走 `services.kb.*`、另一半（`attach_note_to_kb` /
-                # `ingest_artifact` 那两个接缝）走 Agent 字段，所以只能给它带了 `kb`
-                # 那一格的 Agent 根。§6 阶段 1 第 5 步把它们也对切之后，这里只剩 KB 根。
+                # **喂它与中间件同一个根**（v0.1.0 瘦身后只有一个组合根）：`tools.py`
+                # 只依赖服务层，取的是 `services.knowledge_bases` / `services.retrieval` 那几张
+                # 脸——不再有"混合体经组合根取对侧服务"那种过渡形态。
                 result = await asyncio.to_thread(
                     call_tool, get_services(), tool_name, payload, caller=caller
                 )

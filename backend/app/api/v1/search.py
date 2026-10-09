@@ -15,7 +15,7 @@ from app.api.v1.schemas import (
     SearchRequest,
     SearchResponse,
 )
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 from app.services.retrieval import MetadataFilter, RetrievalQuery
 
@@ -25,7 +25,7 @@ router = APIRouter(tags=["search"])
 @router.post("/search", response_model=SearchResponse, summary="混合检索")
 def search(
     payload: SearchRequest,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> SearchResponse:
     # 请求体里指明了库，所以这里做带范围的判定：只读密钥不能查它没被授权的库

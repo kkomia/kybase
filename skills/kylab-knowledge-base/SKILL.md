@@ -36,11 +36,10 @@ the evidence, and a summary is not.
 | `upload_document` | The user hands you a file (base64) to add | Re-upload the same content to "refresh" it — content-hash dedup returns the existing document instead |
 | `add_data_source` | The user wants a feed or page kept up to date | Expect content to appear immediately — registering does **not** fetch |
 | `get_document_status` | After an upload, or when search finds nothing | Assume a non-`indexed` document is searchable; it is not |
-| `create_note` | You produced a conclusion, decision, or procedure worth keeping | Expect it to be searchable yet — a note is not in any library until `attach_note_to_kb` |
-| `attach_note_to_kb` | The user wants a result kept in a library, or says "记到知识库" | Re-attach the same note to "refresh" it; identical content dedups |
+| `upload_document` | A conclusion, decision, or procedure is worth keeping and the user wants it searchable | Expect it to be searchable at once — it goes through the same pipeline as any upload, so check `get_document_status` |
 | `list_notes` | You need to find a note again, or check what has not been filed yet | Assume a listed note is searchable — `in_knowledge_base` is the field that says so |
 | `recall` | The question is about **us**: what we decided, what the user prefers, what went wrong last time | Use it as a substitute for `search` — memory has no sources to cite |
-| `remember` | A durable preference, decision, or lesson came up and should survive the session | Dump a whole document into it — one reusable fact per call, and long material belongs in `create_note` |
+| `remember` | A durable preference, decision, or lesson came up and should survive the session | Dump a whole document into it — one reusable fact per call, and long material belongs in `upload_document` |
 | `delete_document` | The user explicitly asks to remove something | Treat it as reversible without saying so — the original goes to a 7-day trash, but the chunks and vectors are gone immediately, so it stops being searchable at once |
 | `create_knowledge_base` | The user wants a new, separate library | Mix unrelated material into one library; separate libraries keep retrieval scoped |
 
@@ -59,19 +58,20 @@ decide" from `search` — the decision may never have been written into a docume
 
 ## Saving results back into the knowledge base
 
-The retrieval tools answer questions; these two **keep the answer**. Use them when the
+The retrieval tools answer questions; `upload_document` **keeps the answer**. Use it when the
 conversation produces something worth finding again later — a settled conclusion, a
 decision with its reasons, a procedure that worked.
 
-1. `create_note` with the content as Markdown (`title` optional, `tags` help later).
-   **A note alone is not searchable.** Say so rather than implying it is saved.
-2. `attach_note_to_kb` with the `note_id` and the target `knowledge_base_id`.
-   The note becomes a Markdown document and goes through the same pipeline as an upload,
-   so it is not searchable until processing finishes (`get_document_status` reports it).
+Write it as Markdown and send the content as base64 with a `filename` that ends in `.md`
+(kylab's pipeline dispatches on the extension). It goes through the same pipeline as any
+other upload, so it is **not searchable until processing finishes** — say that plainly, and
+use `get_document_status` to report progress.
 
-Two habits worth keeping: ask before filing into a library the user did not name, and
-prefer one note per distinct conclusion over one long running log — the point is that a
-future search can land on it.
+Two habits worth keeping: ask before filing into a library the user did not name, and prefer
+one document per distinct conclusion over one long running log — the point is that a future
+search can land on it. (In the kylab desktop app the same job is done by the `create_note` →
+`attach_note_to_kb` pair; **those two tools do not exist on this service's MCP face** —
+only the eight tools in the table above do.)
 
 ## Answering rules
 

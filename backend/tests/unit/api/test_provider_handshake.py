@@ -13,26 +13,23 @@ r"""握手端点 ``GET /provider/handshake``（M3 阶段 1）的契约。
 4. **401/403 与"连不上"分成两档**：这条在**响应形状**上落实——凭据问题走 HTTP 状态码 +
    统一错误信封，**不进握手体**。客户端据此决定"改钥匙"还是"改地址"。
 
-**另加一条挂载面的判据**（文件末那四条）：这两条端点各挂在哪张路由表上，用**建出来的
-app 的 OpenAPI** 说话（不是读内存里的 router 对象）——阶段 1 的 `/provider/handshake`
-只在服务器档，阶段 5 的 `/local/provider`（判定源 + 改地址）只在本机档。
+**另加一条挂载面的判据**（文件末那条）：`provider.router` 挂在唯一那张路由表上，
+用 router 对象本身说话。原先还有四条"两档各挂哪张表"的用例——本机档随边车拆除了，
+"这条端点挂在哪儿"不再有第二种答案。
 
 **本文件整份标 ``local``**：它只拼装响应（假 services）、只读路由表，**一个存储都不连**。
 标记在这里的含义就是 `conftest.isolated_data_dir` 的那条判据——"不需要 PostgreSQL"：
-没有 PG 的机器上，未标 ``local`` 的用例会被**整批跳过**，而"跳过"对这几条断言等于没测
-（本机档那台机器正是最需要它跑绿的地方）。
+没有 PG 的机器上，未标 ``local`` 的用例会被**整批跳过**，而"跳过"对这几条断言等于没测。
 
-**真 PG 那半（真钥匙 + 真库 + 打真 HTTP）不在本文件**：方案 §7 阶段 1 把它列在
-``pytest -m "not local"`` 那一侧，而本次施工的环境没有 ``KYLAB_TEST_DATABASE_URL``
-——写下来也只能是"跳过"，跳过在这里等于没测（没有验证过的用例不进仓库）。
-所以归属过滤在本文件验的是**协议层的接线**：我们确实调了 ``visible_kb_ids`` 并把范围外
-的剔除、``can_write`` 确实取自 ``api_keys.can_write``；那把钥匙自己的判定
-（``check_access`` / ``visible_kb_ids`` 的真身）由它那份用例钉住，不需要在这里重演。
+**真 PG 那半（真钥匙 + 真库 + 打真 HTTP）不在本文件**（方案 §7 阶段 1 把它列在
+``pytest -m "not local"`` 那一侧）。所以归属过滤在本文件验的是**协议层的接线**：
+我们确实调了 ``visible_kb_ids`` 并把范围外的剔除、``can_write`` 确实取自
+``api_keys.can_write``；那把钥匙自己的判定（``check_access`` / ``visible_kb_ids``
+的真身）由它那份用例钉住，不需要在这里重演。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -42,11 +39,10 @@ from fastapi.testclient import TestClient
 from app.api.v1 import provider
 from app.api.v1.documents import MAX_UPLOAD_BYTES
 from app.api.v1.knowledge_bases import _out
-from app.api.v1.router import api_router, local_router
+from app.api.v1.router import api_router
 from app.api.v1.schemas import SearchRequest
 from app.core.config import API_VERSION, get_settings
-from app.core.services import get_kb_services, get_services, reset_services
-from app.core.storage import reset_stores
+from app.core.services import get_services
 from app.main import create_app
 from app.models.enums import ApiKeyPermission, UserRole
 from app.services.api_key import Caller
@@ -446,109 +442,31 @@ def test_server_time_is_timezone_aware_utc() -> None:
     assert handshake.server_time.utcoffset() == UTC.utcoffset(None)
 
 
-# --------------------------------------------- 4. 挂在服务器档、鉴权在它前面
+# --------------------------------------------- 4. 挂在哪张表、鉴权在它前面
 
 
-@pytest.fixture
-def build_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
-    """按指定档位现建一个 app（**不碰模块级 ``app``**）。
+def test_the_handshake_is_on_the_one_route_table() -> None:
+    """路由表对象级的那一眼：`provider.router` 在 `api_router` 的挂载清单里。
 
-    模块级那个 app 的档位取决于"谁先 import 了 `app.main`"——测试进程里那是
-    会话级的事实，用它来判"本机档有没有这条路由"会随用例顺序漂。所以这里逐次现建，
-    并在收尾把这几个单例缓存清掉（它们是 `lru_cache`，档位换过就必须重读）。
-    """
-
-    def _build(deployment: str):
-        monkeypatch.setenv("KYLAB_DEPLOYMENT", deployment)
-        # 本机档不接受引导级库连接串（`Settings` 的校验器会直接抛），压成空串
-        monkeypatch.setenv("KYLAB_DATABASE_URL", "")
-        get_settings.cache_clear()
-        reset_services()
-        reset_stores()
-        return create_app()
-
-    yield _build
-    get_settings.cache_clear()
-    reset_services()
-    reset_stores()
-
-
-def test_the_server_deployment_serves_the_handshake(build_app: Any) -> None:
-    """服务器档：这条路径真的在（**由 OpenAPI 判据，而不是读内存里的 router 对象**）。"""
-    paths = build_app("server").openapi()["paths"]
-
-    assert "/api/v1/provider/handshake" in paths
-    assert paths["/api/v1/provider/handshake"]["get"]["summary"]
-
-
-def test_the_local_deployment_does_not_serve_the_handshake(build_app: Any) -> None:
-    """本机档**不挂**它（方案 §9-1、`api/v1/router.py` 的不挂清单）。
-
-    本机档是提供者的**客户端**：它该调这个端点，而不是提供它。判据同样走 OpenAPI ——
-    本机档那张白名单里没有这条路径，所以客户端打过去会是 404。
-    """
-    paths = build_app("local").openapi()["paths"]
-
-    assert "/api/v1/local/status" in paths, "本机档那张表本身要在这（自检）"
-    assert "/api/v1/provider/handshake" not in paths
-    assert "/api/v1/knowledge-bases" not in paths
-
-
-def test_the_local_deployment_serves_the_provider_status_and_patch(build_app: Any) -> None:
-    """本机档：``/local/provider`` 的 **GET 与 PATCH 都在**（M3 阶段 5 的判定源）。
-
-    判据走 OpenAPI（与相邻那两条同一手法；不读内存里的 router 对象）：这张白名单是
-    "本机运行时到底能做什么"的唯一定义，而"端点没挂上"这一类问题要在**这里**被看见，
-    不能等界面点进去撞 404。顺手钉住 ``refresh`` 那个查询参数——它是"强制重探"
-    那一条失效路径的入口（方案 §3.2），少了它就只剩 30s 的 TTL 一条路。
-    """
-    paths = build_app("local").openapi()["paths"]
-
-    assert "/api/v1/local/provider" in paths
-    methods = paths["/api/v1/local/provider"]
-    assert methods["get"]["summary"] and methods["patch"]["summary"]
-    parameters = [item["name"] for item in methods["get"].get("parameters", [])]
-    assert "refresh" in parameters, parameters
-
-
-def test_the_server_deployment_does_not_serve_the_provider_status(build_app: Any) -> None:
-    """服务器档**不挂** ``/local/provider``：那一档的知识库就是它自己（没有第二个东西可问）。
-
-    "本机档专属"这句话在两处成立：路由表上（这条）与组合根上（那一档的
-    ``Services.provider`` 是 ``None``）——客户端打过去会是 404，而不是一句
-    看着像"还没配"的空 ``unconfigured``。
-    """
-    paths = build_app("server").openapi()["paths"]
-
-    assert "/api/v1/provider/handshake" in paths, "服务器档那张表本身要在这（自检）"
-    assert "/api/v1/local/provider" not in paths
-    assert "/api/v1/local/status" not in paths
-
-
-def test_the_provider_router_is_only_in_the_server_table() -> None:
-    """路由表对象级的那一眼：`provider.router` 只在 `api_router` 的挂载清单里。
-
-    与上一条互为佐证——上一条验的是"建出来的应用服务不服务它"，
-    这条验的是"它是被 include 到哪张表里的"（改错了这里，一眼能看出是挂号挂错了）。
+    **只有一张表**（v0.1.0 瘦身）：原先还有一张本机档的 ``local_router``，
+    它随边车一起拆除了——"这条端点挂在哪儿"因此不再有第二种答案（那时它挂在
+    服务器档那张上，本机档是提供者的客户端、不提供它）。
     """
     assert id(provider.router) in {id(entry.original_router) for entry in api_router.routes}
-    assert id(provider.router) not in {id(entry.original_router) for entry in local_router.routes}
 
 
-def test_no_credentials_is_a_401_and_carries_no_handshake_body(build_app: Any) -> None:
+def test_no_credentials_is_a_401_and_carries_no_handshake_body() -> None:
     """没有凭据 → **401 + 统一错误信封**，响应体里没有握手那八位。
 
-    这条就是"客户端能把两档分开"的**协议证据**：401/403 是"改钥匙"，
+    这是"客户端能把两档分开"的**协议证据**：401/403 是"改钥匙"，
     连不上（超时 / 连接被拒 / 404）是"改地址"。所以凭据问题**不进握手体** ✗ ——
     它要是进了，客户端就得先解析一个可能根本不存在的响应体才能判类别。
 
-    用 ``dependency_overrides`` 换掉**两个根**：本用例验的是鉴权挡在前面，
+    用 ``dependency_overrides`` 换掉组合根：本用例验的是鉴权挡在前面，
     不该为了它去连一台 PG（也正是本文件标 ``local`` 的理由）。
-    鉴权那条链注入的是 KB 根（`api/auth.py` 的 `KbServices`），所以两个都要换。
     """
-    app = build_app("server")
+    app = create_app()
     app.dependency_overrides[get_services] = lambda: _FakeServices()
-    app.dependency_overrides[get_kb_services] = lambda: _FakeServices()
     try:
         response = TestClient(app).get("/api/v1/provider/handshake")
     finally:

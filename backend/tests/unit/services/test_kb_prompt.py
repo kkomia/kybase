@@ -124,7 +124,7 @@ class _FakeChat:
         self.reply = reply
         self.messages: list[list[ChatMessage]] = []
 
-    def ask_raw(self, messages: list[ChatMessage], *, model_pk: str | None = None) -> str:
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         self.messages.append(list(messages))
         return self.reply
 
@@ -207,3 +207,14 @@ def test_format_placeholder_is_not_reported_as_a_leftover() -> None:
     draft = _draft(prompt, [("d1", "共识.pdf", "摘要")])
 
     assert draft.filename_style_citations == []
+
+@pytest.fixture(autouse=True)
+def _chat_for_is_the_object_itself(monkeypatch):  # type: ignore[no-untyped-def]
+    """把这些服务用的 `llm.chat_for` 换成"原样返回入参"的那个。
+
+    这些用例传进来的 `FakeChat` 只需要实现 `.complete(messages)`——生产那条链上
+    `chat_for(runtime)` 负责按运行期配置建真客户端，而这里要测的是**提示词与编排**，
+    不是"客户端怎么建的"（那条由 `test_llm.py` 与 `test_runtime_config.py` 钉住）。
+    """
+    monkeypatch.setattr("app.services.kb_prompt.chat_for", lambda runtime, model_pk=None: runtime)
+

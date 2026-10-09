@@ -15,7 +15,7 @@ from app.core.exceptions import (
     NotFoundError,
     register_exception_handlers,
 )
-from app.storage.split_impl import KnowledgeBaseUnavailable
+from app.storage.base import KnowledgeBaseUnavailable
 
 
 def test_base_error_defaults_to_500() -> None:
@@ -52,11 +52,10 @@ def test_every_error_has_a_machine_readable_code(error_class: type[KylabError]) 
     assert code and code.islower() and " " not in code
 
 
-@pytest.mark.local
 def test_knowledge_base_unavailable_maps_to_503() -> None:
-    """本机档没有知识库数据源（在 NAS 上）→ **503 + 那句话**。
+    """"知识库当前不可用" → **503 + 那句话**。
 
-    **不是 500**："我们出错了"会把"去设置里看「知识库连接」/ 去服务器上做"这条出路藏起来；
+    **不是 500**："我们出错了"会把"去检查存储 / 稍后重试"这条出路藏起来；
     **也不是空结果**：空结果会被读成"查过了，库里没有"——而它其实没查过。
     这条用例走的是真处理器（注册到一张最小的 app 上再发一次请求），不是读常量。
     """
@@ -73,6 +72,3 @@ def test_knowledge_base_unavailable_maps_to_503() -> None:
     assert response.status_code == 503
     body = response.json()
     assert body["code"] == "knowledge_base_unavailable"
-    assert "NAS" in body["message"]
-    # M3 起那句话的出路是**去设置里看**（不再是"等 M3"）：后半个判据跟着改
-    assert "知识库连接" in body["message"]

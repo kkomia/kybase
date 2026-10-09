@@ -1,4 +1,4 @@
-"""思考模式方言适配（``app/services/thinking.py``）。
+"""思考模式方言适配（``app/services/llm.py`` 的思考方言那一节）。
 
 **为什么值得单测**：这一层的产物是"发给供应商的字段名"，而字段名错了**不会报错**——
 DeepSeek 会安静地忽略 ``enable_thinking``（实测：关掉后 reasoning_content 照样有 86 字），
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.thinking import (
+from app.services.llm import (
     build_thinking_payload,
     detect_dialect,
     normalize_effort,

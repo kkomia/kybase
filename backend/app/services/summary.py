@@ -27,8 +27,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 
-from app.services.chat import ChatService
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, LLMSource, chat_for
 from app.storage.base import ChunkRecord, StoreBundle
 
 __all__ = ["DEFAULT_BACKFILL_BATCH", "SUMMARY_MAX_CHARS", "DocumentSummaryService"]
@@ -68,13 +67,15 @@ class DocumentSummaryService:
     def __init__(
         self,
         stores: StoreBundle,
-        chat: ChatService,
+        runtime: LLMSource,
         *,
         enabled: Callable[[], bool] | None = None,
         batch_size: int = DEFAULT_BACKFILL_BATCH,
     ) -> None:
         self._stores = stores
-        self._chat = chat
+        #: 对话模型的来源（`RuntimeConfigService`）：每次调用现取一份配置快照，
+        #: 设置页改完不必重启（见 `llm.chat_for`）。
+        self._runtime = runtime
         # 开关走运行期配置（设置页可改）：关掉时**一次模型调用都不发**。
         # 不给（测试）就当作开着——测的是"怎么生成"，不是"开关怎么读"。
         self._enabled = enabled or (lambda: True)
@@ -115,7 +116,7 @@ class DocumentSummaryService:
         )
         # 文件名可作线索，但**明确标注它也可能只是系统里的题录名**：学术 PDF 的
         # 文件名常常是"作者_年份_标题"这种拼接，直接让模型照抄会写出假标题
-        raw = self._chat.ask_raw(
+        raw = chat_for(self._runtime).complete(
             [
                 ChatMessage(role="system", content=_SYSTEM_PROMPT),
                 ChatMessage(

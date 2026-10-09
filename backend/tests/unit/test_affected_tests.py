@@ -62,10 +62,13 @@ def _frontend(module: ModuleType, changed: list[str]) -> dict:
 # ------------------------------------------------------------------ 后端
 
 def test_mirrored_unit_test_is_always_in_scope(affected: ModuleType) -> None:
-    """镜像同构：``app/services/memory.py`` → ``tests/unit/services/test_memory.py``。"""
-    info = _backend(affected, ["backend/app/services/memory.py"])
+    """镜像同构：``app/services/summary.py`` → ``tests/unit/services/test_summary.py``。
 
-    assert "tests/unit/services/test_memory.py" in info["targets"]
+    （原先这条用的是 ``memory.py`` 那一对，它随 Agent 侧拆除——换一对仍然存在的。）
+    """
+    info = _backend(affected, ["backend/app/services/summary.py"])
+
+    assert "tests/unit/services/test_summary.py" in info["targets"]
     assert not info["force_all"], "单个服务模块的改动不该判全量"
 
 
@@ -78,9 +81,9 @@ def test_mirrored_integration_test_is_always_in_scope(affected: ModuleType) -> N
 
 def test_changing_a_test_file_runs_that_file(affected: ModuleType) -> None:
     """用例自己改了 → 跑它自己（这条最容易漏，改断言时最需要它）。"""
-    info = _backend(affected, ["backend/tests/unit/services/test_memory.py"])
+    info = _backend(affected, ["backend/tests/unit/services/test_summary.py"])
 
-    assert info["targets"] == ["tests/unit/services/test_memory.py"]
+    assert info["targets"] == ["tests/unit/services/test_summary.py"]
 
 
 def test_repo_level_script_is_found_by_name(affected: ModuleType) -> None:
@@ -94,48 +97,42 @@ def test_repo_level_script_is_found_by_name(affected: ModuleType) -> None:
     assert "tests/unit/test_check_layering.py" in info["targets"]
 
 
-def test_script_in_a_subdirectory_of_scripts_is_found_by_its_path(
-    affected: ModuleType,
-) -> None:
-    """``scripts/`` 下**带子目录**的脚本要按仓库相对路径找到它的用例（2026-10-05 补）。
-
-    这是一个真实缺口的钉子：原先只拿文件名拼 ``scripts/render.mjs``，
-    于是 ``scripts/deck/render.mjs`` 这条路**永远匹配不上**——改了写盘脚本，
-    钉住它的 ``tests/unit/services/deck/test_render.py`` 不跑，而"没跑"与
-    "跑了且绿"看起来完全一样。
-    """
-    info = _backend(affected, ["scripts/deck/render.mjs"])
-
-    assert "tests/unit/services/deck/test_render.py" in info["targets"]
+# **那条"子目录脚本按路径找到用例"的守卫已删**（v0.1.0 瘦身）：它举例的那一对
+# 是 `scripts/deck/render.mjs` ↔ `tests/unit/services/deck/test_render.py`，
+# 而 deck（出片）整条链路随 Agent 侧拆除了——脚本里那条按路径匹配的机制还在，
+# 但这个仓里已经没有"子目录脚本 + 钉住它的用例"这一对了，留着断言只会指向虚处。
 
 
 # ------------------------------------------------------------------ 前端
 
 def test_frontend_panel_maps_to_the_file_that_actually_pins_it(affected: ModuleType) -> None:
-    """2026-09-27 那次漏网的复现：断言在 ``misc-registry`` 里，不在 ``misc-settings`` 里。
+    """2026-09-27 那次漏网的复现（**换成这个仓里真实存在的一对**）。
 
-    前端**没有**镜像关系，所以这条只能靠依赖图 + 说明符匹配。它红了就说明
-    "定向"重新变回了猜。
+    那次漏网的形状是："改了 A 面板，钉住它的断言其实在 B 用例里"。前端**没有**镜像关系，
+    所以只能靠依赖图 + 说明符匹配——这里用知识库设置面板那一对钉住它：
+    改 ``KnowledgeBaseSettings.tsx``，``tests/knowledge-settings.test.tsx`` 必须在跑。
+    （原先用的是 kylab 前端的 ``ModelRegistryPanel`` ↔ ``misc-registry.test.tsx``，
+    那份界面与那份用例都不在这个仓里。）
     """
     info = _frontend(
-        affected, ["frontend/src/features/misc/settings/ModelRegistryPanel.tsx"]
+        affected, ["frontend/src/features/knowledge/KnowledgeBaseSettings.tsx"]
     )
 
-    assert "tests/misc-registry.test.tsx" in info["targets"]
+    assert "tests/knowledge-settings.test.tsx" in info["targets"]
 
 
 def test_frontend_component_pulls_in_its_page_and_shell_tests(affected: ModuleType) -> None:
-    """改一个聊天输入组件，用到它的页面/外壳用例要跟着跑。"""
+    """改一个知识库设置面板，用到它的页面/外壳用例要跟着跑。
+
+    （原先是聊天输入组件那一对：``Composer.tsx`` ↔ ``chat-paste-upload`` /
+    ``chat-ui``——那份界面与那两条用例都不在这个仓里。）
+    """
     info = _frontend(
-        affected,
-        [
-            "frontend/src/features/chat/ui/Composer.tsx",
-            "frontend/src/features/chat/ui/ComposerControls.tsx",
-        ],
+        affected, ["frontend/src/features/knowledge/KnowledgeBaseSettings.tsx"]
     )
 
-    assert "tests/chat-paste-upload.test.tsx" in info["targets"], "直接 import Composer 的那条"
-    assert "tests/chat-ui.test.tsx" in info["targets"], "经 ChatPage 转手的那条"
+    assert "tests/knowledge-settings.test.tsx" in info["targets"], "直接钉住这个面板的那条"
+    assert "tests/layout-shell.test.tsx" in info["targets"], "经应用壳转手的那条"
 
 
 # ------------------------------------------------------------------ 保险
@@ -164,9 +161,9 @@ def test_targeted_scope_is_actually_smaller_than_the_full_suite(affected: Module
     没有这一条，"定向"可以在某次改动后悄悄退化成全量而没人发觉——
     表现只是"又变慢了"，而慢是最不容易被当成 bug 的那类问题。
     """
-    backend = _backend(affected, ["backend/app/services/memory.py"])
+    backend = _backend(affected, ["backend/app/services/summary.py"])
     frontend = _frontend(
-        affected, ["frontend/src/features/misc/settings/ModelRegistryPanel.tsx"]
+        affected, ["frontend/src/features/knowledge/KnowledgeBaseSettings.tsx"]
     )
 
     assert 0 < len(backend["targets"]) < backend["total"] / 2

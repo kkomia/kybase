@@ -3,10 +3,11 @@
 架构给的约定只有两句：**绑定知识库范围**（可指定单个/多个库）**+ 只读 / 读写两种权限**。
 本模块把这两句落成可执行的判断，其余（怎么放进 HTTP 请求、怎么回显）交给协议层。
 
-**身份契约不在这里**（2026-10-08 剥离阶段 0 搬走）：`Caller` / `READ` / `WRITE` /
-`LOCAL_CALLER` / `LOCAL_USER_ID` 住在 `app.core.caller`——它们是两侧共用的契约
-（KB 侧判准入、Agent 侧拿它当类型并判 `WRITE`），与"发钥匙/校验"这套实现分开。
-本模块从那里 import 进来并在 `__all__` 里再导出，**KB 侧调用点一行没动**。
+**身份契约不在这里**（2026-10-08 剥离阶段 0 搬走）：`Caller` / `READ` / `WRITE`
+住在 `app.core.caller`——它与"发钥匙 / 校验"这套实现分开（协议层、服务层都拿它当类型）。
+本模块从那里 import 进来并在 `__all__` 里再导出，**既有调用点一行没动**。
+（原先那份契约里还有 `LOCAL_CALLER` / `LOCAL_USER_ID`——那是本机档的"本机主人"，
+随边车一起拆除了。）
 
 三处刻意的设计：
 
@@ -31,18 +32,16 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.core.caller import LOCAL_CALLER, LOCAL_USER_ID, READ, WRITE, Caller
+from app.core.caller import READ, WRITE, Caller
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import SESSION_TOKEN_PREFIX, display_prefix, generate_token, hash_token
 from app.models.enums import ApiKeyPermission, SharePermission, UserRole
 from app.storage.base import ApiKeyRecord, StoreBundle
 
 if TYPE_CHECKING:  # 只为标注：core.services 会 import 本模块，顶层 import 就成了环
-    from app.core.services import KbServices
+    from app.core.services import Services
 
 __all__ = [
-    "LOCAL_CALLER",
-    "LOCAL_USER_ID",
     "READ",
     "WRITE",
     "ApiKeyService",
@@ -62,7 +61,7 @@ class IssuedApiKey:
     token: str
 
 
-def resolve_caller(services: KbServices, token: str) -> Caller:
+def resolve_caller(services: Services, token: str) -> Caller:
     """把一串凭据换成调用主体（v0.12）。
 
     **REST 与 MCP 共用这一处**：两条协议层各写一份分流，迟早会漂

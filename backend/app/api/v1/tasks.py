@@ -24,7 +24,7 @@ from app.api.v1.schemas import (
 )
 from app.core.config import get_settings
 from app.core.exceptions import ForbiddenError, KylabError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.models.enums import TaskState
 from app.services.api_key import WRITE, Caller
 
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 @router.get("", response_model=TaskList, summary="任务列表（每项带健康判据）")
 def list_tasks(
     state: TaskState | None = Query(default=None, description="按状态过滤"),
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> TaskList:
     # 成员（v10）只看到自己库里的文档任务；任务内容（文件名、报错）是私有数据
@@ -62,7 +62,7 @@ def list_tasks(
 
 @router.get("/health", response_model=HealthOverviewOut, summary="运行态总览")
 def tasks_health(
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> HealthOverviewOut:
     """任务运行态总览。
@@ -86,7 +86,7 @@ def tasks_health(
 
 @router.get("/load", response_model=SystemLoadOut, summary="负载面板（CPU / 内存 / 队列 / 额度）")
 def tasks_load(
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_read),
 ) -> SystemLoadOut:
     """这台机器现在有多忙。
@@ -108,7 +108,7 @@ def tasks_load(
 @router.post("/cancel", response_model=TaskCancelOut, summary="取消还没结束的任务")
 def cancel_tasks(
     payload: TaskCancelIn,
-    services: KbServices = Depends(get_kb_services),
+    services: Services = Depends(get_services),
     caller: Caller = Depends(require_write),
 ) -> TaskCancelOut:
     """撤销排队中（或正在跑）的任务，**逐条返回成败**。

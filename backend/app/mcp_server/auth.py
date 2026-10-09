@@ -28,7 +28,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from app.core.exceptions import UnauthorizedError
-from app.core.services import KbServices
+from app.core.services import Services
 from app.services.api_key import Caller, resolve_caller
 
 __all__ = [
@@ -122,7 +122,7 @@ class CallerMiddleware:
     而不是让每个工具各报一次"没有身份"，把人引到错误的方向。
     """
 
-    def __init__(self, services: KbServices) -> None:
+    def __init__(self, services: Services) -> None:
         self._services = services
 
     async def __call__(self, ctx: Any, call_next: Any) -> Any:

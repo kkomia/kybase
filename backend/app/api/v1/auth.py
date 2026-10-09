@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from app.api.auth import CallerDep, signing_secret
 from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.auth import MIN_PASSWORD_CHARS
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class LoginOut(BaseModel):
     user: AccountOut
 
 
-def _account_out(services: KbServices, user) -> AccountOut:  # type: ignore[no-untyped-def]
+def _account_out(services: Services, user) -> AccountOut:  # type: ignore[no-untyped-def]
     url, _expires = services.avatars.url_for(user, secret=signing_secret(get_settings(), services))
     return AccountOut(
         id=user.id,
@@ -87,7 +87,7 @@ def _account_out(services: KbServices, user) -> AccountOut:  # type: ignore[no-u
 
 
 @router.get("/status", response_model=AuthStatusOut, summary="认证状态（是否需初始化）")
-def status(services: Annotated[KbServices, Depends(get_kb_services)]) -> AuthStatusOut:
+def status(services: Annotated[Services, Depends(get_services)]) -> AuthStatusOut:
     """**不鉴权**：前端要靠它判断该显示首次设置界面还是登录界面。
 
     只回一个布尔值，不透露任何可用信息。
@@ -105,7 +105,7 @@ def status(services: Annotated[KbServices, Depends(get_kb_services)]) -> AuthSta
 @router.post("/setup", response_model=LoginOut, summary="首次初始化：创建管理员账号")
 def setup(
     payload: SetupIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> LoginOut:
     """仅当**还没有任何账号**时开放（服务层把关），首个账号即管理员，
     无主老数据（v10 之前的库与会话）认领给它。"""
@@ -118,7 +118,7 @@ def setup(
 @router.post("/login", response_model=LoginOut, summary="登录（用户名 + 密码）")
 def login(
     payload: LoginIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> LoginOut:
     """换一条会话令牌（7 天滑动续期）。连续失败会被限流（服务层）。"""
     result = services.auth.login(username=payload.username, password=payload.password)
@@ -128,7 +128,7 @@ def login(
 @router.post("/logout", status_code=204, summary="退出登录（吊销当前会话）")
 def logout(
     caller: CallerDep,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> None:
     # 只有会话能"退出"：API Key 要走它自己的撤销端点
     if caller.session_id is None:
@@ -139,7 +139,7 @@ def logout(
 @router.get("/me", response_model=AccountOut, summary="当前登录账号")
 def me(
     caller: CallerDep,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> AccountOut:
     """前端启动时用它恢复身份。API Key 通道没有账号，回 401。"""
     if caller.user is None:
@@ -160,7 +160,7 @@ def me(
 async def upload_avatar(
     file: Annotated[UploadFile, File(description="图片；前端会先缩到 256px 再传")],
     caller: CallerDep,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> AccountOut:
     """只认图片（按**魔数**认，不看声明的 content-type）。返回更新后的账号。"""
     if caller.user is None:
@@ -173,7 +173,7 @@ async def upload_avatar(
 @router.delete("/avatar", response_model=AccountOut, summary="去掉头像")
 def clear_avatar(
     caller: CallerDep,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> AccountOut:
     """回到"用名字生成的默认头像"。没有头像时也成功——它要的是结果，不是过程。"""
     if caller.user is None:
@@ -196,7 +196,7 @@ class PasswordChangeOut(BaseModel):
 def change_password(
     payload: PasswordChangeIn,
     caller: CallerDep,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
 ) -> PasswordChangeOut:
     if caller.user is None or caller.session_id is None:
         raise UnauthorizedError("当前凭据不是登录会话，无法改密")

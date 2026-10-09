@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.auth import require_read
 from app.api.v1.schemas import TableRowsOut
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 
 router = APIRouter(tags=["tabular"])
@@ -30,7 +30,7 @@ router = APIRouter(tags=["tabular"])
 )
 def read_table(
     document_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),

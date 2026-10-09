@@ -225,17 +225,15 @@ def test_upload_rejects_oversized_file(client: TestClient, kb_id: str, monkeypat
 
 
 def test_upload_limit_is_the_documented_one() -> None:
-    """上限就是那个**既有常量**：两条上传路（文档 / 会话文件）与前端三处同值。
+    """上限就是那个**既有常量**（前端预校验与后端同一个数）。
 
     钉住它是为了防"改一处漏一处"：D21 的结论是"超限要等传到服务端才报错"，
     前端预校验补上之后，两边的数字必须是同一个，否则会出现"前端放行、后端 413"
-    这种最难解释的组合。
+    这种最难解释的组合。**会话文件那一条上传路已随边车拆除**，只剩文档这一条。
     """
-    import app.api.v1.conversations as conversations_api
     import app.api.v1.documents as documents_api
 
     assert documents_api.MAX_UPLOAD_BYTES == 200 * 1024 * 1024
-    assert conversations_api.MAX_UPLOAD_BYTES == documents_api.MAX_UPLOAD_BYTES
 
 
 def test_upload_keeps_chinese_filename_readable(client: TestClient, kb_id: str) -> None:

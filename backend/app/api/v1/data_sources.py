@@ -24,13 +24,13 @@ from app.api.v1.schemas import (
     DataSourceOut,
     SyncResultOut,
 )
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 
 router = APIRouter(tags=["data-sources"])
 
 
-def _out(services: KbServices, record) -> DataSourceOut:  # type: ignore[no-untyped-def]
+def _out(services: Services, record) -> DataSourceOut:  # type: ignore[no-untyped-def]
     return DataSourceOut(
         id=record.id,
         knowledge_base_id=record.knowledge_base_id,
@@ -51,7 +51,7 @@ def _out(services: KbServices, record) -> DataSourceOut:  # type: ignore[no-unty
 )
 def list_data_sources(
     kb_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_read)],
 ) -> DataSourceListOut:
     check_kb_scope(services, caller, [kb_id])
@@ -69,7 +69,7 @@ def list_data_sources(
 def create_data_source(
     kb_id: str,
     payload: DataSourceCreateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> DataSourceOut:
     """登记一个数据源。
@@ -97,7 +97,7 @@ def create_data_source(
 )
 def toggle_data_source(
     source_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
     enabled: bool = Query(description="是否启用"),
 ) -> DataSourceOut:
@@ -113,7 +113,7 @@ def toggle_data_source(
 )
 def delete_data_source(
     source_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
 ) -> None:
     """删数据源，**已抓取的文档保留**——它们是知识库的正式内容，可能已被引用。
@@ -131,7 +131,7 @@ def delete_data_source(
 )
 def sync_data_source(
     source_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     caller: Annotated[Caller, Depends(require_write)],
     wait: bool = Query(default=False, description="true 则同步做完并返回统计"),
 ) -> SyncResultOut:

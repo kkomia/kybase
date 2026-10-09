@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.models.enums import DataSourceKind, DocumentStage
 from app.services.summary import (
     SUMMARY_MAX_CHARS,
@@ -20,7 +22,7 @@ from app.storage.base import ChunkRecord, DocumentRecord, KnowledgeBaseRecord
 
 
 class FakeChat:
-    """假对话模型：只实现 ``ask_raw``，记录收到的提示词。"""
+    """假对话模型：只实现 ``complete``，记录收到的提示词。"""
 
     def __init__(
         self, reply: str = "这是一篇关于绿地与近视的系统综述，梳理了队列研究证据。"
@@ -29,7 +31,7 @@ class FakeChat:
         self.calls = 0
         self.last_prompt = ""
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         self.calls += 1
         self.last_prompt = messages[-1].content
         return self.reply
@@ -39,7 +41,7 @@ class BoomChat:
     def __init__(self) -> None:
         self.calls = 0
 
-    def ask_raw(self, messages, *, model_pk=None):  # type: ignore[no-untyped-def]
+    def complete(self, messages):  # type: ignore[no-untyped-def]
         self.calls += 1
         raise RuntimeError("上游挂了")
 
@@ -217,3 +219,14 @@ def _second_document(
     )
     bundle.meta.create_document(record)
     return record
+
+@pytest.fixture(autouse=True)
+def _chat_for_is_the_object_itself(monkeypatch):  # type: ignore[no-untyped-def]
+    """把这些服务用的 `llm.chat_for` 换成"原样返回入参"的那个。
+
+    这些用例传进来的 `FakeChat` 只需要实现 `.complete(messages)`——生产那条链上
+    `chat_for(runtime)` 负责按运行期配置建真客户端，而这里要测的是**提示词与编排**，
+    不是"客户端怎么建的"（那条由 `test_llm.py` 与 `test_runtime_config.py` 钉住）。
+    """
+    monkeypatch.setattr("app.services.summary.chat_for", lambda runtime, model_pk=None: runtime)
+

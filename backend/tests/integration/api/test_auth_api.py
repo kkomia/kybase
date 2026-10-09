@@ -18,8 +18,9 @@ v0.11 起还有第二条契约：**鉴权永远生效**。没有控制台令牌�
 ``/settings`` 那一族**只在本机档存在**了（NAS 上那份设置页随网页端退役），
 所以这一份里三处随它改了：
 
-- "哪些端点要 401" 那张参数表里的 ``/settings`` 换成 ``/api/v1/memory``
-  （同样是服务器档的服务端端点，同样要求凭据）；
+- "哪些端点要 401" 那张参数表里的 ``/settings`` 换成一条同样是服务器档、同样要凭据的
+  （2026-10-09 瘦身后是 ``/api/v1/api-keys``：``/settings`` 与 ``/memory`` 都已不在
+  这个服务上了）；
 - ``test_external_api_key_cannot_touch_settings`` **摘掉**：那条风险现在**结构性不存在**
   ——能用 API Key 的那一档（服务器）没有 ``/settings``，有 ``/settings`` 的那一档
   （本机）不认 API Key（主体恒为"本机主人"，见 `api/auth.py::current_caller`）。
@@ -97,9 +98,12 @@ def test_health_stays_open_even_when_locked(locked: TestClient) -> None:
     ("method", "path"),
     [
         ("get", "/api/v1/knowledge-bases"),
-        # 原来是 `/api/v1/settings`——它随 NAS 网页端退役（2026-10-05）只在本机档了，
-        # 服务器档上那是 404（不是 401），换一条同样要求凭据的服务器端点
-        ("get", "/api/v1/memory"),
+        # 这几条都是**服务器档的服务端端点**（同样要求凭据）。
+        # 原先这里还有 `/api/v1/settings` 与 `/api/v1/memory`：前者的设置页随 NAS 网页端
+        # 退役、后者（记忆）随后端瘦身整体拆除——两条都不在这张表里了，
+        # 换一条同样要凭据的：`/api/v1/wiki/...` 那一族由库路径参数决定，
+        # 所以用 `/api/v1/api-keys` 这种无路径参数的清单端点。
+        ("get", "/api/v1/api-keys"),
         ("get", "/api/v1/tasks"),
         ("get", "/api/v1/stats/dashboard"),
     ]

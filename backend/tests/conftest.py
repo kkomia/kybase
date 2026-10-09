@@ -27,7 +27,6 @@ from app.core.config import get_settings
 from app.core.services import reset_services
 from app.core.storage import reset_stores
 from app.models.enums import DataSourceKind, DocumentStage
-from app.services.llm import ChatError, LLMDelta, LLMReply, ToolCall, ToolCallDelta
 from app.services.model_registry import ModelRegistryService
 from app.services.runtime_config import RuntimeConfigService
 from app.storage.base import (
@@ -57,49 +56,6 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "correct horse battery"
 
 
-@pytest.fixture
-def local_client(tmp_path, monkeypatch) -> Iterator[TestClient]:
-    """**本机档**的 HTTP 客户端（`KYLAB_DEPLOYMENT=local`，**不登录**）。
-
-    为什么要有它（NAS 网页端退役那一轮）：会话 / 笔记 / 设置 / 工作区 / 定时任务 /
-    MCP 那几族**只在**本机档存在（`api/v1/router.py` 那两张表），而本机档不设门禁
-    ——调用主体由 `api/auth.py::current_caller` 短路成"本机主人"
-    （`api_key.LOCAL_CALLER`），`/auth/*` 在这张表上根本没挂。所以它不走
-    `admin_client()` 那一套（那会 404），也不带任何 ``Authorization`` ✓。
-
-    **它就是一个真的本机档**：`app.main.create_app()` + 本机 SQLite（`tmp_path`）+
-    本机目录，与桌面壳里那条链是**同一张路由表**
-    （见 `api/v1/router.py` 模块头那两张表）。判据与 `test_local_backend.py` 里那条
-    "白名单不是整个 API" 逐字相同，只是这里把它做成了可复用的夹具。
-
-    ``KYLAB_DEPLOYMENT`` / ``KYLAB_DATABASE_URL`` 在这里显式设：前者的兜底是
-    `isolated_data_dir` 里那个 "server"，后者在跑 PG 用例时被指到测试库——本机档
-    这两样都必须压掉（"边车误连服务器库"是这一档最糟的失败形态）。
-    """
-    monkeypatch.setenv("KYLAB_DEPLOYMENT", "local")
-    monkeypatch.setenv("KYLAB_DATABASE_URL", "")
-    get_settings.cache_clear()
-    reset_services()
-    reset_stores()
-    from app.main import create_app
-
-    with TestClient(create_app()) as client:
-        yield client
-    reset_services()
-    reset_stores()
-    get_settings.cache_clear()
-
-
-@pytest.fixture
-def fake_local_chat(local_client) -> FakeChatModel:
-    """在本机档的服务图里装一个**假对话模型**（不打网络）。
-
-    必须**依赖** `local_client`：那个夹具会 `reset_services()` 重建服务图，
-    先装的话会被它抹掉（顺序反了的表现是"模型又变回没配"，看着像用例写错了）。
-    """
-    return install_fake_chat()
-
-
 def login_admin(client) -> str:  # type: ignore[no-untyped-def]
     """首次初始化管理员并把会话令牌塞进 ``client.headers``，返回令牌。
 
@@ -110,14 +66,14 @@ def login_admin(client) -> str:  # type: ignore[no-untyped-def]
 
     response = client.post(
         "/api/v1/auth/setup",
-        json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD, "name": "管理员"}
+        json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD, "name": "管理员"},
     )
     if response.status_code == 409:
         # 已经建过管理员：改成登录
         response = client.post(
             "/api/v1/auth/login",
-            json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD}
-    )
+            json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD},
+        )
     assert response.status_code == 200, response.text
     token = response.json()["token"]
     client.headers["Authorization"] = f"Bearer {token}"
@@ -150,12 +106,12 @@ def isolated_data_dir(tmp_path, monkeypatch, pg_database, request):
     临时测试库，``create_app()`` 会连上真名那个库（通常就是开发库）并把测试数据
     写进去。所以这里把它改指临时库。
 
-    **没有测试库就跳过——但 ``local`` 标记的用例不跳过**（M2 阶段 0）：
-    v0.12 起存储只有 PostgreSQL，没有测试库时其余用例静默退回别的实现只会掩盖
-    "这套用例其实没跑"，所以宁可显式跳过（门禁脚本另有检查，缺 DSN 时不会让它
-    悄悄变绿）。而 ``local`` 标记的用例只碰本机 SQLite 与文件系统（`pytest -m local`），
-    它们要证明的恰恰是"**断 NAS 的机器上本机后端能跑**"——在缺 PG 的机器上跳过它们，
-    等于把 M2 的核心断言整批跳过。所以这条宽限是**按标记**开的，不是把门整体放倒。
+    **没有测试库就跳过——但 ``local`` 标记的用例不跳过**：v0.12 起存储只有
+    PostgreSQL，没有测试库时静默退回别的实现只会掩盖"这套用例其实没跑"，所以宁可
+    显式跳过（门禁脚本另有检查，缺 DSN 时不会让它悄悄变绿）。而 ``local`` 标记的用例
+    只读配置、只拼装响应、不连任何库（如 `test_provider_handshake.py` 与
+    `test_config.py`）——在缺 PG 的机器上跳过它们，等于把"协议与配置"那批断言整批跳过。
+    所以这条宽限是**按标记**开的，不是把门整体放倒。
 
     同时关掉内嵌任务消费者：测试要手动驱动 worker，才能对时序下断言。
     """
@@ -165,7 +121,7 @@ def isolated_data_dir(tmp_path, monkeypatch, pg_database, request):
     monkeypatch.setenv("KYLAB_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("KYLAB_RUN_WORKER", "false")
     if pg_database is None:
-        # 本机档用例不得碰任何 PG：把引导级连接串压成空串（环境变量优先于 .env，
+        # 标 local 的用例不得碰任何 PG：把引导级连接串压成空串（环境变量优先于 .env，
         # 与下面 S3 那三个同一手法），于是"误连开发库"在这条路上不可能发生。
         monkeypatch.setenv("KYLAB_DATABASE_URL", "")
     else:
@@ -186,15 +142,6 @@ def isolated_data_dir(tmp_path, monkeypatch, pg_database, request):
     # 测试要一条**不联网**的向量化链路：显式打开开发用确定性嵌入。
     # v0.8 起它不再是"没配就自动兜底"，必须有人主动开——测试就是那个"人"。
     monkeypatch.setenv("KYLAB_DEV_EMBEDDING", "true")
-    # **边车会把档位钉死**（`sidecar.pin_local_deployment()` 直接改环境变量，M2 §4.1
-    # 要求入口自己钉、不给环境继承的机会）：这里登记这三个，让 teardown 把它们恢复回来。
-    # 不登记的话，一次 `sidecar.create_app()` 之后**整个测试进程**都变成本机档 ——
-    # 后面的用例会莫名其妙地连 SQLite 而不是 PG（"边车误连服务器库"那条失败形态，
-    # 只不过发生在测试进程的内存里）。**值取当前值**：只在没设过时给一个合法占位
-    # （`KYLAB_DEPLOYMENT` 不能是空串：`Settings` 的字面量校验会当场报错）。
-    monkeypatch.setenv("KYLAB_DEPLOYMENT", os.environ.get("KYLAB_DEPLOYMENT", "server"))
-    for name in ("KYLAB_SERVER_URL", "KYLAB_TOKEN"):
-        monkeypatch.setenv(name, os.environ.get(name, ""))
     get_settings.cache_clear()
     reset_services()
     reset_stores()
@@ -435,114 +382,4 @@ def document(store: MetaStore, kb: KnowledgeBaseRecord) -> DocumentRecord:
             stage=DocumentStage.UPLOADED,
             size_bytes=128
     )
-    )
-
-
-
-# --------------------------------------------------------------------- 假模型
-#
-# **只有这一份**：对话链路换了协议（P0 起走原生工具调用）之后，三个集成测试文件
-# 各自那份假模型同时失效——它们都只实现了旧协议的方法，于是整条链路在
-# "对象没有 complete_with_tools"上失败，而报错长得像被测代码坏了。
-# 协议再变时只改这里。
-
-
-class FakeChatModel:
-    """假的对话模型：不打网络，按字符吐正文。
-
-    ``stream_events`` 是工具循环真正会调的那一个（``services/tool_loop.py``）：
-    **每一步都是一次流式调用**（v0.40 起），剧本就在这里消费——
-    给了 ``script`` 就按顺序取用（哪一步要工具就吐工具调用碎片），
-    没给就一直吐 ``answer``，于是循环直接进入作答。
-
-    ``complete`` / ``stream`` 留给还没换框架的旁路（编排、摘要一类）。
-    """
-
-    def __init__(
-        self,
-        answer: str = "这是回答。[1]",
-        error: str | Exception | None = None,
-        script: list[LLMReply] | None = None,
-    ) -> None:
-        self.answer = answer
-        # 给字符串就当成"模型失败了"的那句话（真实失败是 `ChatError`）；
-        # 给异常实例就原样抛（测更底层的失败时用）
-        self.error = ChatError(error) if isinstance(error, str) else error
-        self._script = list(script or [])
-        #: 最近一次拿到的工具名（用例据此断言"该给的工具都给了"）
-        self.seen_tools: list[str] = []
-        #: **最近一次**拿到的消息。用例据此断言提示词里有什么（当前模式、
-        #: 命令渲染出来的正文……）——留最后一次的那一份：工具循环里消息是逐步
-        #: 加长的，最后那次带的是最全的一版。
-        self.seen_messages: list = []  # type: ignore[type-arg]
-
-    def complete(self, messages):  # type: ignore[no-untyped-def]
-        self.seen_messages = list(messages)
-        if self.error:
-            raise self.error
-        return self.answer
-
-    def stream(self, messages):  # type: ignore[no-untyped-def]
-        self.seen_messages = list(messages)
-        if self.error:
-            raise self.error
-        yield from self.answer
-
-    def stream_events(self, messages, tools=None):  # type: ignore[no-untyped-def]
-        """**每一步都是一次流式调用**（v0.40），剧本在这里消费。
-
-        哪一步要工具就吐那一批工具调用的碎片（真实端点会把一个参数切成几十块，
-        这里一块给完——"切几块"是传输细节，用例要表达的是"这一步要调什么"）。
-        """
-        self.seen_tools = [item.name for item in (tools or [])]
-        self.seen_messages = list(messages)
-        if self.error:
-            raise self.error
-        reply = self._script.pop(0) if self._script else None
-        if reply is not None:
-            if reply.reasoning:
-                yield LLMDelta(reasoning=reply.reasoning)
-            for index, call in enumerate(reply.tool_calls):
-                yield LLMDelta(
-                    tool_calls=(
-                        ToolCallDelta(
-                            index=index, id=call.id, name=call.name, arguments=call.arguments
-                        ),
-                    )
-                )
-            if reply.tool_calls:
-                return
-        for char in self.answer:
-            yield LLMDelta(text=char)
-
-
-def install_fake_chat(
-    answer: str = "这是回答。[1]",
-    *,
-    error: str | Exception | None = None,
-    script: list[LLMReply] | None = None,
-) -> FakeChatModel:
-    """把 ChatService 的模型工厂换成假的，返回那个实例。
-
-    **同一个实例被复用**（工厂每次返回它）：工具循环一轮里会多次向模型提问，
-    工厂若每次新建一个，``script`` 就会被从头重放——表现是"模型不停地调同一个工具"，
-    而那看起来像循环的 bug。
-    """
-    from app.core.services import get_services
-
-    services = get_services()
-    bind_model(services.models, "chat", model_id="fake-model", capabilities=["chat"])
-    chat = FakeChatModel(answer, error, script)
-    services.chat._chat_factory = lambda config: chat
-    return chat
-
-
-def search_tool_call(query: str, call_id: str = "c1") -> LLMReply:
-    """一条"先查资料"的模型回复（工具循环的第一轮）。"""
-    import json
-
-    return LLMReply(
-        tool_calls=(
-            ToolCall(id=call_id, name="search", arguments=json.dumps({"query": query})),
-        )
     )

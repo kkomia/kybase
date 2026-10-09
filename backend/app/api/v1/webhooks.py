@@ -25,7 +25,7 @@ from app.api.v1.schemas import (
     WebhookUpdateIn,
 )
 from app.core.exceptions import InvalidRequestError, NotFoundError
-from app.core.services import KbServices, get_kb_services
+from app.core.services import Services, get_services
 from app.services.api_key import Caller
 from app.services.webhook import EVENTS, MAX_ATTEMPTS, SIGNATURE_HEADER
 
@@ -80,7 +80,7 @@ def list_events(
 
 @router.get("", response_model=WebhookListOut, summary="订阅列表（密钥掩码）")
 def list_webhooks(
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> WebhookListOut:
     return WebhookListOut(items=[_out(item) for item in services.webhooks.list()])
@@ -94,7 +94,7 @@ def list_webhooks(
 )
 def create_webhook(
     payload: WebhookCreateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> WebhookOut:
     try:
@@ -118,7 +118,7 @@ def create_webhook(
 )
 def delete_webhook(
     webhook_id: str,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> None:
     _require(services.webhooks.get(webhook_id))
@@ -129,7 +129,7 @@ def delete_webhook(
 def update_webhook(
     webhook_id: str,
     payload: WebhookUpdateIn,
-    services: Annotated[KbServices, Depends(get_kb_services)],
+    services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> WebhookOut:
     """只支持改 ``enabled``。

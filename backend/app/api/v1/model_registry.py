@@ -39,7 +39,7 @@ from app.api.v1.schemas import (
 from app.core.caller import Caller
 from app.core.exceptions import InvalidRequestError, UpstreamError
 from app.core.services import Services, get_services
-from app.services.llm import ChatMessage
+from app.services.llm import ChatMessage, chat_for
 from app.services.model_registry import CAPABILITIES, PROVIDER_KINDS, SLOTS
 from app.services.provider_presets import PROVIDER_PRESETS
 from app.services.runtime_config import mask_secret
@@ -403,14 +403,17 @@ def _test_chat(services: Services) -> str:
     # 给它 dict 会在 provider 内部炸成 "'dict' object has no attribute 'role'"
     # ——一个与"密钥对不对"毫不相干的报错，会让人以为模型配错了（踩过）
     snapshot = services.runtime.llm()
-    client = services.chat._chat_factory(snapshot)
-    reply = client.complete([ChatMessage(role="user", content="只回复两个字：可用")])
+    # 走 KB 侧那条唯一的 LLM 入口（`llm.chat_for`）：与摘要 / Wiki / 出题用的是同一条
+    # 通路、同一份"没配就报那句可操作的话"的口径，不另建一个客户端。
+    reply = chat_for(services.runtime).complete(
+        [ChatMessage(role="user", content="只回复两个字：可用")]
+    )
     return f"{snapshot.model_id} 可用（回复：{reply.strip()[:20]}）"
 
 
 def _test_embedding(services: Services) -> str:
     snapshot = services.runtime.embedding()
-    vectors = services.kb.embedder.embed(["连通性测试"])
+    vectors = services.embedder.embed(["连通性测试"])
     return f"{snapshot.model_id} 可用（返回 {len(vectors[0])} 维向量）"
 
 
@@ -420,5 +423,5 @@ def _test_rerank(services: Services) -> str:
         raise InvalidRequestError("重排尚未配置")
     # 用两个词条真调一次：重排的失败常常是"接口能连但请求体格式不被接受"，
     # 只探连通性会漏掉这一类
-    services.kb.reranker.rerank(query="眼轴长度", documents=["眼轴测量", "近视防控"], top_n=1)
+    services.reranker.rerank(query="眼轴长度", documents=["眼轴测量", "近视防控"], top_n=1)
     return f"{snapshot.model_id} 可用"
