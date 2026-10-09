@@ -6,7 +6,7 @@ kybase 只占应用层——存储层是 kylab 时代留下的、**两个应用�
 | 层 | 内容 | 位置 | 谁管 |
 | --- | --- | --- | --- |
 | 存储层 | PostgreSQL 17 + pgvector（54321）、MinIO（9000/9001） | `/vol1/1000/docker/kylab/`（PG 数据）、`/vol1/1000/docker/1panel/.../minio/`（对象） | **不是本仓**：前者一份单服务 compose，后者 1Panel。**一个都不许动** |
-| 应用层 | 后端（FastAPI）+ MCP + 前端（nginx） | `/vol1/1000/docker/kybase/` 下的 `app/`（compose + `.env`）、`src/`（源码）、`data/`（运行期数据） | **本目录这份 compose** |
+| 应用层 | 后端（FastAPI）+ MCP + 前端（nginx） | `/vol1/1000/docker/kybase/` 下的 `app/`（compose + `.env`）、`src/`（本仓的 **git 检出**）、`data/`（运行期数据） | **本目录这份 compose** |
 
 两层都挂在同一个 docker 网络 `1panel-network` 上，应用层按容器名
 （`kylab-postgres` / `kylab-minio`）连过去——**不改存储层的任何配置，也不占宿主机的
@@ -39,7 +39,7 @@ kybase 只占应用层——存储层是 kylab 时代留下的、**两个应用�
 └── data/                         #   旧应用的数据目录（切换后可以留着备份）
 
 /vol1/1000/docker/kybase/         # 应用层（本仓）
-├── src/                          # 源码（git archive 解开，不含 .venv/node_modules）
+├── src/                          # 源码：git@gitee.com:kkomia/kybase.git 的**检出**（只读部署公钥）
 ├── app/
 │   ├── docker-compose.yml        # 应用层（就是 deploy/nas/docker-compose.yml）
 │   └── .env                      # 凭据：PG 口令 + MinIO 密钥（**不入库**，见下）
@@ -52,18 +52,51 @@ kybase 只占应用层——存储层是 kylab 时代留下的、**两个应用�
 cd /vol1/1000/docker/kybase/app
 docker compose up -d --build        # 构建并起（首次约几分钟）
 docker compose logs -f backend      # 看后端日志
-docker compose ps                   # 状态（backend 应显示 healthy）
+docker compose ps                   # 状态（backend / mcp / frontend 都应显示 healthy）
 docker compose down                 # 停掉（**不动存储层**）
 ```
 
 三个服务：`backend`（FastAPI，不发布宿主机端口）、`mcp`（同一镜像，8765 对外）、
 `frontend`（nginx，8081 对外）。**MCP 那条通道强制鉴权**：每个请求要带
-`Authorization: Bearer kylab_sk_…`（「设置 → API 密钥」里建），别把 8765 暴露到公网。
+`Authorization: Bearer kylab_sk_…`（「设置 → API 密钥」里建；唯一的放行例外是握手与
+`tools/list`），别把 8765 暴露到公网。
 
 构建很慢（`uv sync` / `pnpm install`）时不要挂在 SSH 会话上：把构建放到脱离会话的后台跑，
 日志落文件，另开会话 tail 即可（`setsid nohup docker compose build … > build.log 2>&1 &`）。
 
-升级：把新源码替换 `src/`（见下"干净重解"），再 `docker compose up -d --build`。
+### 升级（标准流程：`git pull` 那条路）
+
+`src/` **是本仓在 Gitee 上的 git 检出**，所以升级就是三步：
+
+```bash
+# ① 本机：把要上线的提交推上去
+cd <本仓> && git push origin master
+# ② NAS：拉代码
+cd /vol1/1000/docker/kybase/src && git pull
+# ③ NAS：重建并起
+cd ../app && docker compose up -d --build
+```
+
+- **`--build` 要带上**：镜像是从 `src/` 构建的，只 `up -d` 会用旧镜像。
+  `backend/` 或 `mcp` 相关的东西变了更必须整棵重建（见下"后端也变了的时候"）。
+- **只换前端**那条快路仍在（`update-frontend.sh`，会先 `fetch/pull` 再只重建 frontend）；
+  它适合"只有管理台变了"的时候，省一次后端构建。
+- **`git pull` 自己处理增删文件**，不会像旧的解包法那样留下上一版的多余文件。
+
+### NAS 上的 git 检出（部署公钥）
+
+| 项 | 值 |
+| --- | --- |
+| 检出位置 | `/vol1/1000/docker/kybase/src` |
+| 远端 | `git@gitee.com:kkomia/kybase.git`（**私有仓库**） |
+| 凭据 | NAS 上的一把**只读部署公钥** `~/.ssh/kybase-gitee-deploy`；Gitee 侧那个 deploy key 的名字叫 `kybase-nas-deploy` |
+
+- **只读**：NAS 上能 `fetch` / `pull`，**不能推**。推送一律在开发机上做（`origin` 是
+  `https://gitee.com/kkomia/kybase.git`）。
+- ssh 侧已配好：`~/.ssh/config` 里有 `Host gitee.com` + `IdentityFile ~/.ssh/kybase-gitee-deploy`
+  + `IdentitiesOnly yes`（2026-10-09 配置并实测 `git clone` 通过）。`git pull` 报权限错时先查这里。
+- 换机器/重装时：在 Gitee 仓库的「部署公钥」里加一把**只读** key，公钥落到 NAS 的
+  `~/.ssh/kybase-gitee-deploy`，名字对得上就行（名字本身不参与认证）。
 
 ### 后端也变了的时候（这一节是踩出来的）
 
@@ -76,20 +109,24 @@ docker compose down                 # 停掉（**不动存储层**）
 cd /vol1/1000/docker/kybase/app && docker compose build && docker compose up -d
 ```
 
-**解包覆盖会留下旧文件**：NAS 的 `src/` 是 `git archive` 解开的**累积**目录，
-`tar --overwrite` **只覆盖、不删**。旧版本留下的文件会被一起构建进去（`pnpm build` 的
-tsc 会把整个 `frontend/` 检查一遍，多出来的旧文件能直接把构建弄红）。所以换代码时
-**干净重解**：
-
-```bash
-# 在 NAS 上：把旧 src 改名备份（同卷 rename，秒级、可回滚），再解一份新的
-cd /vol1/1000/docker/kybase && mv src src.bak-$(date +%Y%m%d-%H%M%S) && mkdir src
-# 然后从本机再 archive 一次（就是 deploy-from-windows.sh 的 ① 那一步）
-```
-
-`src/` 里**没有任何"只存在于 NAS"的东西**（无 `.env`、无 `.git`、无 `*.local`；凭据住在
-`app/.env`，数据住在 `data/`，都不在 `src/` 下），所以改名备份是安全的；确认部署无误后
-`rm -rf src.bak-*` 清掉即可。
+> **历史注记：解包覆盖会留下旧文件（只对旧的 archive 流程成立）**
+>
+> kylab 时代（以及 `src/` 还不是 git 检出时）换代码的手法是"把 `git archive` 解到 `src/`"，
+> 那是个**累积**目录：`tar --overwrite` **只覆盖、不删**，旧版本留下的文件会被一起构建进去
+> （`pnpm build` 的 tsc 会把整个 `frontend/` 检查一遍，多出来的旧文件能直接把构建弄红）。
+> 当年要求的"干净重解"是先把旧目录改名备份再解开：
+>
+> ```bash
+> cd /vol1/1000/docker/kybase && mv src src.bak-$(date +%Y%m%d-%H%M%S) && mkdir src
+> # 然后从本机再 git archive 一次（deploy-from-windows.sh 那条路）
+> ```
+>
+> **现在 `src/` 是 git 检出，`git pull` 会自己处理增删文件，这个坑不存在**——
+> 上面那段只在你**明知故犯地**走 archive 旧路（回滚、或 NAS 访问不到 Gitee）时才需要记。
+> 反过来，**对 git 检出做 `tar --overwrite` 会把工作区改得偏离 HEAD**，之后
+> `git pull --ff-only` 会拒绝执行；真发生了就 `cd src && git checkout -- . && git pull`。
+> 检出目录里唯一"不属于仓库"的东西是 `.git/` 自己，凭据住在 `app/.env`、数据住在 `data/`，
+> 都在 `src/` 之外。
 
 **部署完的自证**（比"页面 200"强得多：那次 200 完，后端却还是老的）：
 
@@ -101,7 +138,17 @@ docker compose exec -T backend python -c "from app.services import modes; print(
 docker compose exec -T backend python -c "from app.mcp_server.server import MCP_TOOL_NAMES; print(len(MCP_TOOL_NAMES), sorted(MCP_TOOL_NAMES))"
 ```
 
-## 从这台 Windows 直接部署
+## 从这台 Windows 直接部署（**旧 archive 路径**，回滚或 NAS 拉不到 Gitee 时才用）
+
+> **常规升级不走这里。** `src/` 现在是 git 检出，标准流程是「本仓 push →
+> NAS `cd src && git pull` → `cd ../app && docker compose up -d --build`」（见上文「升级」一节）。
+> 这一节保留的是**当年那条路**：本机 `git archive` 一份源码推到 NAS 的 `src/`，
+> 再在那边只重建 frontend。它在两种情况下仍然有用：
+> ① 要上线的不是 `master` 的最新提交，而是要**钉到某个具体提交**（回滚）；
+> ② NAS 访问不到 Gitee（部署公钥/网络出问题）。
+> **注意它对 git 检出是"外人插手"**：`tar --overwrite` 覆盖工作区文件会让它偏离 HEAD，
+> 之后 NAS 上 `git pull --ff-only` 会拒绝执行——回滚完记得
+> `cd /vol1/1000/docker/kybase/src && git checkout -- .`（或直接 `git reset --hard <提交>`）。
 
 **两选一**：
 
@@ -118,6 +165,7 @@ NAS_USER=别的账号 sh deploy/nas/deploy-from-windows.sh          # 环境变�
 
 **SSH 用户必须写 `yumao`，不能省**：这台 Windows 的登录用户是「小又」，`ssh <主机>`
 默认就用它——NAS 上没有这个账号，会直接 Permission denied，白输一次密码。
+（注意这与 Gitee 那把部署公钥是**两回事**：这里说的是"本机 ssh 进 NAS 的账号"。）
 
 **免密码部署（装一次，之后都不问密码）**：本机有一把**专用密钥** `~/.ssh/kylab-nas`
 （kylab 时代生成，ed25519、**无口令**、只用于这台 NAS 的部署）。**名字里的 `kylab` 是历史，
@@ -140,27 +188,31 @@ sh deploy/nas/install-ssh-key.sh     # 会问一次 NAS 密码；之后部署不
 再构建，最后只会得到一个别的界面，而那种失败最难看出来（页面 200、没有报错）。
 
 <details>
-<summary>展开：手工的两条命令（脚本做的就是这两步）</summary>
+<summary>展开：手工的两条命令（旧 archive 路径，脚本做的就是这两步）</summary>
 
 
 ```bash
-# ① 把 master 的源码推到 NAS 的 src/（archive 覆盖；NAS 上那份本来就不是 git 检出）
-git archive --format=tar master | ssh yumao@192.168.31.18 "mkdir -p /vol1/1000/docker/kybase/src && tar -x -C /vol1/1000/docker/kybase/src --overwrite"
+# ① 把某个提交（或分支）的源码归档推到 NAS 的 src/（**旧路**：src/ 现在是 git 检出，常规升级用 git pull）
+git archive --format=tar <提交或分支> | ssh yumao@192.168.31.18 "mkdir -p /vol1/1000/docker/kybase/src && tar -x -C /vol1/1000/docker/kybase/src --overwrite"
 
 # ② 在 NAS 上跑升级脚本（只重建前端 + 核对 #root）
 ssh yumao@192.168.31.18 "cd /vol1/1000/docker/kybase/app && sh /vol1/1000/docker/kybase/src/deploy/nas/update-frontend.sh master"
 ```
 
 两条都会在**你这边的终端**里问 NAS 的密码（OpenSSH 的交互式认证，密码不经脚本、也不落地）。
-源码用 archive 覆盖是刻意的：NAS 的 `src/` 从来不是 git 检出，"git pull" 那条路在那边不存在。
+**当年**源码用 archive 覆盖是刻意的——那时 NAS 的 `src/` 是 `git archive` 解开的累积目录，
+没有 `.git`，`git pull` 那条路确实不存在；它后来换成了 Gitee 的检出（见上文「NAS 上的 git 检出」），
+所以现在是**旧路**：用它是为了钉某个提交（回滚）或 NAS 拉不到 Gitee，不是常规升级。
 
 </details>
 
-**NAS 上一条命令的版本**（已经登录在 NAS 上时）：
+**NAS 上一条命令的版本**（已经登录在 NAS 上时，且这时它走的是标准流程——`.git` 在就
+`fetch`/`checkout`/`pull`）：
 `sh /vol1/1000/docker/kybase/src/deploy/nas/update-frontend.sh master`
 
 它先看源码形态：`src/frontend/src/app/routes.ts` 在 → 是本仓的管理台，继续；
-不在 → **不构建**，直接打印两条换源码的路子（本机 archive 过去 / 只覆盖 `frontend/` 这一棵）
+不在 → **不构建**，直接打印换源码的路子（NAS 上 `cd src && git pull`；
+或本机 archive 过去 / 只覆盖 `frontend/` 这一棵——后两条是旧路）
 并退出码 2 —— 免得白构建一次却发现界面不是我们的。
 
 源码 OK 之后还会先过两道守卫，再做事：
@@ -219,17 +271,22 @@ index.html 引用的每个 `/assets/...` 都 200（防"dist 传了一半"）/**�
 | 4 | 打开一个知识库、翻一页文档、开一条笔记 | 列表/分页/抽屉/编辑器都在；控制台无红色报错 |
 | 5 | **搜一次** | 结果带出处徽标、可点开看原文片段 |
 
-**回滚**（应用层，两分钟）：把 `src/` 换回上一个可用版本，再重建对应服务。
+**回滚**（应用层，两分钟）：把 `src/` 退回上一个可用版本，再重建。
 
 ```bash
-# 在服务器上：先备份当前 src，再把上一次备份换回来，然后重建
-cd /vol1/1000/docker/kybase
-mv src src.bad-$(date +%Y%m%d-%H%M%S) && mv src.bak-<最近那个> src
-cd app && docker compose build && docker compose up -d
+# 在 NAS 上（src/ 是 git 检出，退回某个提交最直接）：
+cd /vol1/1000/docker/kybase/src
+git log --oneline -10                 # 找要回的那个提交
+git fetch --all && git checkout <提交>   # 或 git reset --hard <提交>
+cd ../app && docker compose build && docker compose up -d
 curl -s http://127.0.0.1:8081/ | grep -o 'id="root"'
 ```
 
-同一条路也能从本机做（`git archive` 某个提交推过去即可）。
+- 检出处于"游离 HEAD"时，回滚完成、要接着推进时 `git checkout master && git pull` 即可。
+- **回到线上那版**：`cd src && git checkout master && git pull`（就是常规升级那三步的第 ②③ 步）。
+- 旧路（`src/` 还是 archive 累积目录时的做法：`mv src src.bak-…` 换目录）只在你确实
+  保留了那种备份目录时才用；或者从本机 `git archive <提交> | ssh … tar -x --overwrite`
+  推过去（**注意**：那会让检出偏离 HEAD，事后 `cd src && git checkout -- .`，见上文那节）。
 
 ## `.env`（在服务器上，不进仓库）
 

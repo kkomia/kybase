@@ -1,6 +1,15 @@
 #!/usr/bin/env sh
 # **从这台 Windows 直接部署到 NAS**（在 Git Bash 里跑；密码只在你的终端里输，不落任何地方）。
 #
+# **这条路是旧的 archive 推源码，常规升级不要用它。** NAS 的 `src/` 现在是
+# `git@gitee.com:kkomia/kybase.git` 的 git 检出（只读部署公钥 `~/.ssh/kybase-gitee-deploy`，
+# Gitee 侧名叫 `kybase-nas-deploy`），标准流程是「本仓 push → NAS `cd src && git pull`
+# → `cd ../app && docker compose up -d --build`」（见 deploy/nas/README.md 的「升级」与
+# 「NAS 上的 git 检出」）。这个脚本保留给两种情形：① 要钉到某个具体提交（回滚）；
+# ② NAS 拉不到 Gitee。**它对 git 检出是"外人插手"**：`tar --overwrite` 覆盖工作区会让它
+# 偏离 HEAD，之后 NAS 上 `git pull --ff-only` 会拒绝执行——用完记得
+# `cd /vol1/1000/docker/kybase/src && git checkout -- .`（或 `git reset --hard <提交>`）。
+#
 # 它做的是"只换前端"那条路：把 **kybase 的源码树**整份推到 NAS 的 `src/`，
 # 再在那边只重建 frontend 一个服务。**后端变了不要用这个脚本**——它不重建后端，
 # 会得到"页面是新的、后端还是老的"（见 deploy/nas/README.md 那一节）。
@@ -73,10 +82,13 @@ if [ "$DRY" = "1" ]; then
   echo "     git archive --format=tar $BRANCH | ssh ${SSH_OPTS:+$SSH_OPTS }$TARGET \"$REMOTE\""
   echo "   远端那一步（update-frontend.sh）会：判源码形态 → 只重建 frontend → up -d → 核对首页 200 与 #root"
   echo "   本机最后会 curl http://$HOST:8081/ 并认挂载点。去掉 --dry-run 就真跑。"
+  echo "   提醒：这是**旧 archive 路**（会覆盖 git 检出的工作区）。常规升级更省事的是："
+  echo "     cd $SRC && git pull && cd $APP && docker compose up -d --build"
   exit 0
 fi
 
 echo "== 1/3 推源码 + 在 NAS 上重建前端（$TARGET，$SSH_HOW）"
+echo "   （旧 archive 路：覆盖 $SRC 的工作区。常规升级请在 NAS 上 git pull，见脚本头）"
 # 一条 ssh 里做完：解包 → 跑升级脚本（脚本自己还会核对源码形态、docker 权限）
 # shellcheck disable=SC2086  # $SSH_OPTS 要按词拆开
 git archive --format=tar "$BRANCH" | ssh $SSH_OPTS "$TARGET" \

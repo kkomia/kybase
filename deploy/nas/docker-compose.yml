@@ -76,8 +76,9 @@ name: kybase-app
 x-backend-build: &backend-build
   # **上下文是源码树的根（../src），不是 ../src/backend**：镜像里要装仓库自带的
   # skills/，而 COPY 只能从上下文里取文件（见 backend/Dockerfile）。
-  # src/ 是 git archive 解开的源码树，不含 .venv/node_modules；仓库里那份
-  # .dockerignore 随源码一起落在 src/ 下，于是对这次构建同样生效
+  # src/ 是本仓在 Gitee 上的 git 检出（见本目录 README 的「NAS 上的 git 检出」），
+  # 检出里不含 .venv/node_modules（它们被 .gitignore 挡着）；仓库里那份
+  # .dockerignore 随源码落在 src/ 下，于是对这次构建同样生效
   # （它按"上下文根"匹配，而这里上下文根就是 src/）。
   context: ../src
   dockerfile: backend/Dockerfile

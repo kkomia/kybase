@@ -5,12 +5,17 @@ kylab 的**知识库服务**：从单体仓库 [kylab](https://gitee.com/kkomia/
 对外经**窄 API / MCP / 官方 Skill** 三条等价路径服务 Agent 侧；
 Agent 侧在没有它的时候完整可用（降级而非失效）。
 
-> 当前状态：**后端实现已就位（自 kylab `b0685e9` 搬入），待 NAS 切换**（2026-10-09）。
-> kylab 侧的逻辑切割已经做完（组合根拆成 `KbServices` / `Services`，KB 侧从 HEAD 删除），
-> 这里把那一份整树搬了进来：`backend/`（app + tests + pyproject/uv.lock/Dockerfile）、
-> 根级 `scripts/` 门禁脚本族、`deploy/`（含 NAS 应用层的 `deploy/nas/docker-compose.yml`），
-> 加上原本就在的**知识库管理台前端**（`frontend/`，形态 B：独立 WebUI，不进桌面壳）
-> 与官方 Skill。NAS 上跑的仍是旧单体，切换由部署方执行。
+> 当前状态：**已在 NAS 提供正式服务**（2026-10-09 切换完成）。
+> 三容器 `kybase-app`（backend + mcp + frontend）全 healthy，镜像是 `kybase-backend:0.1.0`
+> 与 `kybase-frontend:0.1.0`；三个接入点：管理台 `http://192.168.31.18:8081/`、
+> REST `http://192.168.31.18:8081/api/v1`、MCP `http://192.168.31.18:8765/mcp`。
+> 数据**零迁移**（连的还是旧 kylab-app 那套 PG 库 `kylab` + MinIO 桶 `kylab`），
+> 旧 `kylab-app` 已注销、镜像与 compose 留着作回滚。
+> 这一份是自 kylab `b0685e9` 搬入的整树：`backend/`（app + tests + pyproject/uv.lock/Dockerfile）、
+> 根级 `scripts/` 门禁脚本族、`deploy/`（NAS 应用层 `deploy/nas/docker-compose.yml` + 干净机器四件套），
+> 加上**知识库管理台前端**（`frontend/`，形态 B：独立 WebUI，不进桌面壳）与官方 Skill。
+> 还没做的是**瘦身与分家**：树里仍带着 Agent 侧代码、环境变量前缀仍是 `KYLAB_`、
+> PG 迁移序列仍是交错那一串（见交接文档 §3.2）。
 > 接手先读[交接文档](docs/交接文档-v0.1.md)，施工顺序见
 > [剥离方案](kylab知识库剥离方案-v0.1.md) §6。
 
@@ -18,7 +23,7 @@ Agent 侧在没有它的时候完整可用（降级而非失效）。
 
 | | |
 |---|---|
-| 源仓库 | `E:\gitlab\kylab`——剥离完成前，**同一文件以 kylab 为准**，本仓库不回写 |
+| 源仓库 | `E:\gitlab\kylab`——**只读**，本仓库的改动不得碰它一个字节；`backend/` 里的知识库实现已经属于本仓（kylab 侧已从 HEAD 删除） |
 | 图纸 | `kylab知识库剥离方案-v0.1.md`（本仓库根目录） |
 | 性质 | 一份**调研结论**，不是计划草案 |
 
@@ -30,7 +35,7 @@ Agent 侧在没有它的时候完整可用（降级而非失效）。
 
 | 文档 | 给谁 |
 |---|---|
-| [部署指南](docs/部署指南-v0.1.md) | 想自己部署一套知识库服务的运维/工程师（含「过渡形态 vs 目标形态」对照） |
+| [部署指南](docs/部署指南-v0.1.md) | 想自己部署一套知识库服务的运维/工程师（含「已上线形态 / 历史回滚形态 / 目标形态」对照） |
 | [外部接入指南](docs/外部接入指南-v0.1.md) | 外部系统/外部 Agent 的接入方（MCP / REST / Skill / 窄 API 四条路径） |
 | [交接文档](docs/交接文档-v0.1.md) | 接手施工的人 |
 | [剥离方案](kylab知识库剥离方案-v0.1.md) | 需要「为什么这么切」的人 |
@@ -70,7 +75,8 @@ scripts/        门禁脚本族（check-backend / check-frontend / check_layerin
 skills/         官方 Skill（顶层交付物：会被安装到别处，不得 import app/）
 frontend/       知识库管理台（Vite + React + TS + pnpm）——独立 WebUI，见下；自带 Dockerfile + nginx.conf
 deploy/         compose：`deploy/docker-compose.yml`（干净机器一键起四件套，未实测）
-                与 `deploy/nas/docker-compose.yml`（NAS 应用层：backend + mcp + frontend，共用存储层）
+                与 `deploy/nas/docker-compose.yml`（NAS 应用层：backend + mcp + frontend，
+                **已上线**，共用存储层的同库同桶）
 docs/           本服务的文档：部署指南 / 外部接入指南 / 交接文档
 ```
 
@@ -92,19 +98,24 @@ docs/           本服务的文档：部署指南 / 外部接入指南 / 交接�
 | 起法 | `cd frontend && pnpm install && pnpm dev` |
 | 门禁 | `pnpm exec tsc --noEmit` / `pnpm exec eslint src` / `pnpm build` / `pnpm test` |
 
-**同一文件以 kylab 为准**这条纪律在这份前端上同样成立（它此刻是从 kylab 复制来的快照）；
-后面本仓库要改它，就是本仓库自己的代码了——两条路径从此各走各的。
+**线上跑的就是这一份**（`kybase-frontend:0.1.0`，NAS 8081）；它现在属于本仓库自己的代码，
+与 kylab 那份不再互相同步——两条路径从此各走各的。
 
 ## 怎么参与
 
 1. **先读两份**：本 README → [交接文档](docs/交接文档-v0.1.md)；需要"为什么这么切"时再翻
    [剥离方案](kylab知识库剥离方案-v0.1.md)。
-2. **挪代码前先在 kylab 仓内切割**：方案 §6 的原则是"先完成逻辑切割并跑绿门禁，再做物理搬迁"，
-   每一步都可独立验收、可回退。**不要**直接往本仓库贴实现。
-3. **门禁**：本仓库的实现进来后照 kylab 的双平台脚本口径跑
-   （`sh scripts/check-backend.sh`，Windows 用同名 `.ps1`），并补上域间引用检查——
-   kylab 现有的 `scripts/check_layering.py` **不覆盖** `app.core`/`app.models`/`app.pipeline`/
-   `storage.*` 内部与 `services/` 内部互引，不补的话切割线会被悄悄踩回去（方案 §4 末）。
+2. **改之前先看归属**：`backend/` 里仍带着 Agent 侧代码（搬入时不瘦身），
+   **不要顺手改那些文件**——它们归 Agent 侧，瘦身时会被删（交接文档 §3.2）；
+   新代码只落在知识库这一域。
+3. **门禁**：按 kylab 的双平台脚本口径跑（`sh scripts/check-backend.sh`，
+   Windows 用同名 `.ps1`；前端 `sh scripts/check-frontend.sh`）。
+   **域间引用检查还差最后一步**：`scripts/check_domains.py`（覆盖
+   `app.core`/`app.models`/`app.pipeline`/`storage.*` 内部与 `services/` 内部互引，
+   即 `check_layering.py` 的结构性盲区）已经在仓库里，但**还没接进 `check-backend.sh`**
+   ——它自己写明"本阶段只报告不拦门"（交接文档遗留 #2）。
 4. **提交**：`<类型>: <简述>`，类型限 `feat/fix/docs/test/refactor/chore`（与 kylab 同一套）。
-   未经明确要求不 push——远端 `origin` 已配置但至今没有推送。
-5. **别改源仓库之外的假设**：NAS 上的单体在切割完成前保持门禁全绿、部署不动。
+   `origin`（Gitee）已经在推进，`master` 与 `origin/master` 同步在 `1b88fc0`；
+   NAS 上的部署检出从同一个仓库 `git pull` 升级。推送仍要有人明确要求。
+5. **NAS 上不许乱动**：`kylab-postgres` / `kylab-minio` 那套**存储层一个字节都不动**
+   （两代应用共用），应用层今天是 `kybase-app`（交接文档 §3.5、§7 第 1 条）。
