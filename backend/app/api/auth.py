@@ -5,6 +5,11 @@
 - **登录会话**（``kylab_st_`` 前缀）：Web 控制台用，用户名 + 密码换来；
 - **API Key**：给外部程序用，绑定知识库范围 + 只读/读写。
 
+**API Key 还有第三维：工具范围**（v0.60，``allowed_tool_names``）。它只作用于那些
+**与某个 MCP 工具 1:1 的端点**（``_TOOL_BY_ROUTE`` 那张表）——其余端点仍然只受
+只读/读写档 + 库范围约束，边界与理由写在表头上。判定本身在服务层
+（``ApiKeyService.check_tool``），这里只负责查表。
+
 为什么"进控制台"必须是一种比 API Key 更高的身份，而不是同一把钥匙的另一个权限档：
 设置页就是 embedding / LLM 密钥的落点，而 ``base_url`` 可改——给了外部 API Key
 就等于给了它一条"把你的 Bearer Token 转发到我的服务器"的路。所以管理员身份只能
@@ -23,6 +28,11 @@
 
 **本机档那条短路已随边车一起拆除**（v0.1.0 瘦身）：这个服务只有服务器档一个形态
 （它就是知识库本体），所以"缺凭据即 401"全量生效、没有例外。
+
+**签名密钥的两个入口（``signing_secret`` / ``signing_secret_or_raise``）不在这里实现，
+只在这里 re-export**（v0.61 搬到 ``services/signing.py``）：服务层的 MCP 工具也要
+签发下载链接，而业务层不得反向依赖协议层——共用实现只能住在 ``services/``，
+端点这一侧的名字与行为保持不变。
 """
 
 from __future__ import annotations
@@ -30,14 +40,14 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 
-from app.core.config import Settings
-from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
+from app.core.config import API_VERSION
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.services import Services, get_services
 from app.models.enums import ApiKeyPermission
 from app.services.api_key import READ, WRITE, Caller, resolve_caller
-from app.services.auth import URL_SIGNING_SECRET_SETTING
+from app.services.signing import signing_secret, signing_secret_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +57,12 @@ __all__ = [
     "ReadDep",
     "WriteDep",
     "check_kb_scope",
+    "check_tool_scope",
     "current_caller",
+    # 签名密钥的两个入口住在 ``services/signing.py``（服务层也要用，见那里的模块头）。
+    # 这两行是**刻意的 re-export**：端点原先就从这里 import，名字不变、行为不变。
+    "signing_secret",
+    "signing_secret_or_raise",
 ]
 
 
@@ -95,19 +110,98 @@ def _check(
     services.api_keys.check_access(caller, need=need, kb_ids=kb_ids)
 
 
+#: REST 路由（模板）→ MCP 工具名：**与某个工具 1:1 的那几个端点**。
+#:
+#: **为什么只有这几条**：工具范围管的是**工具面**（``services/tools.py`` 那张表）。
+#: 没有对应工具的 REST 端点（改名、移动、任务、统计、分享、回收站……）也就无从谈
+#: "工具范围"——它们仍然只受 **只读 / 读写档 + 库范围**约束，行为与从前一字不差。
+#: 这条边界是刻意的：工具是发给外部集成的最小面，拿它去管控制台的每一个动作，
+#: 只会让这张表长成第二套权限系统——两套判定必然相漂，而漂出来的形态是越权。
+#:
+#: **键要带 HTTP 方法**：同一路径上往往是两个工具——``/knowledge-bases`` 的 GET 是
+#: ``list_knowledge_bases``、POST 是 ``create_knowledge_base``；``/documents/{id}``
+#: 的 GET 与 DELETE 同理。只看路径分不出来。
+#:
+#: **路径按不带 ``/api/v1`` 前缀写**：FastAPI 0.141 起 ``scope["route"]`` 挂的是子
+#: 路由自己的 ``APIRoute``（见 ``fastapi.routing`` 的 ``_handle_selected``），
+#: ``include_router`` 那一层前缀不在它的 ``path`` 里；``_tool_for`` 两种形状都认。
+#:
+#: 批量端点（``documents/batch``）归到 ``upload_document``：它一次能做多件事，
+#: 工具面上没有对应物，而"能传文档"的那把钥匙才用得上这个入口——
+#: 把"一个端点映射成多个工具"那类规则放进这里只会让人读不懂这张表。
+_TOOL_BY_ROUTE: dict[tuple[str, str], str] = {
+    ("POST", "/search"): "search",
+    ("GET", "/knowledge-bases"): "list_knowledge_bases",
+    ("POST", "/knowledge-bases"): "create_knowledge_base",
+    ("GET", "/knowledge-bases/{kb_id}/documents"): "list_documents",
+    ("POST", "/knowledge-bases/{kb_id}/documents"): "upload_document",
+    ("POST", "/knowledge-bases/{kb_id}/documents/batch"): "upload_document",
+    ("GET", "/documents/{document_id}"): "get_document_status",
+    ("DELETE", "/documents/{document_id}"): "delete_document",
+    # 取内容的那两条（v0.61）：阅读视角与签发下载链接——它们就是 ``get_document_content``
+    # 在 REST 上的两个入口，所以归到同一个工具。**``/documents/{id}/content`` 不在表里**：
+    # 它不挂 ``require_read``（只认 URL 里的签名），而这张表只在依赖里生效——
+    # 写进来也是一条永远走不到的死条目。
+    ("GET", "/documents/{document_id}/preview"): "get_document_content",
+    ("GET", "/documents/{document_id}/download-url"): "get_document_content",
+    ("POST", "/knowledge-bases/{kb_id}/data-sources"): "add_data_source",
+}
+
+_API_PREFIX = f"/api/{API_VERSION}"
+
+
+def _tool_for(request: Request) -> str | None:
+    """这次请求对应哪个工具；没有对应物（或拿不到路由）返回 ``None``。
+
+    **用路由模板而不是原始路径**：路径里带 ``{kb_id}`` 这类参数，拿原始路径就得分
+    段正则，而模板是框架已经算好的那一个——参数是什么都不影响查表。
+    路由还没匹配上时（``scope["route"]`` 缺失）返回 ``None``：那时无从知道这是哪个
+    端点，**宁可不管也不能猜**（猜错的另一个方向就是放行）。
+    """
+    path = getattr(request.scope.get("route"), "path", None)
+    if not isinstance(path, str) or not path:
+        return None
+    if path.startswith(_API_PREFIX):
+        # 老版本 FastAPI 给的是含 include 前缀的那份；这里只在多出来时削掉它
+        path = path[len(_API_PREFIX) :] or "/"
+    return _TOOL_BY_ROUTE.get((request.method, path))
+
+
+def check_tool_scope(services: Services, caller: Caller, request: Request) -> None:
+    """按"路由 → 工具"那张表判工具范围；表外的端点不受它影响。
+
+    判定本身在服务层（``ApiKeyService.check_tool``），这里只负责**找到工具名**：
+    "这次请求算哪个工具"是协议层的事——服务层不认识路由。
+
+    ``visible_tool_names`` 返回 ``None``（管理员 / 登录成员会话 / 空范围的 API Key）
+    就直接放行：**"谁不受这一维约束"只在服务层判一次**，这里再判一遍就是第二份副本。
+    """
+    if services.api_keys.visible_tool_names(caller) is None:
+        return
+    tool = _tool_for(request)
+    if tool is not None:
+        services.api_keys.check_tool(caller, tool)
+
+
 def require_read(
-    services: Annotated[Services, Depends(get_services)], caller: CallerDep
+    request: Request,
+    services: Annotated[Services, Depends(get_services)],
+    caller: CallerDep,
 ) -> Caller:
     """只读端点。"""
     _check(services, caller, need=READ)
+    check_tool_scope(services, caller, request)
     return caller
 
 
 def require_write(
-    services: Annotated[Services, Depends(get_services)], caller: CallerDep
+    request: Request,
+    services: Annotated[Services, Depends(get_services)],
+    caller: CallerDep,
 ) -> Caller:
     """写端点（上传、建库、删除、改设置）。"""
     _check(services, caller, need=WRITE)
+    check_tool_scope(services, caller, request)
     return caller
 
 
@@ -147,42 +241,3 @@ def check_kb_scope(
     只按"看得见"判定会让只读分享变成可写（回归测试钉在 test_visibility_api）。
     """
     services.api_keys.check_access(caller, need=need, kb_ids=kb_ids)
-
-
-def signing_secret(settings: Settings, services: Services) -> str | None:
-    """下载签名用的密钥：专用密钥（库 / 环境变量），**没有别的来源**。
-
-    都为 None 时返回 None，表示不允许签发——那条路径上没有任何凭据体系能提供
-    "这条链接只该给他"的依据，与其发一条永远有效的链接，不如让调用方走需要鉴权的
-    常规接口（API 层据此拒绝）。
-
-    首次 ``POST /auth/setup`` 会生成一条落库。
-    """
-    try:
-        stored = services.runtime.get(URL_SIGNING_SECRET_SETTING)
-    except Exception:
-        logger.warning("读取签名密钥失败，退回环境变量", exc_info=True)
-        stored = None
-    return stored or settings.url_signing_secret
-
-
-def signing_secret_or_raise(settings: Settings, services: Services) -> str:
-    """要签名密钥；**没有就抛 503**（不是 401）。
-
-    与 :func:`signing_secret` 的分工：那个返回 ``None`` 让调用方自己决定（有一处**故意**
-    不报错：预览时没有密钥就退化成"只能下载"，见 ``api/v1/documents.py`` 的 binary 那条）；
-    这个给"必须签发 / 必须校验"的那些端点用。
-
-    **为什么不是 401**：前端把 401 当"登录失效"并跳登录页——那是设计。而"还没有下载
-    签名密钥"根本与用户的凭据无关，是**我们这边没配好**（``POST /auth/setup`` 还没跑过）。
-    踢到登录页只会让人以为账号出了问题，而正确的下一步是"补配置 / 稍后重试"。
-    503 正是这个语义（``ServiceUnavailableError``：这个部署现在没有这个能力）。
-    """
-    secret = signing_secret(settings, services)
-    if not secret:
-        raise ServiceUnavailableError(
-            "尚未配置下载签名密钥：请在环境里配置 KYLAB_URL_SIGNING_SECRET，"
-            "或让这台机器正常启动一次（本机档会在装配时生成一条并落库；"
-            "服务器档由首次初始化生成）"
-        )
-    return secret

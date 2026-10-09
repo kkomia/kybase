@@ -112,6 +112,32 @@ class Settings(BaseSettings):
     环境变量入口。
     """
 
+    public_base_url: str | None = None
+    """对外可达的 API 基址（``KYLAB_PUBLIC_BASE_URL``），形如 ``http://kb.example.com:8081``。
+
+    **签名层给的是相对路径**（``services/documents.py::download_url``）——对外域名只有
+    部署时才知道，在那里猜一个 ``http://localhost:8000`` 迟早是错的。这一项就是那个
+    "只有部署时才知道"的答案：需要把相对地址变成**点得开**的绝对地址时才填。
+
+    **示例里刻意不写真地址**：这台机器所在网段是部署事实，焊进源码就意味着换个网段
+    要改代码（这条 lane 有一条用例盯着，见 ``test_protocols.py``）。真实值填在
+    ``.env`` / 部署编排里。
+
+    留空时依赖它的能力**降级而不是报错**：MCP 工具的 ``download_url`` 不出现
+    （只回内容），其余一切照旧。
+    """
+
+    mcp_public_url: str | None = None
+    """MCP 的对外接入地址（``KYLAB_MCP_PUBLIC_URL``），**整条**，形如 ``http://kb.example.com:8765/mcp``。
+
+    **为什么不复用 ``public_base_url``**：MCP 是**另一个监听**（默认 8765），REST 与
+    管理台在 8081——同一台机器上两个端口，也可能落在两个域名后面。用 REST 的基址
+    拼一条 ``<基址>/mcp`` 会在界面上摆出一条**端口错的**地址，而照着它连的表现是
+    "服务在跑却连不上"，最难排的一类。
+
+    留空时工具目录的 ``mcp_endpoint`` 为 ``None``（不猜、不拼）。
+    """
+
     # 云端解析节点（M2 启用）
     mineru_token: str | None = None
     paddleocr_token: str | None = None

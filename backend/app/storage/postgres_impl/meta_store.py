@@ -2170,9 +2170,9 @@ class PostgresMetaStore(MetaStore):
             conn.execute(
                 """
                 INSERT INTO api_keys
-                    (id, name, key_hash, permission, knowledge_base_ids, key_prefix,
-                     created_by, created_at, last_used_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (id, name, key_hash, permission, knowledge_base_ids, allowed_tool_names,
+                     key_prefix, created_by, created_at, last_used_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     record.id,
@@ -2180,6 +2180,7 @@ class PostgresMetaStore(MetaStore):
                     record.key_hash,
                     record.permission.value,
                     _json(list(record.knowledge_base_ids)),
+                    _json(list(record.allowed_tool_names)),
                     record.key_prefix,
                     record.created_by,
                     _dump(record.created_at),
@@ -2196,6 +2197,7 @@ class PostgresMetaStore(MetaStore):
             key_hash=row["key_hash"],
             permission=ApiKeyPermission(row["permission"]),
             knowledge_base_ids=tuple(row["knowledge_base_ids"]),
+            allowed_tool_names=tuple(row["allowed_tool_names"]),
             key_prefix=row["key_prefix"],
             created_by=row["created_by"],
             created_at=_load(row["created_at"]),

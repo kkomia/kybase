@@ -804,6 +804,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 对外能力目录（工具 + 技能）
+         * @description 这个服务对外暴露的那些能力：工具清单 + 随附的技能。
+         *
+         *     ``items`` 的顺序跟着 ``TOOL_NAMES``（登记顺序）：界面上摆出来的顺序与 MCP 客户端
+         *     看到的应当一致，两部分本来就是一回事。
+         */
+        get: operations["list_tools_api_v1_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-keys": {
         parameters: {
             query?: never;
@@ -1673,6 +1696,8 @@ export interface components {
             permission: components["schemas"]["ApiKeyPermission"];
             /** Knowledge Base Ids */
             knowledge_base_ids?: string[];
+            /** Allowed Tool Names */
+            allowed_tool_names?: string[];
         };
         /**
          * ApiKeyIssuedOut
@@ -1686,6 +1711,12 @@ export interface components {
             permission: components["schemas"]["ApiKeyPermission"];
             /** Knowledge Base Ids */
             knowledge_base_ids?: string[];
+            /**
+             * Allowed Tool Names
+             * @description 空 = 不限制工具（见 ``ApiKeyCreateIn`` 的说明）。列表里回显它是必要的：
+             *     否则用户看不出"这把钥匙为什么调不动某个工具"。
+             */
+            allowed_tool_names?: string[];
             /** Created At */
             created_at?: string | null;
             /** Last Used At */
@@ -1716,6 +1747,12 @@ export interface components {
             permission: components["schemas"]["ApiKeyPermission"];
             /** Knowledge Base Ids */
             knowledge_base_ids?: string[];
+            /**
+             * Allowed Tool Names
+             * @description 空 = 不限制工具（见 ``ApiKeyCreateIn`` 的说明）。列表里回显它是必要的：
+             *     否则用户看不出"这把钥匙为什么调不动某个工具"。
+             */
+            allowed_tool_names?: string[];
             /** Created At */
             created_at?: string | null;
             /** Last Used At */
@@ -3509,6 +3546,23 @@ export interface components {
          */
         SharePermission: "read" | "write";
         /**
+         * SkillOut
+         * @description 随服务一起发出去的那份技能（挂在同一个工具面上）。
+         *
+         *     ``transports`` 是它能走哪两条路：MCP（主路径）与 REST（脚本路径）。
+         *     它就是一个目录里的文件，所以这里只报身份与路径，不报内容。
+         */
+        SkillOut: {
+            /** Name */
+            name: string;
+            /** Summary */
+            summary: string;
+            /** Path */
+            path: string;
+            /** Transports */
+            transports?: string[];
+        };
+        /**
          * SlotBindIn
          * @description 绑定用途到模型；``model_pk`` 为 ``None`` 表示解绑（回退到设置页配置）。
          */
@@ -3801,6 +3855,57 @@ export interface components {
             visits: number;
             /** Error */
             error?: string | null;
+        };
+        /**
+         * ToolCatalogOut
+         * @description 工具目录。管理界面据此渲染那一列工具、以及钩选 API Key 的范围。
+         */
+        ToolCatalogOut: {
+            /** Items */
+            items?: components["schemas"]["ToolOut"][];
+            /** Mcp Endpoint */
+            mcp_endpoint?: string | null;
+            skill: components["schemas"]["SkillOut"];
+        };
+        /**
+         * ToolOut
+         * @description 对外工具面里的一个工具（``GET /tools``）。
+         *
+         *     参数由 ``tool_definitions()`` 的 ``inputSchema`` 推出来，**不在这里另写一份**：
+         *     两份参数清单必然相漂，而漂出来的形态是"界面提示的参数与实际要的对不上"。
+         */
+        ToolOut: {
+            /** Name */
+            name: string;
+            /** Label */
+            label: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Requires Write
+             * @default false
+             */
+            requires_write: boolean;
+            /** Params */
+            params?: components["schemas"]["ToolParamOut"][];
+        };
+        /**
+         * ToolParamOut
+         * @description 工具的一个参数。
+         *
+         *     ``summary`` 取参数在 JSON Schema 里的 ``description``；没写就是空串——
+         *     界面把它当"这一格填什么"，没有就只显示名字与必填标记。
+         */
+        ToolParamOut: {
+            /** Name */
+            name: string;
+            /** Required */
+            required: boolean;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
         };
         /** TrashEntryOut */
         TrashEntryOut: {
@@ -5774,6 +5879,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskCancelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tools_api_v1_tools_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolCatalogOut"];
                 };
             };
             /** @description Validation Error */

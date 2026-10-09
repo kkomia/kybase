@@ -75,6 +75,7 @@ CREATE TABLE api_keys (
     key_prefix         text NOT NULL DEFAULT '',
     permission         text NOT NULL CHECK (permission IN ('readonly', 'readwrite')),
     knowledge_base_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    allowed_tool_names jsonb NOT NULL DEFAULT '[]'::jsonb,
     created_by         text,
     created_at         timestamptz NOT NULL DEFAULT now(),
     last_used_at       timestamptz

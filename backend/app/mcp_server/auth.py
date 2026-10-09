@@ -36,6 +36,7 @@ __all__ = [
     "CallerMiddleware",
     "current_caller",
     "inbound_headers",
+    "optional_caller",
     "token_from_env",
     "token_from_headers",
 ]
@@ -60,9 +61,20 @@ def current_caller() -> Caller:
         raise UnauthorizedError(
             "这次 MCP 调用没有身份。HTTP 请在请求头带上 "
             "Authorization: Bearer <API Key>；stdio 请在客户端的环境变量里设置 "
-            f"{MCP_KEY_ENV}。Key 可在「设置 → API 密钥」新建。"
+            f"{MCP_KEY_ENV}。Key 可在管理台侧栏的「API 密钥」页新建。"
         )
     return caller
+
+
+def optional_caller() -> Caller | None:
+    """取当前请求的调用者；**没有就返回 ``None``**。
+
+    只有一处该用它：``tools/list`` 的过滤（见 ``server.py``）。那里是**握手面**——
+    客户端还没配 Key 时也得能连上、能列出工具，否则排障一点线索都没有
+    （与 ``CallerMiddleware`` 无凭据时放行到工具层是同一条取舍）。
+    工具调用本身**不许**用它：那条路上取不到身份就得拒绝，见 ``current_caller``。
+    """
+    return _caller.get()
 
 
 def token_from_headers(headers: Mapping[str, str] | None) -> str | None:

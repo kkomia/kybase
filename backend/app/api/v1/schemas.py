@@ -688,6 +688,13 @@ class ApiKeyCreateIn(BaseModel):
     不应该是因为"没填那个字段"。"""
     knowledge_base_ids: list[str] = Field(default_factory=list)
     """空列表表示不限制范围（可访问全部知识库），见 services/api_key.py 的说明。"""
+    allowed_tool_names: list[str] = Field(default_factory=list)
+    """这把钥匙能调的 MCP 工具（``services.tools.TOOL_NAMES`` 里的名字）。
+
+    空列表表示**不限制工具**（与 ``knowledge_base_ids`` 同一口径）——所以只限了库范围、
+    没填这个字段的钥匙行为与从前一致。名字是否真实存在由端点校验（协议层），
+    schema 只负责形状：把工具名表抄一份到这儿，两处迟早会漂。
+    """
 
 
 class ApiKeyOut(BaseModel):
@@ -699,6 +706,9 @@ class ApiKeyOut(BaseModel):
     name: str
     permission: ApiKeyPermission
     knowledge_base_ids: list[str] = Field(default_factory=list)
+    allowed_tool_names: list[str] = Field(default_factory=list)
+    """空 = 不限制工具（见 ``ApiKeyCreateIn`` 的说明）。列表里回显它是必要的：
+    否则用户看不出"这把钥匙为什么调不动某个工具"。"""
     created_at: datetime | None = None
     last_used_at: datetime | None = None
     prefix: str = ""
@@ -1501,5 +1511,57 @@ class ProviderHandshakeOut(BaseModel):
 # （provider / protocol_version / capabilities / caller / server_time），差别只在
 # 能力集的内容与"带回来的那一批东西"（库清单 ↔ 设备与额度）。
 # **协议版本各是一个整数**：备份那边不认识知识库的 1，反过来也一样。
+
+
+# --------------------------------------------------------------------- 工具目录
+
+
+class ToolParamOut(BaseModel):
+    """工具的一个参数。
+
+    ``summary`` 取参数在 JSON Schema 里的 ``description``；没写就是空串——
+    界面把它当"这一格填什么"，没有就只显示名字与必填标记。
+    """
+
+    name: str
+    required: bool
+    summary: str = ""
+
+
+class ToolOut(BaseModel):
+    """对外工具面里的一个工具（``GET /tools``）。
+
+    参数由 ``tool_definitions()`` 的 ``inputSchema`` 推出来，**不在这里另写一份**：
+    两份参数清单必然相漂，而漂出来的形态是"界面提示的参数与实际要的对不上"。
+    """
+
+    name: str
+    label: str
+    summary: str
+    requires_write: bool = False
+    params: list[ToolParamOut] = Field(default_factory=list)
+
+
+class SkillOut(BaseModel):
+    """随服务一起发出去的那份技能（挂在同一个工具面上）。
+
+    ``transports`` 是它能走哪两条路：MCP（主路径）与 REST（脚本路径）。
+    它就是一个目录里的文件，所以这里只报身份与路径，不报内容。
+    """
+
+    name: str
+    summary: str
+    path: str
+    transports: list[str] = Field(default_factory=list)
+
+
+class ToolCatalogOut(BaseModel):
+    """工具目录。管理界面据此渲染那一列工具、以及钩选 API Key 的范围。"""
+
+    items: list[ToolOut] = Field(default_factory=list)
+    mcp_endpoint: str | None = None
+    """MCP 的接入地址（整条，来自 ``KYLAB_MCP_PUBLIC_URL``）。**没配时为 ``None``**——
+    拼一个相对地址、或者拿 REST 的基址接个 ``/mcp``，摆出来的都是**连不上**的地址。"""
+    skill: SkillOut
 
 

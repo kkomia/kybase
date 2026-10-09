@@ -1,6 +1,6 @@
 """MCP 工具的装配与调用（M6 之后的独立里程碑 / T4.8）。
 
-**这张表就是知识库服务对外的那一面**（v0.1.0 瘦身收口）：只有纯知识库的八个工具，
+**这张表就是知识库服务对外的那一面**（v0.1.0 瘦身收口）：只有纯知识库这一组工具，
 ``services/tools.py`` 里不再有笔记 / 记忆 / 交付 / 网页那些 Agent 侧工具——它们的实现
 已随 Agent 侧代码一起拆除（剥离方案 §6 阶段 1 第 5 步）。
 
@@ -13,7 +13,11 @@
 | `search` | 检索（产品的主打能力） |
 | `list_documents` | 库里有哪些文档、处理到什么状态 |
 | `get_document_status` | 文档处理到哪一步了 |
+| `get_document_content` | 取文档的正文（Markdown）或原文件 |
 | `delete_document` | 删文档（进回收站） |
+
+**工具个数以 :data:`TOOL_NAMES` 为准**，上面那张表与它同源——这里刻意不写数字：
+一句过期的"共 N 个"只会让读的人以为少挂了一个。
 
 **为什么工具实现在这里、而不在 stdio/HTTP 的入口里**：两种传输方式要暴露同一批
 工具。写在入口里就得复制两份，而两份迟早会漂（一个加了字段另一个没加）。
@@ -29,7 +33,7 @@
 **每个工具都必须带上调用者**：``call_tool`` 的 ``caller``
 是**必填关键字参数、没有默认值**——默认值一旦存在，"忘了传"就等于匿名放行，
 而这类洞不会报错。作用域判定一律走 ``ApiKeyService``（``check_access`` /
-``visible_kb_ids``），不在这里另写一套：两套判定必然相漂。
+``visible_kb_ids`` / ``check_tool``），不在这里另写一套：两套判定必然相漂。
 """
 
 from __future__ import annotations
@@ -38,20 +42,33 @@ import base64
 import binascii
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
+from app.core.config import get_settings
 from app.core.exceptions import InvalidRequestError
 from app.core.services import Services
 from app.models.enums import DataSourceKind
 from app.services.api_key import WRITE, Caller
+from app.services.signing import signing_secret
 
-__all__ = ["TOOL_NAMES", "call_tool", "tool_definitions"]
+__all__ = ["TOOL_META", "TOOL_NAMES", "call_tool", "tool_definitions"]
 
 logger = logging.getLogger(__name__)
 
 #: 上传大小的上限。MCP 走的是进程间消息，塞一个 200MB 的 base64
 #: 会把客户端与服务端一起拖住——所以这里比 HTTP 上传更保守。
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+
+#: 取内容的字节上限。**与上传同一个 32MB**（直接借用那个常量，不另写一个数字）：
+#: 两个方向走的是同一条进程间消息，一边卡住的量级另一边同样卡得住。超限时
+#: **不截断**——原文件截一半是坏文件，回一条 REST 下载链接才有意义。
+MAX_DOWNLOAD_BYTES = MAX_UPLOAD_BYTES
+
+#: 正文内联返回的字符上限（约 20 万字符）。超了只回前 N 个字符并标 ``truncated``：
+#: 一整本书的 Markdown 塞进模型的上下文既装不下也读不完，而"前 20 万字符 + 一个
+#: 明确标志"足以让它知道该改用 REST 下载。
+MAX_TEXT_CHARS = 200_000
 
 #: 检索条数上限：工具是给 Agent 用的，它通常只要"够回答"的几条。
 MAX_TOP_K = 20
@@ -72,8 +89,65 @@ TOOL_NAMES = (
     "search",
     "list_documents",
     "get_document_status",
+    "get_document_content",
     "delete_document",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ToolMeta:
+    """一个工具**给人看**的那点说明（工具目录端点用，见 ``api/v1/tools.py``）。
+
+    与 ``tool_definitions()`` 的分工是刻意的：那里的 ``description`` 是**写给模型看的**
+    （说清"什么时候该用"），这里的 ``label`` / ``summary`` 是**给管理界面看的**——
+    它会渲染到屏幕上，所以只允许短词短句（界面上不写解释性小字，前端规范 §5.1）。
+    两者不是一份东西，也就不能互相顶替。
+
+    ``requires_write`` 与实现同源：它标注的是"这个工具会不会调 ``check_access(need=WRITE)``"，
+    界面据此把只读那批与要写的那批分开。**不手写第二份参数表**——参数由
+    ``tool_definitions()`` 的 ``inputSchema`` 推出来，两处各写一份必然相漂。
+    """
+
+    label: str
+    """界面上的名字，短（如「文档内容」）。"""
+
+    summary: str
+    """一句话说清它做什么，短。"""
+
+    requires_write: bool
+    """是否写操作（要 ``WRITE`` 档、受库范围的写权限约束）。"""
+
+
+#: 每个工具的人读元数据（``TOOL_META``）。**键必须覆盖 ``TOOL_NAMES`` 的每一个**：
+#: 少一个的后果是工具目录端点当场 KeyError（500），而那条不变量的门禁是一条用例
+#: （``tests/unit/services/test_tools.py::test_every_tool_has_catalog_metadata``）。
+TOOL_META: dict[str, ToolMeta] = {
+    "list_knowledge_bases": ToolMeta(
+        label="知识库列表", summary="列出所有知识库", requires_write=False
+    ),
+    "create_knowledge_base": ToolMeta(
+        label="新建知识库", summary="新建一个知识库", requires_write=True
+    ),
+    "upload_document": ToolMeta(
+        label="上传文档", summary="把一份文档加进知识库", requires_write=True
+    ),
+    "add_data_source": ToolMeta(
+        label="添加数据源", summary="挂一个 RSS 或网页来源", requires_write=True
+    ),
+    "search": ToolMeta(label="检索", summary="在知识库里检索原文片段", requires_write=False),
+    "list_documents": ToolMeta(
+        label="文档列表", summary="列出库里的文档与状态", requires_write=False
+    ),
+    "get_document_status": ToolMeta(
+        label="文档状态", summary="查文档处理进度", requires_write=False
+    ),
+    "get_document_content": ToolMeta(
+        label="文档内容", summary="取文档的正文或原文件", requires_write=False
+    ),
+    "delete_document": ToolMeta(
+        label="删除文档", summary="删除文档，进回收站", requires_write=True
+    ),
+}
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -206,6 +280,32 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "get_document_content",
+            "description": (
+                "读一份文档的全文。search 只返回与问题相关的片段，"
+                "**要通读全文或核对原文时用它**。\n\n"
+                "- `format` 取 `markdown`（默认）：解析后的 Markdown 文本，检索依据的就是它；\n"
+                "- `format` 取 `original`：原文件的 base64（要拿原始版式时用），"
+                "带 filename 与 media_type 供你落盘。\n\n"
+                "原文超过 32MB 时**不回内容**（截一半的原文是坏文件），"
+                "改用返回的 download_url 或 REST 下载接口取。"
+                "Markdown 很长时只回前一段并给出 `truncated=true`。"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "document_id": {"type": "string"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["markdown", "original"],
+                        "description": "markdown=解析产物（默认），original=原文件",
+                    },
+                },
+                "required": ["document_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "delete_document",
             "description": (
                 "删除一份文档。原文会进回收站保留 7 天，切块与向量立即清除——"
@@ -262,6 +362,10 @@ def call_tool(
     handler = _HANDLERS.get(name)
     if handler is None:
         raise InvalidRequestError(f"未知的工具：{name}（可用：{'、'.join(TOOL_NAMES)}）")
+    # 已知工具之后再判工具范围：**顺序不能反**。反过来的话，一个不存在的工具名
+    # 会先撞上工具范围（报"未授权调用工具：xxx"），把"这个名字不存在"这件事
+    # 说成"你没有权限"——模型据此会以为换个参数就能过。
+    services.api_keys.check_tool(caller, name)
     return handler(services, args, caller=caller)
 
 
@@ -525,6 +629,71 @@ def _get_document_status(
     }
 
 
+def _absolute_download_url(services: Services, document_id: str, *, fmt: str) -> str | None:
+    """把签名后的**相对**下载地址拼成绝对地址；拼不出来时返回 ``None``。
+
+    两个条件缺一不可：**有签名密钥**（没有密钥就签不出任何链接，见 ``services.signing``）
+    且**知道对外基址**（``settings.public_base_url``）。缺任何一个都回 ``None``，而不是
+    半截相对路径——相对路径给到另一台机器上的客户端等于一条打不开的链接，
+    那比"没有这一项"更误导。
+    """
+    settings = get_settings()
+    base = (settings.public_base_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    secret = signing_secret(settings, services)
+    if not secret:
+        return None
+    relative, _expires = services.documents.download_url(document_id, fmt=fmt, secret=secret)
+    return f"{base}{relative}"
+
+
+def _get_document_content(
+    services: Services, args: dict[str, Any], *, caller: Caller
+) -> dict[str, Any]:
+    document_id = _require(args, "document_id")
+    fmt = str(args.get("format") or "markdown").strip().lower()
+    if fmt not in ("markdown", "original"):
+        # 说清可选值：模型据此能自己改对，而不是放弃这个工具
+        raise InvalidRequestError(f"format 只能是 markdown 或 original，收到：{fmt}")
+
+    # **先判范围再取内容**：内容可能很大，越界的那一次不该先把它整份读进内存
+    record = _document_or_403(services, document_id, caller=caller)
+    content = services.documents.content(document_id, fmt=fmt)
+
+    if len(content.data) > MAX_DOWNLOAD_BYTES:
+        # **不截断**：截一半的原文是坏文件，截一半的正文更容易被当成全文读。
+        # 让调用方改走 REST 那条能真下完的路
+        raise InvalidRequestError(
+            f"内容超过 {MAX_DOWNLOAD_BYTES // (1024 * 1024)}MB，MCP 不回这么大的载荷。"
+            f"请改用 REST 下载接口：GET /api/v1/documents/{document_id}/download-url"
+        )
+
+    payload: dict[str, Any] = {
+        "document_id": record.id,
+        "name": record.name,
+        "format": fmt,
+        "media_type": content.media_type,
+        "filename": content.filename,
+        "size_bytes": len(content.data),
+    }
+
+    if fmt == "markdown":
+        text = content.data.decode("utf-8", errors="replace")
+        payload["text"] = text[:MAX_TEXT_CHARS]
+        if len(text) > MAX_TEXT_CHARS:
+            # **截断了必须说**：不说的话模型会把这一半当全文，然后据此回"文里没有提到 X"
+            # ——而 X 就在被截掉的那一半里
+            payload["truncated"] = True
+    else:
+        payload["base64"] = base64.b64encode(content.data).decode("ascii")
+
+    url = _absolute_download_url(services, document_id, fmt=fmt)
+    if url is not None:
+        payload["download_url"] = url
+    return payload
+
+
 def _delete_document(services: Services, args: dict[str, Any], *, caller: Caller) -> dict[str, Any]:
     document_id = _require(args, "document_id")
     record = services.documents.get(document_id)
@@ -575,6 +744,7 @@ _HANDLERS = {
     "search": _search,
     "list_documents": _list_documents,
     "get_document_status": _get_document_status,
+    "get_document_content": _get_document_content,
     "delete_document": _delete_document,
 }
 

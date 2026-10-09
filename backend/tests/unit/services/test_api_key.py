@@ -254,3 +254,84 @@ def test_readonly_share_cannot_write(service, store) -> None:  # type: ignore[no
         ShareRecord(kb_id="kb_shared", user_id="user_m2", permission=SharePermission.WRITE)
     )
     service.check_access(caller, need=WRITE, kb_ids=["kb_shared"])
+
+
+# --------------------------------------------------------------------- 工具范围（v0.60）
+
+
+def test_create_stores_the_tool_scope(service, bundle) -> None:  # type: ignore[no-untyped-def]
+    """工具范围要真的落库，并且**去重、保留调用方给的顺序**。
+
+    顺序不是无所谓的东西：回显（界面上的勾选顺序、报错里"可用：…"那一串）
+    都用它，而重复项只会让同一句提示里出现两遍同一个名字。
+    """
+    _issue(service, allowed_tool_names=["search", "list_documents", "search"])
+
+    stored = bundle.meta.list_api_keys()[0]
+    assert tuple(stored.allowed_tool_names) == ("search", "list_documents")
+
+
+def test_scoped_key_can_call_its_tools(service) -> None:
+    from app.services.tools import TOOL_NAMES
+
+    caller = service.authenticate(_issue(service, allowed_tool_names=["search"]).token)
+
+    service.check_tool(caller, "search")
+    # 换个范围再确认一次：判据是"在不在范围里"，不是"某个工具天生特殊"
+    other = service.authenticate(_issue(service, allowed_tool_names=[TOOL_NAMES[0]]).token)
+    service.check_tool(other, TOOL_NAMES[0])
+
+
+def test_scoped_key_is_blocked_outside_its_tools(service) -> None:
+    caller = service.authenticate(_issue(service, allowed_tool_names=["search"]).token)
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        service.check_tool(caller, "delete_document")
+
+    # 报错要点出被拒的那个工具，并列出可用的——配错范围的人据此能自己改对
+    assert "delete_document" in str(excinfo.value)
+    assert "search" in str(excinfo.value)
+
+
+def test_empty_tool_scope_allows_every_tool(service) -> None:
+    """**空 = 不受限**（与空库范围同一口径）。
+
+    这一条同时是"存量钥匙不受影响"的保证：老钥匙这一列是空的，
+    而这个服务里所有工具都该照常可调——所以这里**逐个试**，不写死工具个数。
+    """
+    from app.services.tools import TOOL_NAMES
+
+    caller = service.authenticate(_issue(service).token)
+
+    for name in TOOL_NAMES:
+        service.check_tool(caller, name)
+
+
+def test_console_and_member_bypass_the_tool_scope(service) -> None:
+    """工具范围只管 **API Key 通道**：控制台与成员会话不该被它关在门外。
+
+    工具范围描述的是"发给外部集成的那把钥匙"——控制台被自己发的钥匙锁住，
+    是这一层最不该有的形态。
+    """
+    from app.services.api_key import Caller
+
+    service.check_tool(Caller(is_admin=True), "delete_document")
+    service.check_tool(_member(service), "delete_document")
+
+
+def test_visible_tool_names_mirrors_the_scope(service) -> None:
+    """``visible_tool_names`` 与 ``check_tool`` 必须同口径：一个列出、一个放行。
+
+    两者相漂的形态就是"列得出来但调不动"（模型一直试）或"列不出来却调得动"
+    （那是越权）——所以这条与上面几条一起钉。
+    """
+    from app.services.api_key import Caller
+
+    assert service.visible_tool_names(Caller(is_admin=True)) is None, "控制台不受限"
+    assert service.visible_tool_names(_member(service)) is None, "成员会话不受限"
+
+    scoped = service.authenticate(_issue(service, allowed_tool_names=["search"]).token)
+    assert service.visible_tool_names(scoped) == ("search",)
+
+    unscoped = service.authenticate(_issue(service).token)
+    assert service.visible_tool_names(unscoped) is None, "空范围 = 不限制"

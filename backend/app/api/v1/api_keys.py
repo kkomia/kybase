@@ -19,9 +19,11 @@ from app.api.v1.schemas import (
     ApiKeyListOut,
     ApiKeyOut,
 )
+from app.core.exceptions import InvalidRequestError
 from app.core.security import API_KEY_PREFIX
 from app.core.services import Services, get_services
 from app.services.api_key import Caller
+from app.services.tools import TOOL_NAMES
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
@@ -37,10 +39,28 @@ def _to_out(record) -> dict:  # type: ignore[no-untyped-def]
         "name": record.name,
         "permission": record.permission,
         "knowledge_base_ids": list(record.knowledge_base_ids),
+        "allowed_tool_names": list(record.allowed_tool_names),
         "created_at": record.created_at,
         "last_used_at": record.last_used_at,
         "prefix": f"{API_KEY_PREFIX}{record.key_prefix}…" if record.key_prefix else "…",
     }
+
+
+def _validate_tool_names(names: list[str]) -> None:
+    """工具名必须在 :data:`TOOL_NAMES` 里——**非法值要拒绝，不能存下来**。
+
+    存一个拼错的名字，后果不是"这把钥匙少了一个工具"，而是"用户以为授权成功了、
+    实际上那个工具一次都调不动"——而报错要到使用时才出现，中间还隔着一次配置。
+    所以在这里拒，并把**允许的名字全列出来**（用户据此能直接改对）。
+
+    这条校验只能在协议层做：``services/api_key.py`` import 不了 ``TOOL_NAMES``
+    （``services/tools.py`` 要 import 它，那样会成环）。
+    """
+    unknown = [name for name in names if name not in TOOL_NAMES]
+    if unknown:
+        raise InvalidRequestError(
+            f"未知的工具名：{'、'.join(unknown)}（可用：{'、'.join(TOOL_NAMES)}）"
+        )
 
 
 @router.get("", response_model=ApiKeyListOut, summary="API Key 列表")
@@ -62,10 +82,12 @@ def create_api_key(
     services: Annotated[Services, Depends(get_services)],
     _: Annotated[Caller, Depends(require_admin)],
 ) -> ApiKeyIssuedOut:
+    _validate_tool_names(payload.allowed_tool_names)
     issued = services.api_keys.create(
         name=payload.name,
         permission=payload.permission,
         knowledge_base_ids=payload.knowledge_base_ids,
+        allowed_tool_names=payload.allowed_tool_names,
     )
     return ApiKeyIssuedOut(**_to_out(issued.record), token=issued.token)
 

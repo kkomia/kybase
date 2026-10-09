@@ -8,17 +8,22 @@
 两者的差别只在"消息怎么走"，工具集与实现**完全共用** ``tools.call_tool``。
 这是把工具实现抽出去的唯一理由：写在某个入口里就得复制两份，而两份迟早会漂。
 
-**对外面就是知识库那 8 个工具**（v0.1.0 瘦身收口）：这个服务是**知识库服务**，
+**对外面就是知识库那一组工具**（v0.1.0 瘦身收口）：这个服务是**知识库服务**，
 而 ``services/tools.py`` 那张表是 kylab 合体期的产物——里面有 ``create_note`` 这类
 会真写笔记、``remember`` / ``forget`` 这类会真动用户档案的工具。把它们留在对外 MCP 面上，
 等于让外部客户端从这个服务里拿到 agent 的权限面。**瘦身之后 Agent 侧的实现已整体拆除**
 （剥离方案 §6 阶段 1 第 5 步），``services.tools.TOOL_NAMES`` 剩下的正好就是纯知识库
-那 8 个工具，所以 :data:`MCP_TOOL_NAMES` 直接取它——**名单只有一处定义**，
+那一批工具，所以 :data:`MCP_TOOL_NAMES` 直接取它——**名单只有一处定义**，
 不在这里另抄一遍。
 
 **SDK 版本注意**：本模块按 **mcp 2.x** 的 ``MCPServer`` 写。
 1.x 里这个类叫 ``FastMCP``；官方迁移指南给的选项是
 "改用 ``MCPServer``，或把依赖钉在 ``mcp<2``"。这里选前者——用新 API 比锁老版本活得久。
+
+**工具面按调用者收窄**（v0.60）：限定工具范围的 API Key，``tools/list`` 只看得到
+它调得动的那些（见 ``_scoped_tools``）。**同一个判定在 ``call_tool`` 里还有一道**
+（清单只是"别摆出调不成的工具"，真正的闸门在调用那一刻）——两道都走
+``ApiKeyService``，不在这里另写一套。
 """
 
 from __future__ import annotations
@@ -26,7 +31,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from typing import Any
 
+from app.core.services import Services
+from app.mcp_server.auth import optional_caller
 from app.services.tools import TOOL_NAMES, call_tool
 
 __all__ = ["MCP_TOOL_NAMES", "build_server", "main", "serve_http", "serve_stdio"]
@@ -41,14 +49,14 @@ logger = logging.getLogger(__name__)
 #: 这张表本身就是那份名单。
 #:
 #: 那条不变量由用例兜住（``tests/unit/mcp_server/test_server.py`` 断言它正好等于
-#: ``TOOL_NAMES`` 与那 8 个名字）——app 代码里不写 assert（``ruff`` 的 S101）。
+#: ``TOOL_NAMES`` 与那份名字清单）——app 代码里不写 assert（``ruff`` 的 S101）。
 MCP_TOOL_NAMES: tuple[str, ...] = tuple(TOOL_NAMES)
 
 #: 每个工具接受的参数名。**用来丢掉 schema 之外的参数**：
 #: 服务层对未知关键字会直接 TypeError，而模型偶尔会多带一个字段——
 #: 为此让整个工具失败不值得。
 #:
-#: **只列 :data:`MCP_TOOL_NAMES` 那 8 个**：这里多列一个不会有事
+#: **只列 :data:`MCP_TOOL_NAMES` 里的那些**：这里多列一个不会有事
 #: （它挂不上），少一个会直接 KeyError（服务起不来），而两者的门禁是同一条用例
 #: （见 ``tests/unit/services/test_tools.py::test_every_tool_has_a_parameter_whitelist``
 #: 与 ``tests/unit/mcp_server/test_server.py``）。
@@ -60,8 +68,30 @@ _PARAMS: dict[str, tuple[str, ...]] = {
     "search": ("query", "knowledge_base_ids", "top_k"),
     "list_documents": ("knowledge_base_id", "query", "limit"),
     "get_document_status": ("document_id",),
+    "get_document_content": ("document_id", "format"),
     "delete_document": ("document_id",),
 }
+
+
+def _scoped_tools(services: Services, tools: list[Any]) -> list[Any]:
+    """按调用者的工具范围过滤工具清单（不受限时原样返回）。
+
+    **没有身份时列全**：``tools/list`` 是握手面——客户端还没配 Key 时也得连得上、
+    看得见这个服务有哪些工具，否则排障一点线索都没有（与 ``CallerMiddleware``
+    无凭据时放行到工具层是同一条取舍）。列出来不等于调得动：真正的闸门在
+    ``call_tool`` 里（取不到身份就拒），这里只管"别把永远调不成的工具摆给模型看"。
+
+    顺序跟着注册顺序（``_tool_manager`` 给的就是注册顺序），这里不重排：
+    客户端看到的清单顺序应当与登记顺序一致。
+    """
+    caller = optional_caller()
+    if caller is None:
+        return tools
+    visible = services.api_keys.visible_tool_names(caller)
+    if visible is None:
+        return tools
+    allowed = set(visible)
+    return [tool for tool in tools if tool.name in allowed]
 
 
 def build_server():  # type: ignore[no-untyped-def]
@@ -84,7 +114,24 @@ def build_server():  # type: ignore[no-untyped-def]
     from app.mcp_server.auth import CallerMiddleware, current_caller
     from app.services.tools import tool_definitions
 
-    server = MCPServer(
+    class _ScopedServer(MCPServer):
+        """把 ``tools/list`` 按调用者的工具范围收窄（其余行为与 ``MCPServer`` 一致）。
+
+        **为什么是重写 ``list_tools``**：mcp 2.x 的 ``ServerMiddleware`` 只有一个
+        ``(ctx, call_next)`` 入口，它 ``call_next`` 拿到的是**已经序列化好的 wire dict**
+        （SDK 的 ``runner._inner`` → ``_serialize``，形状跟着协商出的协议版本走），
+        在那一层改清单等于自己拼一份版本相关的响应体。而 ``list_tools`` 是 SDK 的
+        公开装配面（``_handle_list_tools`` 直接 ``await self.list_tools()``），
+        返回的是模型本身——**本版本没有给中间件用的 ``on_list_tools`` 之类的钩子**。
+
+        定义在这里（而不是模块级）：``MCPServer`` 是**延迟 import** 的，
+        ``mcp`` 不在时这个模块连导入都不该失败（见 build_server 的说明）。
+        """
+
+        async def list_tools(self):  # type: ignore[no-untyped-def]
+            return _scoped_tools(get_services(), await super().list_tools())
+
+    server = _ScopedServer(
         name="kylab",
         # 取自 Settings，不再手写：手写的那个只会在发版时漏改（v0.1.0→0.2.0 前，
         # 这里与 pyproject / package.json / Settings 是四处各自为政的版本号）

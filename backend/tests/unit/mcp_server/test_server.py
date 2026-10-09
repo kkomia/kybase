@@ -4,6 +4,9 @@
 
 **这里只测装配，不测传输**：stdio 与 HTTP 是 SDK 的事。
 但有一类**只有装配期才会暴露**的问题必须钉住——定义顺序。
+
+**工具清单收窄**（v0.60）也在这里：它落在 ``MCPServer.list_tools`` 这个装配面上，
+而那条链（凭据 → 主体 → 过滤）只有走真实的 ``CallerMiddleware`` 才验得完整。
 """
 
 from __future__ import annotations
@@ -12,12 +15,14 @@ import ast
 import inspect
 from pathlib import Path
 
+import pytest
+
 from app.mcp_server.server import MCP_TOOL_NAMES, build_server, main
 
 SERVER_PATH = Path(inspect.getfile(build_server))
 
 
-#: 对外面就应该是这 8 个（v0.1.0 瘦身后的**名字清单**）。
+#: 对外面就应该是这些（v0.1.0 瘦身后的**名字清单**）。
 #:
 #: 写死一份是刻意的：上面那条说的是"注册的 == `MCP_TOOL_NAMES`"，
 #: 而 `MCP_TOOL_NAMES` 现在直接取 `TOOL_NAMES`——只靠它的话，往 `tools.py`
@@ -31,12 +36,13 @@ KB_TOOL_NAMES = (
     "search",
     "list_documents",
     "get_document_status",
+    "get_document_content",
     "delete_document",
 )
 
 
 def test_server_registers_exactly_the_kb_face() -> None:
-    """挂上去的**正好是纯知识库那 8 个工具**（v0.1.0 瘦身收口）。
+    """挂上去的**正好是纯知识库那一组工具**（v0.1.0 瘦身收口）。
 
     两个方向都查：注册的那些必须是 ``MCP_TOOL_NAMES``，而 ``MCP_TOOL_NAMES``
     （= ``TOOL_NAMES``）必须**正好等于**下面那份名字清单——后半句是刹车，
@@ -97,6 +103,25 @@ def test_tool_parameters_are_derived_from_the_schema() -> None:
     )
     properties = search.parameters.get("properties", {})
     assert {"query", "knowledge_base_ids", "top_k"} <= set(properties)
+
+
+def test_document_content_tool_has_its_parameter_whitelist() -> None:
+    """新工具 ``get_document_content``（v0.61）：挂上了、参数也进了白名单。
+
+    **``format`` 必须在 ``_PARAMS`` 里**：那个白名单决定"哪些参数会被原样转给服务层"
+    （见 ``make_handler``），漏一个的后果不是报错，而是**参数被安静丢掉**——
+    工具会一直按默认格式（Markdown）回内容，看起来能用，只是永远给不出原文。
+    """
+    from app.mcp_server.server import _PARAMS
+
+    server = build_server()
+
+    tool = next(
+        tool for tool in server._tool_manager.list_tools() if tool.name == "get_document_content"
+    )
+    assert set(tool.parameters.get("properties", {})) == {"document_id", "format"}
+    assert tool.parameters.get("required") == ["document_id"]
+    assert set(_PARAMS["get_document_content"]) == {"document_id", "format"}
 
 
 def test_no_tool_exposes_a_kwargs_field() -> None:
@@ -176,3 +201,83 @@ def test_instructions_mention_the_core_capability() -> None:
     server = build_server()
 
     assert "检索" in server.instructions
+
+
+# --------------------------------------------------------------------- 工具清单收窄（v0.60）
+
+
+class _Ctx:
+    """最小 ctx 替身：``CallerMiddleware`` 只从 ``ctx.headers``（或 ``ctx.request``）取凭据。"""
+
+    def __init__(self, headers: dict[str, str] | None) -> None:
+        self.headers = headers
+        self.request = None
+
+
+async def _list_tools_as(services, token: str):  # type: ignore[no-untyped-def]
+    """走**真实的** ``CallerMiddleware`` 拿一次 ``tools/list`` 的结果。
+
+    **不直接往 ContextVar 里塞 Caller**：正是"凭据 → 主体 → 过滤"这一段要验，
+    塞进去就把它跳过去了（那等于只测了一半）。
+    """
+    from app.mcp_server.auth import CallerMiddleware
+
+    server = build_server()
+    middleware = CallerMiddleware(services)
+
+    async def call_next(_ctx: object) -> object:
+        return await server.list_tools()
+
+    return await middleware(_Ctx({"Authorization": f"Bearer {token}"}), call_next)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_hides_the_tools_outside_the_keys_scope() -> None:
+    """限了工具范围的钥匙，``tools/list`` 只看得到它调得动的那些。
+
+    **列出来再拒**的坏处不是安全，是可用性：模型会盯着一个永远调不成的工具反复试，
+    而它没有任何线索知道为什么——回的是"未授权调用工具"还是"工具不存在"，
+    对它来说都是同一句读不懂的话。
+    """
+    from app.core.services import get_services
+    from app.models.enums import ApiKeyPermission
+
+    services = get_services()
+    issued = services.api_keys.create(
+        name="只给检索的钥匙",
+        permission=ApiKeyPermission.READONLY,
+        allowed_tool_names=["search", "list_documents"],
+    )
+
+    names = [tool.name for tool in await _list_tools_as(services, issued.token)]
+
+    # 顺序跟着注册顺序（这里不写死工具个数：工具表会长，见模块头）
+    assert names == [name for name in MCP_TOOL_NAMES if name in {"search", "list_documents"}]
+
+
+@pytest.mark.asyncio
+async def test_list_tools_is_not_narrowed_for_an_unrestricted_key() -> None:
+    """空工具范围 = 不受限：清单与从前一字不差（存量钥匙不受这一层影响）。"""
+    from app.core.services import get_services
+    from app.models.enums import ApiKeyPermission
+
+    services = get_services()
+    issued = services.api_keys.create(
+        name="不限制的钥匙", permission=ApiKeyPermission.READONLY
+    )
+
+    names = [tool.name for tool in await _list_tools_as(services, issued.token)]
+
+    assert set(names) == set(MCP_TOOL_NAMES)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_without_credentials_still_lists_everything() -> None:
+    """**没有凭据时列全**：``tools/list`` 是握手面，客户端还没配 Key 时也要连得上、
+    看得见有哪些工具——排障全靠它（真正的闸门在 ``call_tool`` 里）。
+    """
+    server = build_server()
+
+    names = [tool.name for tool in await server.list_tools()]
+
+    assert set(names) == set(MCP_TOOL_NAMES)

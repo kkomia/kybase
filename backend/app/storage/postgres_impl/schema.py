@@ -44,7 +44,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 BASELINE_VERSION = 1
 """``schema.sql`` 对应的版本号，与文件末尾写入 schema_migrations 的值一致。"""
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 """应用期望的 schema 版本：基线 v1 + ``MIGRATIONS`` 里已追加的增量。
 
 **启动时会对不上就自动补**：低于它就按序应用缺的那些迁移，高于它才报错
@@ -426,6 +426,22 @@ MIGRATIONS: tuple[Migration, ...] = (
             # 按归属过滤（存储层不认识调用者身份），加一条只为设备用的索引没有收益。
             "ALTER TABLE workspaces ADD COLUMN device_id TEXT",
             "ALTER TABLE workspaces ADD COLUMN device_name TEXT",
+        ),
+    ),
+    Migration(
+        version=18,
+        description="API Key 的工具范围：一把钥匙可以只允许调某几个 MCP 工具（v0.60）",
+        statements=(
+            # 这把钥匙"能碰哪些库"（knowledge_base_ids）之外的第二维：**能用哪些工具**。
+            # 典型场景是只给一个检索客户端配 search：它能查，但不能传、不能删
+            # （此前只有只读/读写两档，只读档仍然能调 `list_documents` 这种
+            # 把库的全貌读走、"看见但改不动"的接口）。
+            #
+            # `'[]'::jsonb` 这个默认值是**语义的一部分，不是占位**：空 = 不受限
+            # （与 knowledge_base_ids 同一口径）。所以存量钥匙全部落在"不限工具"这一档，
+            # 行为与迁移前**一字不差**——这条迁移不该让任何一把在用钥匙失灵。
+            "ALTER TABLE api_keys"
+            " ADD COLUMN IF NOT EXISTS allowed_tool_names jsonb NOT NULL DEFAULT '[]'::jsonb",
         ),
     ),
 )

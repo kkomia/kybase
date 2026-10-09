@@ -900,6 +900,41 @@ def test_api_key_created_by_round_trip(store: MetaStore) -> None:
     assert loaded.created_by == "user_a"
 
 
+# --------------------------------------------------------------------- 工具范围（v0.60）
+
+
+def test_api_key_tool_scope_round_trip(store: MetaStore) -> None:
+    """工具范围要能原样存取：它是 jsonb 列，读回来必须还是那串名字与那个顺序。"""
+    store.create_api_key(
+        ApiKeyRecord(id="key_1", name="只给检索", key_hash="h",
+                     permission=ApiKeyPermission.READONLY,
+                     allowed_tool_names=("search", "list_documents"))
+    )
+
+    loaded = store.get_api_key_by_hash("h")
+    assert loaded is not None
+    assert tuple(loaded.allowed_tool_names) == ("search", "list_documents")
+
+    # 列表路径（SELECT *）也要带上它，否则界面上看不出一把钥匙被限了什么
+    listed = store.list_api_keys()
+    assert tuple(listed[0].allowed_tool_names) == ("search", "list_documents")
+
+
+def test_api_key_tool_scope_defaults_to_unrestricted(store: MetaStore) -> None:
+    """**默认是空 = 不受限**（v0.60 之前发的钥匙全都落在这一档）。
+
+    这一条钉的是"迁移不改行为"：老记录读回来必须是空元组，而不是 None 或报错。
+    """
+    store.create_api_key(
+        ApiKeyRecord(id="key_1", name="老钥匙", key_hash="h",
+                     permission=ApiKeyPermission.READONLY)
+    )
+
+    loaded = store.get_api_key_by_hash("h")
+    assert loaded is not None
+    assert tuple(loaded.allowed_tool_names) == ()
+
+
 def test_question_stats_by_documents_counts_chunks_and_questions(
     store: MetaStore, kb, document
 ) -> None:

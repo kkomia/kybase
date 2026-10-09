@@ -3,6 +3,12 @@
 架构给的约定只有两句：**绑定知识库范围**（可指定单个/多个库）**+ 只读 / 读写两种权限**。
 本模块把这两句落成可执行的判断，其余（怎么放进 HTTP 请求、怎么回显）交给协议层。
 
+**第三维：工具范围**（v0.60）。一把钥匙除了"能碰哪些库"还能限"能调哪些工具"
+（``allowed_tool_names``）——**空 = 不受限**，与库范围同一口径，所以存量钥匙不受影响。
+它只作用于 **API Key 通道**：管理员与登录成员会话一律不看它（判定见 ``check_tool``）。
+**本模块不 import 工具名表**：``services/tools.py`` 要 import 本模块，那样会成环，
+所以"这个名字是不是真工具"的校验落在协议层（``api/v1/api_keys.py``）。
+
 **身份契约不在这里**（2026-10-08 剥离阶段 0 搬走）：`Caller` / `READ` / `WRITE`
 住在 `app.core.caller`——它与"发钥匙 / 校验"这套实现分开（协议层、服务层都拿它当类型）。
 本模块从那里 import 进来并在 `__all__` 里再导出，**既有调用点一行没动**。
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -87,6 +94,19 @@ def resolve_caller(services: Services, token: str) -> Caller:
     return services.api_keys.authenticate(token)
 
 
+def _tool_scope(caller: Caller) -> tuple[str, ...]:
+    """这把凭据的工具范围；**空元组 = 不受限**。
+
+    管理员与登录成员会话一律返回空（= 不看工具范围）：这一维描述的是
+    "发出去给外部集成的那把钥匙"，控制台与成员不是那类调用方。
+    判定只写这一处——``check_tool`` 与 ``visible_tool_names`` 都必须按它来，
+    两处各判一次就会漂成"列得出来但调不动"（或反过来，那是越权）。
+    """
+    if caller.is_admin or caller.user is not None or caller.api_key is None:
+        return ()
+    return tuple(caller.api_key.allowed_tool_names)
+
+
 class ApiKeyService:
     """把 API Key 的存储细节收在一处。"""
 
@@ -101,12 +121,17 @@ class ApiKeyService:
         name: str,
         permission: ApiKeyPermission,
         knowledge_base_ids: list[str] | None = None,
+        allowed_tool_names: Sequence[str] | None = None,
     ) -> IssuedApiKey:
         """发一把新钥匙。
 
         ``knowledge_base_ids`` 为空表示**该凭据可访问全部知识库**——
         与"绑定到空集合（什么都访问不了）"是两回事，所以这里显式区分：
         传 ``None``/空列表都按"不限范围"处理，并在返回的记录里保持空元组。
+
+        ``allowed_tool_names``（工具范围）与它同一口径：空 = 不限制能调哪些工具。
+        存进去之前**去重、并保留调用方给的顺序**——顺序是界面上的展示顺序，
+        而重复项除了让提示语里出现两遍同一个名字之外没有任何意义。
         """
         token = generate_token()
         record = ApiKeyRecord(
@@ -115,6 +140,7 @@ class ApiKeyService:
             key_hash=hash_token(token),
             permission=permission,
             knowledge_base_ids=tuple(knowledge_base_ids or ()),
+            allowed_tool_names=tuple(dict.fromkeys(allowed_tool_names or ())),
             # 存一段前缀只为界面能分辨"哪把是哪把"；明文不入库
             key_prefix=display_prefix(token),
         )
@@ -223,6 +249,33 @@ class ApiKeyService:
             return sorted(owned | shares.keys())
         scope = caller.knowledge_base_ids
         return list(scope) if scope else None
+
+    def check_tool(self, caller: Caller, tool_name: str) -> None:
+        """判定"这次调用能不能用这个工具"。不通过就抛 403。
+
+        只对 **API Key 通道**生效（见 ``_tool_scope``）：工具范围是发给外部集成的
+        那把锁，控制台与成员会话不该被它关在门外。
+
+        空范围 = 不受限（``create`` 的说明）：老钥匙与"只限了库范围"的钥匙在这里放行。
+
+        报错**列出允许的那些**：配错的人要能自己看出来改哪儿，而工具名不是秘密
+        （``tools/list`` 本来就能看到）。
+        """
+        scope = _tool_scope(caller)
+        if not scope or tool_name in scope:
+            return
+        raise ForbiddenError(
+            f"该 API Key 未授权调用工具：{tool_name}（可用：{'、'.join(scope)}）"
+        )
+
+    def visible_tool_names(self, caller: Caller) -> tuple[str, ...] | None:
+        """列出调用方能用的工具；``None`` 表示不受限（调用方不必再过滤）。
+
+        与 ``visible_kb_ids`` 是一对：那边管"看得见哪些库"，这边管"看得见哪些工具"。
+        ``tools/list`` 据此把范围外的工具从清单里去掉——**列出来再拒**会让模型
+        盯着一个它永远调不成的工具反复试，而它没有任何线索知道为什么。
+        """
+        return _tool_scope(caller) or None
 
     def can_write(self, caller: Caller, kb_id: str) -> bool:
         """能否**写**这个库（不抛异常，供界面判定该不该显示上传/删除入口）。

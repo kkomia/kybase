@@ -63,14 +63,15 @@ def kb(services: Services) -> str:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def key_for(services: Services):  # type: ignore[no-untyped-def]
-    """按"库范围 + 权限"发一把真 Key 并换成 Caller——走真实发放路径，
+    """按"库范围 + 权限（+ 工具范围）"发一把真 Key 并换成 Caller——走真实发放路径，
     而不是手搓一个 Caller 对象（那样测的就不是判定本身了）。"""
 
-    def make(*, kb_ids: list[str], permission=READ) -> Caller:  # type: ignore[no-untyped-def]
+    def make(*, kb_ids: list[str], permission=READ, tools: list[str] | None = None):  # type: ignore[no-untyped-def]
         issued = services.api_keys.create(
             name=f"测试密钥 {uuid.uuid4().hex[:6]}",
             permission=permission,
             knowledge_base_ids=kb_ids,
+            allowed_tool_names=tools,
         )
         return services.api_keys.authenticate(issued.token)
 
@@ -480,6 +481,260 @@ def test_get_document_status_rejects_unknown(services: Services, admin: Caller) 
         call_tool(services, "get_document_status", {"document_id": "doc_不存在"}, caller=admin)
 
 
+# --------------------------------------------------------------------- 取文档内容（v0.61）
+
+
+def _upload_markdown(services: Services, kb: str, *, filename: str = "正文.md") -> str:
+    """传一份 Markdown 并返回文档 id（**不跑流水线**）。"""
+    uploaded = call_tool(
+        services,
+        "upload_document",
+        {
+            "knowledge_base_id": kb,
+            "filename": filename,
+            "content_base64": base64.b64encode(MARKDOWN.encode()).decode(),
+        },
+        caller=Caller(is_admin=True),
+    )
+    return uploaded["document_id"]
+
+
+def _parsed_document(services: Services, kb: str) -> str:
+    """传一份 Markdown 并**跑完摄入**，返回文档 id。
+
+    取 Markdown 正文这条路上必须有解析产物（``DocumentService.content`` 里
+    ``fmt="markdown"`` 就是查它），而上传本身不入队——测试里消费者是关掉的
+    （见 conftest），所以显式跑一次摄入。走的是真实现（本机纯文本解析 +
+    测试用的确定性嵌入），不联网。
+    """
+    document_id = _upload_markdown(services, kb)
+    services.ingest.ingest(document_id)
+    return document_id
+
+
+def test_get_document_content_returns_markdown(services: Services, kb: str) -> None:
+    """``format=markdown``（默认）回正文文本，而不是让调用方去解 base64。"""
+    document_id = _parsed_document(services, kb)
+
+    result = call_tool(
+        services, "get_document_content", {"document_id": document_id}, caller=Caller(is_admin=True)
+    )
+
+    assert set(result) >= {
+        "document_id",
+        "name",
+        "format",
+        "media_type",
+        "filename",
+        "size_bytes",
+        "text",
+    }
+    assert result["format"] == "markdown"
+    assert "眼轴长度" in result["text"]
+    # 解析产物按"文件名去后缀 + .md"命名（与 REST 下载走同一条路）
+    assert result["filename"] == "正文.md"
+    assert result["media_type"].startswith("text/markdown")
+    # 没超上限就不该有 truncated 这个键——它的存在本身是"这份是残的"的信号
+    assert "truncated" not in result
+
+
+def test_get_document_content_returns_original_as_base64(services: Services, kb: str) -> None:
+    """``format=original`` 回 base64 + 落盘要用的元信息（文件名 / 媒体类型 / 字节数）。"""
+    document_id = _upload_markdown(services, kb, filename="原文件.md")
+
+    result = call_tool(
+        services,
+        "get_document_content",
+        {"document_id": document_id, "format": "original"},
+        caller=Caller(is_admin=True),
+    )
+
+    assert result["format"] == "original"
+    assert result["filename"] == "原文件.md"
+    assert result["size_bytes"] == len(MARKDOWN.encode())
+    assert base64.b64decode(result["base64"]) == MARKDOWN.encode()
+    assert "text" not in result
+
+
+def test_get_document_content_rejects_unknown_format(services: Services, kb: str) -> None:
+    """格式写错要**说清可选值**，模型据此能自己改对而不是放弃这个工具。"""
+    document_id = _parsed_document(services, kb)
+
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(
+            services,
+            "get_document_content",
+            {"document_id": document_id, "format": "pdf"},
+            caller=Caller(is_admin=True),
+        )
+
+    assert "markdown" in str(excinfo.value)
+    assert "original" in str(excinfo.value)
+
+
+def test_get_document_content_truncates_long_markdown(
+    services: Services, kb: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """正文过长时只回前一段**并明确标记**：不标的话模型会把这一半当全文，
+    然后据此回"文里没有提到 X"——而 X 就在被截掉的那一半里。"""
+    from app.services import tools as tools_module
+
+    document_id = _parsed_document(services, kb)
+    monkeypatch.setattr(tools_module, "MAX_TEXT_CHARS", 10)
+
+    result = call_tool(
+        services, "get_document_content", {"document_id": document_id}, caller=Caller(is_admin=True)
+    )
+
+    assert result["truncated"] is True
+    assert result["text"] == MARKDOWN[:10]
+
+
+def test_get_document_content_rejects_an_oversized_payload(
+    services: Services, kb: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """超过 32MB 时**不截断**，而是让人改走 REST 下载接口。
+
+    截一半的原文是坏文件，截一半的正文更容易被当成全文读——两条都不如明说
+    "这个工具回不了，去那条能真下完的路"。
+
+    这里把上限改小而不是真造一个 32MB 的原文件：**验的是那条判定本身**
+    （比较 + 报错指向），而造 33MB 的数据只会让这条用例慢到没人愿意跑。
+    代价是报错里的 MB 数在改小之后算成 0——所以断言只认"指向 REST 下载"那一半。
+    """
+    from app.services import tools as tools_module
+
+    document_id = _upload_markdown(services, kb)
+    monkeypatch.setattr(tools_module, "MAX_DOWNLOAD_BYTES", 8)
+
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(
+            services,
+            "get_document_content",
+            {"document_id": document_id, "format": "original"},
+            caller=Caller(is_admin=True),
+        )
+
+    message = str(excinfo.value)
+    assert "download-url" in message
+    assert document_id in message
+
+
+def test_get_document_content_respects_kb_scope(services: Services, kb: str, key_for) -> None:  # type: ignore[no-untyped-def]
+    """按 id 直取内容也要判范围——否则知道 id 就能把别人的原文整份拉走。"""
+    document_id = _parsed_document(services, kb)
+    other = services.knowledge_bases.create(
+        kb_id=f"kb_{uuid.uuid4().hex[:12]}", name="别人的库"
+    ).id
+    scoped = key_for(kb_ids=[other])
+
+    with pytest.raises(ForbiddenError):
+        call_tool(services, "get_document_content", {"document_id": document_id}, caller=scoped)
+
+
+def test_get_document_content_is_denied_for_a_key_scoped_away(
+    services: Services, kb: str, key_for
+) -> None:  # type: ignore[no-untyped-def]
+    """工具范围限了别的工具时，这个工具**连内容都不该读**。
+
+    闸门在 ``call_tool`` 里（清单过滤只是"别把调不成的工具摆出来"）——
+    与 REST 侧那条映射表是同一个判定，见 ``api/auth.py`` 的 ``_TOOL_BY_ROUTE``。
+    """
+    document_id = _parsed_document(services, kb)
+    scoped = key_for(kb_ids=[kb], tools=["search"])
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        call_tool(services, "get_document_content", {"document_id": document_id}, caller=scoped)
+
+    assert "get_document_content" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "secret", "expected"),
+    [
+        ("http://192.168.31.18:8081", "sign-me", True),
+        ("http://192.168.31.18:8081", "", False),
+        ("", "sign-me", False),
+    ],
+)
+def test_download_url_needs_both_a_secret_and_a_public_base(
+    services: Services,
+    kb: str,
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+    secret: str,
+    expected: bool,
+) -> None:
+    """``download_url`` **两个条件缺一不可**：有签名密钥、且知道对外基址。
+
+    只满足一个时**整个键不出现**，而不是回一条半截的相对路径——相对路径给到另一台
+    机器上的客户端等于一条打不开的链接，比"没有这一项"更误导。
+    """
+    from app.core.config import get_settings
+
+    document_id = _upload_markdown(services, kb)
+    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", base_url)
+    monkeypatch.setenv("KYLAB_URL_SIGNING_SECRET", secret)
+    get_settings.cache_clear()
+
+    result = call_tool(
+        services,
+        "get_document_content",
+        {"document_id": document_id, "format": "original"},
+        caller=Caller(is_admin=True),
+    )
+
+    if not expected:
+        assert "download_url" not in result
+        return
+
+    # 拼出来的必须是**真能用**的那一条：绝对地址 + 内容端点 + 一组能过验签的参数。
+    # 验签这一步是刻意的——只断言"字符串里有 signature=" 的话，一条拿错密钥、
+    # 或把 fmt / document_id 签错（那两种在 /content 上都是 401）的链接照样能过。
+    from urllib.parse import parse_qs, urlparse
+
+    from app.core.signing import verify_resource
+    from app.services.documents import signature_resource
+
+    parsed = urlparse(result["download_url"])
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == urlparse(base_url).netloc
+    assert parsed.path == f"/api/v1/documents/{document_id}/content"
+    assert query["format"] == ["original"]
+    verify_resource(
+        signature_resource(document_id, "original"),
+        query["signature"][0],
+        int(query["expires"][0]),
+        secret,
+    )
+
+
+def test_every_tool_has_catalog_metadata() -> None:
+    """``TOOL_META`` 必须覆盖 ``TOOL_NAMES`` 的每一个（``GET /tools`` 直接查它）。
+
+    少一个的后果不是"界面上少一行"，而是那个端点当场 KeyError（整页 500）——
+    加工具时忘了补元数据是最容易发生的一种漏，所以在这里钉住。
+
+    ``requires_write`` 也一并钉一份名单：它说的是"这个工具会不会调
+    ``check_access(need=WRITE)``"，错了不会报错，只会让界面把一个能改数据的工具
+    显示成只读（或者反过来，把只读的显示成能写）。
+    """
+    from app.services.tools import TOOL_META
+
+    assert set(TOOL_META) == set(TOOL_NAMES)
+    for name, meta in TOOL_META.items():
+        assert meta.label.strip(), name
+        assert meta.summary.strip(), name
+
+    writers = {name for name, meta in TOOL_META.items() if meta.requires_write}
+    assert writers == {
+        "create_knowledge_base",
+        "upload_document",
+        "add_data_source",
+        "delete_document",
+    }
+
+
 # --------------------------------------------------------------------- 删除
 
 
@@ -589,13 +844,68 @@ def test_list_documents_respects_scope(services: Services, kb: str, key_for) -> 
         call_tool(services, "list_documents", {"knowledge_base_id": kb}, caller=scoped)
 
 
+# --------------------------------------------------------------------- 工具范围（v0.60）
+
+
+def test_call_tool_denies_a_tool_outside_the_keys_scope(
+    services: Services, kb: str, key_for
+) -> None:  # type: ignore[no-untyped-def]
+    """**闸门在 ``call_tool`` 里**：范围外的工具连进都进不去。
+
+    为什么清单过滤（``tools/list``）之外还要这一道：清单只是"别把永远调不成的工具
+    摆给模型看"，客户端完全可以照旧直接调——只靠清单过滤，闸门就变成了提示。
+    """
+    scoped = key_for(kb_ids=[kb], tools=["search"])
+
+    with pytest.raises(ForbiddenError) as excinfo:
+        call_tool(services, "list_knowledge_bases", {}, caller=scoped)
+
+    assert "list_knowledge_bases" in str(excinfo.value)
+    # 要列出可用的那些，用户才配得回来
+    assert "search" in str(excinfo.value)
+
+
+def test_call_tool_allows_a_tool_inside_the_keys_scope(
+    services: Services, kb: str, key_for
+) -> None:  # type: ignore[no-untyped-def]
+    scoped = key_for(kb_ids=[kb], tools=["search"])
+
+    result = call_tool(services, "search", {"query": "眼轴"}, caller=scoped)
+
+    assert "hits" in result
+
+
+def test_call_tool_without_a_tool_scope_stays_unrestricted(
+    services: Services, kb: str, key_for
+) -> None:  # type: ignore[no-untyped-def]
+    """没给工具范围（空）= 不受限：存量钥匙的行为不能因为这一层变样。"""
+    unscoped = key_for(kb_ids=[kb])
+
+    assert isinstance(call_tool(services, "list_knowledge_bases", {}, caller=unscoped), list)
+    call_tool(services, "search", {"query": "眼轴"}, caller=unscoped)
+
+
+def test_unknown_tool_is_still_reported_as_unknown_for_a_scoped_key(
+    services: Services, kb: str, key_for
+) -> None:  # type: ignore[no-untyped-def]
+    """**"未知"要排在"没授权"前面**：反过来的话，一个拼错的工具名会报成
+    "未授权调用工具"——模型据此会以为换个参数就能过，而不是"这个名字不存在"。
+    """
+    scoped = key_for(kb_ids=[kb], tools=["search"])
+
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(services, "不存在的工具", {}, caller=scoped)
+
+    assert "未知的工具" in str(excinfo.value)
+
+
 def test_every_tool_has_a_parameter_whitelist() -> None:
     """``server.py`` 的 ``_PARAMS`` 必须覆盖**对外 MCP 面**的每个工具。
 
     少一个的后果不是"参数被过滤掉"，而是 ``build_server`` 直接 KeyError——
     服务起不来。放在这里断言是因为它跨了两个模块，只看一边发现不了。
 
-    **v0.1.0 瘦身之后两边相等**：``services/tools.py`` 只剩纯知识库那 8 个工具，
+    **v0.1.0 瘦身之后两边相等**：``services/tools.py`` 只剩纯知识库那一组工具，
     对外面就是它——不再是"按白名单过滤出来的子集"。这条等式仍然有它守的东西：
     哪天有人往表里加一个 Agent 侧工具，``_PARAMS`` 与 MCP 面会一起跟上，
     而"加了什么"必须是有意识的（``test_server.py`` 那边还钉着名字）。

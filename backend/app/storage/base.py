@@ -680,6 +680,13 @@ class ApiKeyRecord:
     key_hash: str
     permission: ApiKeyPermission
     knowledge_base_ids: Sequence[str] = field(default_factory=tuple)
+    allowed_tool_names: Sequence[str] = field(default_factory=tuple)
+    """这把钥匙能调的工具（MCP 工具名）；**空元组 = 不受限**。
+
+    与 ``knowledge_base_ids`` 同一口径：空表示"不限"，不是"一个都不许"——
+    所以账号体系之前发的老钥匙（这一列不存在）行为与从前完全一致。
+    只作用于**API Key 通道**：管理员与登录成员会话不看它（见 ``services/api_key.py``）。
+    """
     key_prefix: str = ""
     """明文的前若干位，**仅用于界面分辨"哪把是哪把"**。
 

@@ -27,6 +27,10 @@ v0.11 起还有第二条契约：**鉴权永远生效**。没有控制台令牌�
   理由写在原来那条用例的位置上；
 - ``test_setup_then_login_then_me`` 里那处"管理员会话能进设置页"换成能进
   ``/api/v1/users``（同一件事：管理员会话在服务器档管用的那类端点）。
+
+v0.60 起这里还钉**工具范围**：一把 API Key 除了库范围与权限档，还能限"能调哪些工具"
+（`allowed_tool_names`，空 = 不受限）。它只作用于**与某个 MCP 工具 1:1 的端点**，
+那张映射表与边界写在 ``app/api/auth.py`` 的 ``_TOOL_BY_ROUTE`` 上。
 """
 
 from __future__ import annotations
@@ -373,6 +377,180 @@ def test_change_password_over_http(app_client: TestClient) -> None:
         ).status_code
         == 401
     )
+
+
+# --------------------------------------------------------------------- 工具范围（v0.60）
+
+
+def _scoped(issued: dict) -> dict[str, str]:
+    return {"Authorization": f"Bearer {issued['token']}"}
+
+
+def _upload(client: TestClient, kb_id: str, name: str) -> dict:
+    """管理员传一份文档（用来造出"有真实 id 的文档"给按 id 的端点用）。
+
+    ``start=false``：不把摄入任务真的跑起来——这条用例验的是鉴权，不是流水线。
+    """
+    response = client.post(
+        f"/api/v1/knowledge-bases/{kb_id}/documents",
+        files={"file": (name, b"# " + name.encode(), "text/markdown")},
+        params={"start": "false"},
+    )
+    assert response.status_code == 202, response.text
+    return response.json()["document"]
+
+
+def test_tool_scope_restricts_a_key_to_its_tools(locked: TestClient) -> None:
+    """限了工具范围的钥匙，范围外的那一类端点必须 403，范围内的照常。
+
+    **正反两面都要查**：只查"被拒"的话，它可能只是被别的判定顺手挡住了——
+    那样这条用例在工具范围整个失效之后仍然是绿的（会骗人的测试）。
+    """
+    kb = locked.post("/api/v1/knowledge-bases", json={"name": "工具范围库"}).json()
+    issued = _issue(locked, permission="readwrite", allowed_tool_names=["search"])
+    scoped = _scoped(issued)
+
+    allowed = locked.post(
+        "/api/v1/search", json={"query": "任意", "kb_ids": [kb["id"]]}, headers=scoped
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    blocked = locked.post(
+        f"/api/v1/knowledge-bases/{kb['id']}/documents",
+        files={"file": ("偷渡.md", b"# hello", "text/markdown")},
+        headers=scoped,
+    )
+    assert blocked.status_code == 403
+    assert "upload_document" in blocked.json()["message"]
+
+
+def test_every_mapped_route_resolves_to_its_tool(locked: TestClient) -> None:
+    """**"路由 → 工具"那张映射表要真的被走到**：逐条打一遍，一条都不能漏。
+
+    为什么值得一条条打：映射靠**路由模板**（``request.scope["route"].path``）匹配，
+    而它的形状随框架版本变过（含不含 ``include_router`` 的那层前缀）。哪天它变了，
+    只测一两条用例可能仍然绿着——那张表会退化成"只有一两条有效"。
+
+    这条同时是"表里的模板写得对不对"的检查：路径写错一条，那一条就会放行（红）。
+    """
+    kb = locked.post("/api/v1/knowledge-bases", json={"name": "映射表库"}).json()
+    document = _upload(locked, kb["id"], "映射表文档.md")
+    # 范围只留 search，其余映射全部落在范围外
+    scoped = _scoped(_issue(locked, permission="readwrite", allowed_tool_names=["search"]))
+
+    cases: list[tuple[str, str, str, dict]] = [
+        (
+            "create_knowledge_base",
+            "post",
+            "/api/v1/knowledge-bases",
+            {"json": {"name": "偷偷建的库"}},
+        ),
+        ("list_knowledge_bases", "get", "/api/v1/knowledge-bases", {}),
+        ("list_documents", "get", f"/api/v1/knowledge-bases/{kb['id']}/documents", {}),
+        (
+            "upload_document",
+            "post",
+            f"/api/v1/knowledge-bases/{kb['id']}/documents",
+            {"files": {"file": ("再传一份.md", b"# x", "text/markdown")}},
+        ),
+        (
+            "upload_document",
+            "post",
+            f"/api/v1/knowledge-bases/{kb['id']}/documents/batch",
+            {"json": {"action": "disable", "document_ids": [document["id"]]}},
+        ),
+        ("get_document_status", "get", f"/api/v1/documents/{document['id']}", {}),
+        ("delete_document", "delete", f"/api/v1/documents/{document['id']}", {}),
+        # 取内容那两条（v0.61）：只限了 search 的钥匙**不该能把文档正文拉走**——
+        # REST 上它们是 ``get_document_content`` 的入口，与 MCP 那边同一个闸门
+        ("get_document_content", "get", f"/api/v1/documents/{document['id']}/preview", {}),
+        (
+            "get_document_content",
+            "get",
+            f"/api/v1/documents/{document['id']}/download-url",
+            {},
+        ),
+        (
+            "add_data_source",
+            "post",
+            f"/api/v1/knowledge-bases/{kb['id']}/data-sources",
+            {"json": {"kind": "rss", "url": "https://example.com/feed.xml"}},
+        ),
+    ]
+
+    for tool, method, path, kwargs in cases:
+        response = getattr(locked, method)(path, headers=scoped, **kwargs)
+        assert response.status_code == 403, f"{method.upper()} {path} 没被工具范围挡住"
+        assert tool in response.json()["message"], f"{path} 被拒的理由不是工具范围"
+
+
+def test_unscoped_key_is_unaffected_by_the_tool_scope(locked: TestClient) -> None:
+    """**空工具范围 = 不受限**：老钥匙与"只限了库范围"的钥匙行为与从前一字不差。"""
+    kb = locked.post("/api/v1/knowledge-bases", json={"name": "照常的库"}).json()
+    issued = _issue(locked, permission="readwrite")
+    scoped = _scoped(issued)
+
+    assert issued["allowed_tool_names"] == []
+    assert locked.get("/api/v1/knowledge-bases", headers=scoped).status_code == 200
+    created = locked.post(
+        "/api/v1/knowledge-bases", json={"name": "再建一个"}, headers=scoped
+    )
+    assert created.status_code == 201
+    assert (
+        locked.post(
+            "/api/v1/search", json={"query": "任意", "kb_ids": [kb["id"]]}, headers=scoped
+        ).status_code
+        == 200
+    )
+
+
+def test_tool_scope_does_not_touch_unmapped_endpoints(locked: TestClient) -> None:
+    """**表外的端点不受工具范围影响**——这条边界是刻意的。
+
+    ``GET /knowledge-bases/{id}`` 没有对应的工具，所以只限了 ``search`` 的钥匙照样
+    读得到它。工具范围管的是"工具面"（发给外部集成的最小面），不是控制台的每个动作；
+    真拿它去管全部端点，它就长成了第二套权限系统——两套判定必然相漂。
+    """
+    kb = locked.post("/api/v1/knowledge-bases", json={"name": "详情库"}).json()
+    issued = _issue(locked, allowed_tool_names=["search"])
+
+    detail = locked.get(f"/api/v1/knowledge-bases/{kb['id']}", headers=_scoped(issued))
+    assert detail.status_code == 200, detail.text
+
+
+def test_unknown_tool_name_is_rejected_at_creation(locked: TestClient) -> None:
+    """非法工具名要**在发钥匙的时候就拒**。
+
+    存下来的后果不是"这把钥匙少一个工具"，而是"用户以为授权成功了、实际一次都调不动"
+    ——报错要到使用时才出现，中间还隔着一次配置。2026 年另一处同类问题是
+    "名单只有一处"那条纪律的反面：这里宁可当场报错，也不猜他想要哪个。
+    """
+    response = locked.post(
+        "/api/v1/api-keys",
+        json={
+            "name": "拼错的钥匙",
+            "permission": "readonly",
+            "allowed_tool_names": ["search", "搜一下"],
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    message = response.json()["message"]
+    assert "搜一下" in message, "要点出到底哪个名字不认识"
+    assert "search" in message, "要把可用的名字列出来，用户才改得对"
+    # 拒绝就是**一把都没发**，不会留下"看起来发成了"的半截状态
+    assert locked.get("/api/v1/api-keys").json()["items"] == []
+
+
+def test_tool_scope_is_echoed_in_the_listing(locked: TestClient) -> None:
+    """列表要回显工具范围：不回显的话，用户看不出"这把钥匙为什么调不动某个工具"，
+    而这类问题只会表现为"某个客户端偶尔报错"，最难查。
+    """
+    issued = _issue(locked, allowed_tool_names=["search", "list_documents"])
+
+    assert issued["allowed_tool_names"] == ["search", "list_documents"]
+    listed = locked.get("/api/v1/api-keys").json()["items"][0]
+    assert listed["allowed_tool_names"] == ["search", "list_documents"]
 
 
 
