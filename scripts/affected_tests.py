@@ -248,8 +248,8 @@ def _resolve_relative(module: str, node: ast.ImportFrom) -> str:
 def python_imports(path: Path, module: str, known: set[str]) -> set[str]:
     """一个 Python 文件 import 到的**已知**模块集合。
 
-    ``from app.services import memory`` 这种写法要同时记下 ``app.services`` 与
-    ``app.services.memory``：前者说明"依赖了这个包"，后者才是真正被引用的模块——
+    ``from app.services import documents`` 这种写法要同时记下 ``app.services`` 与
+    ``app.services.documents``：前者说明"依赖了这个包"，后者才是真正被引用的模块——
     只记前者会让闭包停在中途，从而漏掉调用方。
     """
     try:
@@ -275,7 +275,7 @@ def python_imports(path: Path, module: str, known: set[str]) -> set[str]:
 
 
 def backend_module_of(path: Path) -> str:
-    """``backend/app/services/memory.py`` → ``app.services.memory``（``__init__`` 折叠掉）。"""
+    """``backend/app/services/documents.py`` → ``app.services.documents``（``__init__`` 折叠掉）。"""
     rel = path.relative_to(BACKEND).with_suffix("")
     parts = [part for part in rel.parts if part != "__init__"]
     return ".".join(parts)
@@ -562,10 +562,11 @@ def decide(
         if name.startswith("frontend/"):
             continue
         if name.startswith("scripts/"):
-            # 两种写法都认：**仓库相对路径**（``scripts/deck/render.mjs``——用例按路径加载
+            # 两种写法都认：**仓库相对路径**（``scripts/<子目录>/<脚本>``——用例按路径加载
             # 脚本时点名写的就是它）与"scripts/ + 文件名"（顶层脚本那种写法）。
             # 只认后者的后果是``scripts/`` 下**带子目录**的脚本静默失配：改了写盘脚本，
             # 钉住它的用例不跑，而"没跑"与"跑了且绿"看起来一模一样。
+            # （v0.1.0 瘦身后 scripts/ 下暂时没有子目录脚本，这条分支留着是为了下一个。）
             tokens = (name, f"scripts/{Path(name).name}")
             for rel in sorted(all_backend):
                 if rel in hit_backend:

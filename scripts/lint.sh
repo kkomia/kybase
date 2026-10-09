@@ -39,21 +39,20 @@ step() {
 step "ruff" sh -c "cd '$ROOT/backend' && uv run ruff check app/ tests/"
 step "emoji 扫描（后端）" "$PY" "$ROOT/scripts/scan_emoji.py" "$ROOT/backend/app"
 step "结构性规范（分层 / 测试位置 / 界面文案 / 版本号）" "$PY" "$ROOT/scripts/check_layering.py" "$ROOT"
-# 同步《API 接口规范》的端点清单：它是从真实 OpenAPI 生成的，
-# 跑这一步之后文档里的清单必然与代码一致（T4.9）
-# 这一步要 import app（进而 import duckdb），所以**必须用 venv 的解释器**：
+# **不生成《API 接口规范》**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
+# kylab 时代的（整段讲技能分类 / 精选），落点 docs/规范/ 本仓也没有，跑一次就是
+# FileNotFoundError。接口事实的权威处是运行中的 /api/v1/openapi.json；真要维护一份
+# kybase 版规范，先改那个脚本的正文与落点再把它接回来。
+# 下面这条契约核对要 import app（进而 import duckdb），所以**必须用 venv 的解释器**：
 # lint.sh 顶部的 $PY 是通用探测（Windows 上常落到系统 python），
-# 那个环境里没有项目依赖。找不到 venv 时跳过而不是报失败——
-# 生成文档不该成为门禁里最脆的一环，而 pytest 那条已经会核对文档一致性。
+# 那个环境里没有项目依赖。找不到 venv 时跳过而不是报失败。
 VENV_PY="$ROOT/backend/.venv/Scripts/python.exe"
 [ -x "$VENV_PY" ] || VENV_PY="$ROOT/backend/.venv/bin/python"
 if [ -x "$VENV_PY" ]; then
-    step "同步 API 接口规范" "$VENV_PY" "$ROOT/scripts/gen_api_spec.py"
-    # 前端类型与后端 schema 的契约核对（T4.9 的姊妹项）：**不一致就红**，
-    # 不像上面那条把文档改掉——类型参与编译，静默重写等于把"契约变了"藏起来。
+    # 前端类型与后端 schema 的契约核对：**不一致就红**——类型参与编译，
+    # 静默重写等于把"契约变了"藏起来。
     step "核对 API 类型（前端 ← OpenAPI）" "$VENV_PY" "$ROOT/scripts/gen_api_types.py" --check
 else
-    echo "==> 同步 API 接口规范（跳过：找不到 venv 解释器）"
     echo "==> 核对 API 类型（跳过：找不到 venv 解释器）"
 fi
 
@@ -71,7 +70,11 @@ if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/nu
     echo "==> Shell 脚本语法（sh -n，git 跟踪的全部 .sh）"
     # 子 shell 里 cd，别把 ROOT 之后要用的相对路径搅了；管道取"最后一条命令"的退出码，
     # 所以循环里 exit 1 能让整条失败
+    # **删掉但还没提交的脚本要跳过**（`git ls-files` 仍列着它）：门禁是在**脏工作区**上
+    # 跑的（提交前跑正是它的用法），拿一个已经不存在的文件去 `sh -n` 只会报"找不到文件"
+    # 而让整个门禁假红。
     if (cd "$ROOT" && git ls-files '*.sh' | while IFS= read -r f; do
+            [ -f "$f" ] || continue
             echo "   sh -n $f"
             sh -n "$f" || { echo "!! $f 语法不过"; exit 1; }
         done); then

@@ -34,16 +34,16 @@ function Invoke-Step {
 Invoke-Step 'ruff' 'uv' @('run', '--directory', "$root/backend", 'ruff', 'check', 'app/', 'tests/')
 Invoke-Step 'emoji 扫描（后端）' 'python' @("$root/scripts/scan_emoji.py", "$root/backend/app")
 Invoke-Step '结构性规范（分层 / 测试位置 / 界面文案 / 版本号）' 'python' @("$root/scripts/check_layering.py", $root)
-# 同步《API 接口规范》的端点清单（T4.9）：同上，让文档不可能旧
-# 同 lint.sh：这一步要 import app（含 duckdb），必须用 venv 解释器
+# **不生成《API 接口规范》**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
+# kylab 时代的（整段讲技能分类 / 精选），落点 docs/规范/ 本仓也没有，跑一次就是
+# FileNotFoundError。接口事实的权威处是运行中的 /api/v1/openapi.json。
+# 同 lint.sh：下面这条要 import app（含 duckdb），必须用 venv 解释器
 $venvPy = "$root/backend/.venv/Scripts/python.exe"
 if (Test-Path $venvPy) {
-    Invoke-Step '同步 API 接口规范' $venvPy @("$root/scripts/gen_api_spec.py")
-# 前端类型与后端 schema 的契约核对（T4.9 的姊妹项）：不一致就红，
-# 不像上面那条把文档改掉——类型参与编译，静默重写等于把"契约变了"藏起来
+# 前端类型与后端 schema 的契约核对：不一致就红——类型参与编译，静默重写等于把"契约变了"藏起来
 Invoke-Step '核对 API 类型（前端 ← OpenAPI）' $venvPy @("$root/scripts/gen_api_types.py", '--check')
 } else {
-    Write-Host '==> 同步 API 接口规范（跳过：找不到 venv 解释器）' -ForegroundColor DarkGray
+    Write-Host '==> 核对 API 类型（跳过：找不到 venv 解释器）' -ForegroundColor DarkGray
 }
 
 if (Test-Path "$root/frontend/package.json") {
