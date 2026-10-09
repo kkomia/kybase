@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Query a kylab knowledge base from the command line.
+"""Query a kybase knowledge base from the command line.
 
 Why this exists alongside the MCP server: **not every agent runtime can speak MCP.**
 MCP needs a client that understands the protocol; a shell and an HTTP endpoint are
 available almost everywhere. So this Skill ships both paths to the same retrieval —
 MCP for clients that support it, this script for the rest.
 
-It deliberately prints **the passages**, not a generated answer. kylab's value is
-traceable sources; a script that summarised them would throw away the thing that makes
-the result usable for verification.
+It deliberately prints **the passages**, not a generated answer. That is where the value
+is — traceable sources; a script that summarised them would throw away the thing that
+makes the result usable for verification.
 
 Usage:
     python kylab_query.py --query "眼轴怎么监测"
@@ -57,7 +57,7 @@ def _request(
         # actually fix, and it is otherwise easy to mistake for "no results".
         if exc.code in (401, 403):
             print(
-                f"需要凭据（HTTP {exc.code}）。kylab 的接口一律要凭据（v0.11 起没有开关）：\n"
+                f"需要凭据（HTTP {exc.code}）。kybase 的接口一律要凭据（没有开关）：\n"
                 "  在控制台「设置 → API 密钥」建一把**只读**密钥，"
                 "然后设 KYLAB_API_KEY，或给本脚本传 --token。\n"
                 "  （登录会话令牌也可以，但它只属于浏览器；给脚本用请用 API Key。）",
@@ -68,7 +68,7 @@ def _request(
         raise SystemExit(1) from exc
     except urllib.error.URLError as exc:
         print(
-            f"连不上 kylab（{base_url}）：{exc.reason}\n"
+            f"连不上 kybase（{base_url}）：{exc.reason}\n"
             "  确认后端在跑：cd backend && uv run uvicorn app.main:app",
             file=sys.stderr,
         )
@@ -102,7 +102,7 @@ def _print_hits(result: dict, *, query: str, as_json: bool) -> None:
         return
 
     if result.get("_no_knowledge_base"):
-        print("这个 kylab 实例里还没有任何知识库——先建库并上传文档。")
+        print("这个部署里还没有任何知识库——先建库并上传文档。")
         return
 
     hits = result.get("hits", [])
@@ -131,7 +131,7 @@ def _print_hits(result: dict, *, query: str, as_json: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="查询 kylab 知识库并打印原文出处（不生成回答）",
+        description="查询 kybase 知识库并打印原文出处（不生成回答）",
     )
     parser.add_argument("--query", "-q", help="检索词，自然语言即可")
     parser.add_argument(

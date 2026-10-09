@@ -1,10 +1,13 @@
-# kylab 知识库 Skill
+# kybase 知识库 Skill
 
-让 Agent 能查你自己的 kylab 知识库，并**拿到可追溯的原文出处**。
+让 Agent 能查你自己的知识库（kybase），并**拿到可追溯的原文出处**。
+
+> 目录名仍是 `kylab-knowledge-base`，脚本仍叫 `kylab_query.py`——技能包名与它被安装
+> 到别处时的路径沿用原名；环境变量与凭据前缀同理保留 `KYLAB_` / `kylab_sk_`。
 
 ## 它做什么
 
-kylab 的核心能力是**带出处的检索**：返回的是你文档里的原文片段
+kybase 的核心能力是**带出处的检索**：返回的是你文档里的原文片段
 （含文档名、页码、标题路径），不是一段生成的回答。
 
 这个区别是这个 Skill 存在的理由：需要**核对**答案时，原文是证据，摘要不是。
@@ -22,11 +25,14 @@ kylab 的核心能力是**带出处的检索**：返回的是你文档里的原�
 
 ## 快速自检
 
+> 下面的地址是**本机默认值**；线上那套跑在 NAS 上：REST `http://192.168.31.18:8081/api/v1`、
+> MCP `http://192.168.31.18:8765/mcp`（**别的部署以部署方给的为准**）。
+
 ```bash
 # 1) 后端在跑吗
 curl -s http://127.0.0.1:8000/api/v1/health
 
-# 2) MCP 工具认得出来吗（需要先装 mcp extra）
+# 2) MCP 工具认得出来吗（在 kybase 仓的 backend 目录下跑；需要先装 mcp extra）
 cd backend && python -m app.mcp_server.server --list-tools
 
 # 3) 脚本能查到东西吗（v0.11 起接口一律要凭据）

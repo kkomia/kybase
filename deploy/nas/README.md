@@ -132,9 +132,8 @@ cd /vol1/1000/docker/kybase/app && docker compose build && docker compose up -d
 
 ```bash
 cd /vol1/1000/docker/kybase/app
-docker compose exec -T backend python -c "from app.services.runtime_config import DEFAULTS; print(sorted(k for k in DEFAULTS if k.startswith('retrieval.') or k == 'chat.permission'))"
-docker compose exec -T backend python -c "from app.services import modes; print(list(modes.MODES), list(modes.PERMISSIONS))"
-# 对外 MCP 面正好是知识库那 10 个（Agent 工具一个都不该在）：
+docker compose exec -T backend python -c "from app.services.runtime_config import DEFAULTS; print(sorted(k for k in DEFAULTS if k.startswith('retrieval.')))"
+# 对外 MCP 面正好是纯知识库那 8 个（Agent 工具一个都不该在）：
 docker compose exec -T backend python -c "from app.mcp_server.server import MCP_TOOL_NAMES; print(len(MCP_TOOL_NAMES), sorted(MCP_TOOL_NAMES))"
 ```
 

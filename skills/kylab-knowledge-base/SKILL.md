@@ -1,12 +1,12 @@
 ---
 name: kylab-knowledge-base
-description: Query a kylab knowledge base to answer questions from the user's own documents with traceable citations. Use this Skill whenever the user asks something that their local knowledge base might cover — product manuals, research papers, internal guidelines, subscribed feeds — or explicitly says "查知识库", "在我的文档里找", "知识库里有没有", "ask my knowledge base", "search my docs". Also use it before answering from general knowledge when the answer should be grounded in the user's own material, because kylab returns the actual source passages rather than a generated summary.
+description: Query a kybase knowledge base to answer questions from the user's own documents with traceable citations. Use this Skill whenever the user asks something that their local knowledge base might cover — product manuals, research papers, internal guidelines, subscribed feeds — or explicitly says "查知识库", "在我的文档里找", "知识库里有没有", "ask my knowledge base", "search my docs". Also use it before answering from general knowledge when the answer should be grounded in the user's own material, because kybase returns the actual source passages rather than a generated summary.
 summary: 在你的知识库里检索原文段落，给出可追溯出处的回答
 ---
 
-# Query a kylab knowledge base
+# Query a kybase knowledge base
 
-kylab is a local, self-hosted knowledge base. Its core capability is **retrieval with
+kybase is a self-hosted knowledge base service. Its core capability is **retrieval with
 traceable sources**: `search` returns the actual passages from the user's documents
 (together with document name, page, and heading path), not a generated answer. That
 distinction matters — when the user needs to trust or verify an answer, the passages are
@@ -33,28 +33,28 @@ the evidence, and a summary is not.
 | `list_knowledge_bases` | Always, at the start; and again after the user adds documents | Assume a library id — they are generated and opaque |
 | `search` | The default action for answering anything | Use it as a substitute for reading the returned text; the passages are the answer's basis |
 | `list_documents` | The user asks what a library contains, or you need to check whether a document finished processing | Use `search` to survey a library — it only returns passages related to a query, never the full inventory |
-| `upload_document` | The user hands you a file (base64) to add | Re-upload the same content to "refresh" it — content-hash dedup returns the existing document instead |
-| `add_data_source` | The user wants a feed or page kept up to date | Expect content to appear immediately — registering does **not** fetch |
 | `get_document_status` | After an upload, or when search finds nothing | Assume a non-`indexed` document is searchable; it is not |
-| `upload_document` | A conclusion, decision, or procedure is worth keeping and the user wants it searchable | Expect it to be searchable at once — it goes through the same pipeline as any upload, so check `get_document_status` |
-| `list_notes` | You need to find a note again, or check what has not been filed yet | Assume a listed note is searchable — `in_knowledge_base` is the field that says so |
-| `recall` | The question is about **us**: what we decided, what the user prefers, what went wrong last time | Use it as a substitute for `search` — memory has no sources to cite |
-| `remember` | A durable preference, decision, or lesson came up and should survive the session | Dump a whole document into it — one reusable fact per call, and long material belongs in `upload_document` |
-| `delete_document` | The user explicitly asks to remove something | Treat it as reversible without saying so — the original goes to a 7-day trash, but the chunks and vectors are gone immediately, so it stops being searchable at once |
+| `upload_document` | The user hands you a file (base64) to add — or a conclusion, decision, or procedure is worth keeping and the user wants it searchable | Re-upload the same content to "refresh" it (content-hash dedup returns the existing document instead), and do not expect it to be searchable at once — it goes through the same pipeline as any upload, so check `get_document_status` |
+| `add_data_source` | The user wants a feed or page kept up to date | Expect content to appear immediately — registering does **not** fetch |
 | `create_knowledge_base` | The user wants a new, separate library | Mix unrelated material into one library; separate libraries keep retrieval scoped |
+| `delete_document` | The user explicitly asks to remove something | Treat it as reversible without saying so — the original goes to a 7-day trash, but the chunks and vectors are gone immediately, so it stops being searchable at once |
 
-## Two pools: `search` and `recall` are not interchangeable
+**This table is the whole surface.** Read the live list with
+`python -m app.mcp_server.server --list-tools` rather than trusting any count written down —
+the set grows, and a remembered number is how you end up believing a tool is missing.
 
-kylab keeps **documents** and **memory** apart, and mixing them is the mistake to avoid:
+## Retrieval only: no memory, no notes
 
-| | `search` | `recall` |
-| --- | --- | --- |
-| Answers | "what does the material say" | "what did we say" |
-| Has sources | Yes — document, page, heading; quote it | No — it came from a conversation |
-| Use when | The user needs a verifiable basis | The user references prior context, or their own preferences |
+This service serves **documents**, and the table above is its entire surface. There is no
+memory, no notes, and no conversation log here — `recall` / `remember` / `create_note` /
+`attach_note_to_kb` belong to the Agent side, and their implementations are not part of this
+codebase at all (they were removed when the service was slimmed down to the knowledge base
+itself, 2026-10-09).
 
-Do not present recalled memory as if it were sourced evidence, and do not answer "what did we
-decide" from `search` — the decision may never have been written into a document.
+The practical consequence: "what did we decide?" has exactly one honest answer here — if the
+decision was written into a document, `search` finds it and you can cite it; if it was not,
+this service cannot answer it, and you should say so rather than presenting a guess as
+sourced evidence.
 
 ## Saving results back into the knowledge base
 
@@ -63,15 +63,14 @@ conversation produces something worth finding again later — a settled conclusi
 decision with its reasons, a procedure that worked.
 
 Write it as Markdown and send the content as base64 with a `filename` that ends in `.md`
-(kylab's pipeline dispatches on the extension). It goes through the same pipeline as any
+(the pipeline dispatches on the extension). It goes through the same pipeline as any
 other upload, so it is **not searchable until processing finishes** — say that plainly, and
 use `get_document_status` to report progress.
 
 Two habits worth keeping: ask before filing into a library the user did not name, and prefer
 one document per distinct conclusion over one long running log — the point is that a future
-search can land on it. (In the kylab desktop app the same job is done by the `create_note` →
-`attach_note_to_kb` pair; **those two tools do not exist on this service's MCP face** —
-only the eight tools in the table above do.)
+search can land on it. (`create_note` / `attach_note_to_kb` are **not** on this service —
+they belong to the Agent side; `upload_document` is how content gets in here.)
 
 ## Answering rules
 
@@ -81,7 +80,7 @@ gap from general knowledge without labelling it as such: the user asked their ow
 documents precisely because general knowledge was not the point.
 
 **Quote or point to the source.** Give the document name; add page and heading path when
-kylab returns them. A claim the user cannot trace back is not usable for their purposes.
+the service returns them. A claim the user cannot trace back is not usable for their purposes.
 
 **Stages matter.** `get_document_status` reports a pipeline stage
 (`uploaded → parsing → parsed → chunked → embedding → indexed`). Only `indexed` is
@@ -90,29 +89,31 @@ processing before reporting the material as missing.
 
 ## Local setup
 
-This Skill drives the kylab MCP server, which runs beside the kylab backend.
+This Skill drives the kybase MCP server, which runs beside the kybase backend. The Skill
+ships inside the kybase repository (`skills/kylab-knowledge-base/`), so that backend is the
+`backend/` directory next to it.
 
 ```bash
-# from the kylab repository
+# in the kybase repository's backend directory
 cd backend
 python -m app.mcp_server.server --list-tools          # the tool names it exposes — read the list, don't match a remembered count (the set grows)
 python -m app.mcp_server.server --transport stdio      # what an MCP client launches
 ```
 
 **Every tool call needs a credential** — there is no anonymous access. Create a key in
-kylab's console (设置 → API 密钥) and give it the scope you want the agent to have:
+kybase's console (设置 → API 密钥) and give it the scope you want the agent to have:
 a key bound to specific libraries can only see and write those, and a read-only key
-cannot upload, file notes, or delete.
+cannot upload, create libraries, or delete.
 
 stdio has no request headers, so the key goes in the client's environment:
 
 ```json
 {
   "mcpServers": {
-    "kylab": {
+    "kybase": {
       "command": "python",
       "args": ["-m", "app.mcp_server.server", "--transport", "stdio"],
-      "cwd": "/absolute/path/to/kylab/backend",
+      "cwd": "/absolute/path/to/kybase/backend",
       "env": { "KYLAB_DATA_DIR": "./data", "KYLAB_MCP_KEY": "<your API key>" }
     }
   }
@@ -124,22 +125,26 @@ token on each request:
 
 ```bash
 python -m app.mcp_server.server --transport http --host 0.0.0.0 --port 8765
-curl -H "Authorization: Bearer <your API key>" ... 
+curl -H "Authorization: Bearer <your API key>" ...
 ```
 
+The instance deployed on the LAN answers at `http://192.168.31.18:8765/mcp`; **another
+deployment gives you its own address, so take that from whoever deployed it.**
+
 Both transports accept either an API key or a **login session token**
-(`kylab_st_…`). Prefer the session token when the agent should act *as the user*:
-notes created through a plain API key have no account behind them, so they are filed
-without an owner and will not show up in that user's own note list.
+(`kylab_st_…`). Prefer the session token when the agent should act *as the user*: a library
+created through a plain API key has no owner behind it (`owner_id` is `NULL`), so a plain
+member cannot manage it afterwards — sharing included.
 
 The server binds `127.0.0.1` by default on purpose. The key decides what a caller can
 reach, but the tool set still includes deletion — only expose it on a network you trust.
 
 ## Proxying a plain REST client
 
-If the agent runtime cannot speak MCP, `scripts/kylab_query.py` in this Skill calls
-kylab's REST API directly and prints the passages. Same retrieval, no MCP client needed:
+If the agent runtime cannot speak MCP, `scripts/kylab_query.py` in this Skill calls the
+REST API directly and prints the passages. Same retrieval, no MCP client needed:
 
 ```bash
 python scripts/kylab_query.py --base-url http://127.0.0.1:8000 --query "眼轴怎么监测"
+# the LAN instance answers at http://192.168.31.18:8081/api/v1 (the deployer's value wins)
 ```

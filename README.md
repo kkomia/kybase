@@ -14,7 +14,8 @@ Agent 侧在没有它的时候完整可用（降级而非失效）。
 > 这一份是自 kylab `b0685e9` 搬入的整树：`backend/`（app + tests + pyproject/uv.lock/Dockerfile）、
 > 根级 `scripts/` 门禁脚本族、`deploy/`（NAS 应用层 `deploy/nas/docker-compose.yml` + 干净机器四件套），
 > 加上**知识库管理台前端**（`frontend/`，形态 B：独立 WebUI，不进桌面壳）与官方 Skill。
-> 还没做的是**瘦身与分家**：树里仍带着 Agent 侧代码、环境变量前缀仍是 `KYLAB_`、
+> **瘦身已完成**（2026-10-09 本轮）：Agent 侧与本机档代码整体拆除，`backend/` 今天只剩知识库本体，
+> MCP 对外面只剩 8 个纯 KB 工具。剩下的是**分家**：环境变量前缀仍是 `KYLAB_`、
 > PG 迁移序列仍是交错那一串（见交接文档 §3.2）。
 > 接手先读[交接文档](docs/交接文档-v0.1.md)，施工顺序见
 > [剥离方案](kylab知识库剥离方案-v0.1.md) §6。
@@ -62,7 +63,7 @@ backend/app/
   api/          KB 面 REST（knowledge-bases / documents / folders / search / chunks /
                 wiki / tabular / data-sources / shares / tasks / lifecycle / webhooks /
                 maintenance / stats / provider）
-  services/     摄入、切块、检索、嵌入、Wiki、表格、连接器、分享、备份外的 KB 业务
+  services/     摄入、切块、检索、嵌入、Wiki、表格、连接器、分享等 KB 业务
   storage/      postgres_impl（向量 + 全文 + KB 元数据）、duckdb_impl（表格副本）
   parsers/      插件式解析器层（互不引用）
   pipeline/     摄入状态机
@@ -105,15 +106,15 @@ docs/           本服务的文档：部署指南 / 外部接入指南 / 交接�
 
 1. **先读两份**：本 README → [交接文档](docs/交接文档-v0.1.md)；需要"为什么这么切"时再翻
    [剥离方案](kylab知识库剥离方案-v0.1.md)。
-2. **改之前先看归属**：`backend/` 里仍带着 Agent 侧代码（搬入时不瘦身），
-   **不要顺手改那些文件**——它们归 Agent 侧，瘦身时会被删（交接文档 §3.2）；
-   新代码只落在知识库这一域。
+2. **改之前先看归属**：`backend/` 今天只剩知识库本体——Agent 侧与本机档代码已在 2026-10-09 的
+   瘦身里整体拆除（交接文档 §3.2、§3.5）；新代码只落在知识库这一域，别把 Agent 语义的东西长回来。
 3. **门禁**：按 kylab 的双平台脚本口径跑（`sh scripts/check-backend.sh`，
    Windows 用同名 `.ps1`；前端 `sh scripts/check-frontend.sh`）。
-   **域间引用检查还差最后一步**：`scripts/check_domains.py`（覆盖
-   `app.core`/`app.models`/`app.pipeline`/`storage.*` 内部与 `services/` 内部互引，
-   即 `check_layering.py` 的结构性盲区）已经在仓库里，但**还没接进 `check-backend.sh`**
-   ——它自己写明"本阶段只报告不拦门"（交接文档遗留 #2）。
+   **域间引用检查（`scripts/check_domains.py`）已删除**：它守的是"KB 域 ↔ Agent 域不许互引"
+   那张归属表（剥离方案 §3.1），而本仓只剩 KB 域、名单里的 Agent 侧模块
+   （`app.services.chat` / `skill*` / `sandbox` / `app.api.v1.local` / `app.storage.sqlite_impl` …）
+   整族已删，跑起来只是围着不存在的模块报旧账，还会往本仓没有的 `docs/计划与记录/` 写报告。
+   分层引用方向由 `check_layering.py` 的 L1–L6 全量守着（api / services / storage / parsers）。
 4. **提交**：`<类型>: <简述>`，类型限 `feat/fix/docs/test/refactor/chore`（与 kylab 同一套）。
    `origin`（Gitee）已经在推进，`master` 与 `origin/master` 同步在 `1b88fc0`；
    NAS 上的部署检出从同一个仓库 `git pull` 升级。推送仍要有人明确要求。
