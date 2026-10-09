@@ -25,6 +25,15 @@ import { defineConfig } from 'vitest/config'
  */
 const apiTarget = process.env.KYBASE_API_TARGET || 'http://192.168.31.18:8081'
 
+//: 反代的匹配串**带尾斜杠**，与线上那份 nginx 的 `location /api/` 同一口径。
+//:
+//: 不带斜杠的 `'/api'` 会把**任何以 `/api` 开头的路径**都吃掉，包括界面上的路由
+//: `/api-keys`（2026-10-09 新增）——那条路由就被打到后端去、拿回一份 HTML 而不是
+//: 本仓的界面，表现是"这一页整片空白"。线上 nginx 有那道斜杠所以没这毛病，
+//: 于是"线上好好的、本机 5175 打开是空白"这种最难排的形态就出来了：
+//: 开发与线上必须用同一套匹配规则。
+const apiProxy = { '/api/': apiTarget }
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': new URL('./src', import.meta.url).pathname } },
@@ -32,16 +41,16 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5175,
     strictPort: true,
-    proxy: { '/api': apiTarget },
+    proxy: apiProxy,
   },
   build: { outDir: 'dist', sourcemap: false },
   // `vite preview` 是**生产构建的验收入口**：这一份最终要由知识库服务端（或 nginx）
-  // 发出去，这里给它同一套 `/api` 反代，就能在本机用真实后端验一遍"构建产物 + 反代"
+  // 发出去，这里给它同一套 `/api/` 反代，就能在本机用真实后端验一遍"构建产物 + 反代"
   // 这条链（`pnpm build && pnpm preview`，端口 4175 避开 dev 的 5175，也避开 kylab 的 4174）。
   preview: {
     port: 4175,
     strictPort: true,
-    proxy: { '/api': apiTarget },
+    proxy: apiProxy,
   },
   test: {
     environment: 'jsdom',
