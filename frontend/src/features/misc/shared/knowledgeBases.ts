@@ -8,6 +8,10 @@
  *
  * 失败不抛给调用方：这两个页面里"库列表"只是选择器的候选，
  * 它拿不到不该让整页报错，退化成"没有可选项"即可。
+ *
+ * `enabled`（默认 `true`，既有调用方行为不变）：挂在**常驻外壳**里的弹窗
+ * （`ApiKeysDialog` 在 `AccountMenu` 上，每页都挂着）要传"弹窗开着才算"——
+ * 不然一个多数人永远不打开的弹窗会在每次进应用时白拉一趟清单。
  */
 import { useQuery } from '@tanstack/react-query'
 
@@ -21,10 +25,11 @@ export interface KnowledgeBaseList {
   refetch: () => void
 }
 
-export function useKnowledgeBases(): KnowledgeBaseList {
+export function useKnowledgeBases(enabled = true): KnowledgeBaseList {
   const query = useQuery({
     queryKey: KNOWLEDGE_BASES_QUERY_KEY,
     queryFn: async () => (await listKnowledgeBases()).items,
+    enabled,
   })
   return {
     items: query.data ?? [],
