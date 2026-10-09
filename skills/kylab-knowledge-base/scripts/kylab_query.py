@@ -19,6 +19,7 @@ the material actually answers the question). Same order as MCP, so `fit=none` re
 Usage:
     python kylab_query.py --query "眼轴怎么监测"
     python kylab_query.py --query "..." --kb kb_abc123 --top-k 8
+    python kylab_query.py --query "..." --top-k 50 --offset 10   # 翻页
     python kylab_query.py --list                      # which libraries exist
     python kylab_query.py --query "..." --json        # machine-readable
 
@@ -87,9 +88,20 @@ def list_knowledge_bases(base_url: str, token: str | None) -> list[dict]:
 
 
 def search(
-    base_url: str, token: str | None, *, query: str, kb_ids: list[str], top_k: int
+    base_url: str,
+    token: str | None,
+    *,
+    query: str,
+    kb_ids: list[str],
+    top_k: int,
+    offset: int = 0,
 ) -> dict:
+    # `top_k` 是**这次能翻到的总量**（池子深浅），不是"返回几条"——那个数由后端的
+    # `keep`（一页几条）决定。本脚本不发 `keep`（跟着后端按分布的建议走），所以
+    # 一次拿到的往往比 `top_k` 少；响应的 `next_offset` 非空就说明后面还有。
     body: dict = {"query": query, "top_k": top_k}
+    if offset > 0:
+        body["offset"] = offset
     if kb_ids:
         body["kb_ids"] = kb_ids
     else:
@@ -130,16 +142,29 @@ def _print_hits(result: dict, *, query: str, as_json: bool) -> None:
     for index, hit in enumerate(hits, start=1):
         location = [hit.get("document_name") or hit.get("document_id")]
         if hit.get("page") is not None:
+            # 页码只在文档自己的分页标记与页数自洽时才给；没有就是如实的 null（如 .md 来源）
             location.append(f"第 {hit['page']} 页")
         if hit.get("heading_path"):
             location.append(str(hit["heading_path"]))
-        print(f"[{index}] {' · '.join(location)}   （相关度 {hit.get('score')}）")
+        # 分数读**相似度**（真实余弦），不读融合分：融合分（`score`）只反映名次、
+        # 随排名走，把它当"多相关"显示是两回事。只有词面通道捞上来的命中没有余弦，
+        # 那一档就照实写"词面命中"——它们也是阈值管不到的那一批。
+        similarity = hit.get("similarity")
+        score = "词面命中" if similarity is None else f"相似度 {similarity}"
+        print(f"[{index}] {' · '.join(location)}   （{score}）")
         text = (hit.get("text") or "").strip().replace("\n", " ")
         print(f"    {text[:400]}{'…' if len(text) > 400 else ''}\n")
 
     filtered = result.get("filtered_out")
     if filtered:
         print(f"（另有 {filtered} 段被过滤：低于阈值、不满足筛选，或已被人工禁用）")
+
+    # 这一页不是全部时照实说，并给出下一步：`top_k` 定池子深浅、`offset` 是翻页起点。
+    if result.get("next_offset") is not None:
+        print(
+            f"（这不是全部：还有更深的候选，下一页 offset={result['next_offset']}。"
+            f"把 --top-k 开大（上限 50）、按 --offset 一路翻到没有 next_offset 为止。）"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -154,7 +179,18 @@ def main(argv: list[str] | None = None) -> int:
         metavar="KB_ID",
         help="限定知识库（可重复）；不传则查全部",
     )
-    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K, help="返回条数")
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=DEFAULT_TOP_K,
+        help="这次能翻到的总量（池子深浅，上限 50）；一页给几条由后端按分布决定",
+    )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="翻页起点：填上一页提示的 next_offset；越过末尾回空结果，不报错",
+    )
     parser.add_argument("--base-url", default=os.environ.get("KYLAB_BASE_URL", DEFAULT_BASE_URL))
     parser.add_argument(
         "--token",
@@ -185,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         query=args.query,
         kb_ids=args.kb,
         top_k=max(1, args.top_k),
+        offset=max(0, args.offset),
     )
     _print_hits(result, query=args.query, as_json=args.json)
     return 0

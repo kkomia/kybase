@@ -53,13 +53,23 @@ Agent 侧在没有它的时候完整可用（降级而非失效）。
   到底对不对得上），`decision` 记这次按什么收敛的；原文排在它们之后。
   命中太多时用 `keep` / `min_score` / `per_doc` 收敛（MCP 与 REST 同名同义），
   而不是把十几条片段全塞进上下文。
+  **要"把某个主题看全"就翻页**：`keep` 是一页几条、`top_k`（上限 50）是一次能翻到的总量，
+  按 `offset` / `next_offset` 一路翻到 `null`——判定在每一页上逐字相同。
+  每条命中还标出它是哪条通道捞上来的（`basis` / `lexical_score`），
+  `min_score` 只切向量通道、绕过它的条数如实记在 `decision.unscored_kept` 里。
+- **出处诚实**：页码只在文档自己的分页标记与页数自洽时才给，否则 `page` 是 `null`
+  （`.md` 来源本来就没有页）——报一个翻不到原文的页码比不报更糟。
+  失败也如实报：领域失败（没权限、文档不存在、参数给错）是 `isError: true` 的工具结果，
+  正文是我们那句中文。
 - **统计**：概览驾驶舱（文档 / 切块 / 任务 / **检索命中**趋势）、用量、以及按知识库的
   检索命中事件（哪座库在涨、哪座最近答不上来）。
 - **组织**：知识库 / 目录 / 文档 / 分块 / 分享、Wiki 页、数据源连接器、表格副本（DuckDB）。
 - **生成式**：摘要、Wiki 生成、检索建议问、知识库提示词（直连 `llm.py`，不经 Agent 的对话服务）。
 - **账号与准入**：`users`/`sessions`/`api_keys` 与 `auth`——库分享、库范围钥匙、管理员都是 KB 语义的资产。
 - **对外三条路径**：窄 API（`KnowledgeProviderClient`，握手 + 检索/入库，Agent 主链路走这条）、
-  MCP（`mcp_server`，stdio + Streamable HTTP，**只暴露 KB 工具**）、
+  MCP（`mcp_server`，stdio + Streamable HTTP，**只暴露 KB 工具**，
+  并给出**工具面指纹**——`serverInfo.version` 的 `+mcp.<指纹>` / `--list-tools` 最后一行 /
+  `GET /api/v1/tools`，客户端据此判断契约有没有变过）、
   官方 Skill（`skills/kylab-knowledge-base/`，给不会说 MCP 的运行环境）。
 
 Agent 侧的东西（对话/笔记/记忆/技能/沙箱/工作区/定时任务/外部 MCP/备份）**不归这里**。
