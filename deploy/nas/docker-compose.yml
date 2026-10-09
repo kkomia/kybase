@@ -1,0 +1,230 @@
+# kybase 应用层（后端 + MCP + 前端），部署在 NAS 上（自 kylab `b0685e9` 剥出，2026-10-09）。
+#
+# 位置：服务器 /vol1/1000/docker/kybase/app/docker-compose.yml
+#
+# ## 与 deploy/docker-compose.yml 的关系
+#
+# 那一份是**干净机器一键起**的四件套（连 PG 与 MinIO 一起建）。这一份**不含存储层**：
+# 这台 NAS 上 PostgreSQL 与 MinIO 早就跑着了，各自有自己的目录与管理方式：
+#
+#   kylab-postgres  → /vol1/1000/docker/kylab/docker-compose.yml（宿主机 54321→5432）
+#   kylab-minio     → 1Panel 装的（/vol1/1000/docker/1panel/data/1panel/apps/minio/minio/，9000/9001）
+#
+# 两个容器都在 **1panel-network** 上，所以这里只加入同一个网络、按容器名连过去：
+# 不改它们的配置，也不占宿主机端口（PG/MinIO 的端口一个都不碰）。
+#
+# ## 与旧 kylab-app **共用同一套 PG 库与 MinIO 桶，这是有意的**
+#
+# 存储层是两个应用共享的：同一个库 `kylab`、同一个桶 `kylab`、同一对凭据。
+# 这么做就是为了**数据零迁移**——kybase 一上去看到的就是同一份知识库，
+# 没有导出/导入这一步（也就没有那一步能出的错）。
+#
+# 后果同样要清楚：
+#   * 旧 `kylab-app` 与新的 `kybase-app` **同时开着**就是两个实例看同一份数据。
+#     任务队列靠租约认领、不会重复处理，但切换期间只该有一边在跑
+#     （更省事：切换时直接 `docker compose -p kylab-app down`）。
+#   * 两边都开着 `KYLAB_RUN_WORKER=true` 也一样不会重复处理，只是多一份冗余。
+#
+# **存储层一个都不碰**：这份 compose 不建库、不建桶、不动 pgdata/minio 目录。
+#
+# ## DuckDB 单写者：数据目录必须是 kybase 自己的
+#
+# `KYLAB_DATA_DIR`（容器里的 /data）里躺着 **DuckDB 表格副本**（`tabular.duckdb`）。
+# DuckDB 是**单写者**的：文件被另一个进程打开着，第二个进程连读都可能拿不到锁。
+# 所以 kybase **不复用** `/vol1/1000/docker/kylab/data`，改用
+# `/vol1/1000/docker/kybase/data` —— 两个应用各自一份，谁也不会把对方的锁抢走。
+#
+# 切换时把旧的那份表格副本拷过来（拷贝前先停掉旧应用，别让它在写）：
+#
+#   cp -a /vol1/1000/docker/kylab/data/tabular.duckdb /vol1/1000/docker/kybase/data/
+#
+# 不拷也能起来：表格那一族能力会重新按需建副本，只是历史导入的表格要重新导入一遍。
+#
+# ## 三个刻意的决定
+#
+# 1. **项目名是 kybase-app，不是 kybase、也不是 kylab-app**。compose 按项目名管理容器，
+#    与存储层同名的话 `docker compose up` 会把对方那份的容器当成"多余的"停掉；
+#    与旧应用同名的话两边会互相顶掉。
+# 2. **后端以宿主机用户（uid 1000）跑，而不是镜像里的 10001**。镜像默认那个 uid
+#    需要 `chown 10001` 才能写 bind mount，而这台机器上 sudo 要另一个密码；
+#    换成 yumao 自己的 uid 后 `/data` 直接可写，数据文件在 NAS 上也是你熟悉的那个属主
+#    （备份、在文件管理器里看都方便）。**仍然是非 root**，镜像那条纪律没被破坏。
+# 3. **后端不发布 8000，只从前端 nginx 进**（反代见 frontend/nginx.conf）。
+#    绕过反代直连后端会让"一半请求带 X-Forwarded-*、一半不带"，那是最难查的一类差异。
+#    需要直连调试时把 backend 的 ports 那两行注释打开。
+#
+# ## 构建期走国内镜像源（KYLAB_UV_INDEX_URL / NPM_REGISTRY）
+#
+# 这台机器到境外带宽极差（kylab 那边实测：从 files.pythonhosted.org 拉 wheel
+# 一次构建卡在下载里 700 秒）。所以两份构建都**可参数化**地换源，默认仍是官方源：
+#
+#   KYLAB_UV_INDEX_URL=https://pypi.org/simple docker compose build   # 换回官方源
+#
+# **uv 用阿里云而不是清华**：清华对"并发拉几十个包"会 403（反爬；单请求是 200，实测），
+# 而 uv 默认就是并发下载。
+#
+# ## TZ 一定要设（不是可选项）
+#
+# 容器默认 UTC，而定时任务的 cron 按容器本地时间解释——不设 `TZ`，"每天 9 点的早报"
+# 会在北京时间 17 点跑，而这种现象几乎不会被归因到"容器的时区"。
+name: kybase-app
+
+# ---------------------------------------------------------------- 共用片段
+# backend 与 mcp 是**同一个镜像**（mcp 只是换了个入口命令），环境变量也必须逐字相同：
+# 两处各写一份的话，将来加一个变量漏改一处，症状是"MCP 看到的库和网页看到的不一样"，
+# 那种不一致最难查。所以这里用 YAML 锚点把它们**钉成一份**。
+x-backend-build: &backend-build
+  # **上下文是源码树的根（../src），不是 ../src/backend**：镜像里要装仓库自带的
+  # skills/，而 COPY 只能从上下文里取文件（见 backend/Dockerfile）。
+  # src/ 是 git archive 解开的源码树，不含 .venv/node_modules；仓库里那份
+  # .dockerignore 随源码一起落在 src/ 下，于是对这次构建同样生效
+  # （它按"上下文根"匹配，而这里上下文根就是 src/）。
+  context: ../src
+  dockerfile: backend/Dockerfile
+  args:
+    UV_INDEX_URL: ${KYLAB_UV_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+
+x-backend-env: &backend-env
+  # 数据落在宿主机目录里：DuckDB 表格副本 + 日志 + 未配 S3 时的原件回退
+  KYLAB_DATA_DIR: /data
+  # 非 root 且 HOME 指向镜像里那个 10001 的家目录时，任何"往家目录写"都会失败；
+  # 指到我们自己的可写目录，省得以后为某个库的缓存目录再查一遍
+  HOME: /data
+  # 定时任务的 cron 按这个时区解释（容器默认 UTC，见文件头那段）
+  TZ: ${TZ:-Asia/Shanghai}
+  # ---- 存储（与旧 kylab-app 同一套，为的是零迁移，见文件头）----
+  KYLAB_DATABASE_URL: postgresql://kylab:${KYLAB_PG_PASSWORD}@kylab-postgres:5432/kylab
+  KYLAB_S3_ENDPOINT: http://kylab-minio:9000
+  KYLAB_S3_ACCESS_KEY: ${KYLAB_S3_ACCESS_KEY}
+  KYLAB_S3_SECRET_KEY: ${KYLAB_S3_SECRET_KEY}
+  KYLAB_S3_BUCKET: ${KYLAB_S3_BUCKET:-kylab}
+  KYLAB_S3_REGION: ${KYLAB_S3_REGION:-us-east-1}
+  # 容器内网互通走 http
+  KYLAB_S3_SECURE: "false"
+  # 备份快照桶：**与知识库那个桶分开**，同一个 MinIO、同一对凭据。
+  # 这台机器上的桶是 1Panel 那份 MinIO 里的，**不在这份 compose 里建**——
+  # 建桶的命令见同目录 README 的「备份桶」一节。缺桶不会阻塞启动：
+  # 后端"启动不校验桶"，握手会如实报不可用 + 下一步；第一次上传时顺手补建。
+  KYLAB_BACKUP_BUCKET: ${KYLAB_BACKUP_BUCKET:-kylab-backup}
+  # ---- 应用 ----
+  # 内嵌消费线程：**必须开着**，否则上传的文档只会排队
+  KYLAB_RUN_WORKER: "true"
+  # 消费者并发：摄入绝大部分时间在等云端解析，4 个槽位把等待重叠起来
+  # （默认 1 太低；上限 8 跟着 PG 连接池 max_size=10 走）
+  KYLAB_WORKER_CONCURRENCY: ${KYLAB_WORKER_CONCURRENCY:-4}
+  # 界面走 nginx 同源反代，这里只是给"绕过反代直连后端"留的口子
+  KYLAB_CORS_ORIGINS: ${KYLAB_CORS_ORIGINS:-http://192.168.31.18:8081}
+  KYLAB_LOG_LEVEL: ${KYLAB_LOG_LEVEL:-INFO}
+  # 留空则由首次 setup 自动生成一条并落库（库里已经有就用库里的）
+  KYLAB_URL_SIGNING_SECRET: ${KYLAB_URL_SIGNING_SECRET:-}
+  # 仓库自带的技能在镜像里（/app/skills），镜像里已把这个变量设成它。
+  # 这里显式写出来是为了**可覆盖**：想让技能目录指向别处（挂一份自己的、
+  # 或复现"技能列表是空的"这类问题时换个目录）改这一行即可。
+  KYLAB_SKILLS_DIR: ${KYLAB_SKILLS_DIR:-/app/skills}
+
+services:
+  backend:
+    build: *backend-build
+    image: kybase-backend:0.1.0
+    container_name: kybase-app-backend
+    restart: unless-stopped
+    user: "1000:1001"
+    environment: *backend-env
+    volumes:
+      - /vol1/1000/docker/kybase/data:/data
+    networks:
+      - 1panel-network
+    # 不发布 8000（理由见文件头第 3 条）。要直连调试就打开这两行：
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+  # ---- MCP（Streamable HTTP，局域网内其他机器连过来）----
+  #
+  # 与 backend **同一个镜像**，只是把入口命令换成 MCP 服务那条。
+  # 它是一条**独立的进程**而不是 backend 里的一个挂载点：MCP 能读写知识库（含删除），
+  # 单独一个容器才关得掉、才限得住端口。
+  #
+  # **鉴权是强制的，没有匿名放行**（app/mcp_server/auth.py）：每个请求都要带
+  #   Authorization: Bearer <API Key>
+  # 凭据就是**库里现有的** `kylab_sk_…` API Key（「设置 → API 密钥」里新建），
+  # 不另起一套。Key 的作用域决定它能看到、能写哪些库；作用域外的请求按没权限拒绝。
+  # **别把 8765 直接暴露到公网**：这条通道没有第二个门。
+  mcp:
+    # **不重复写 build**：这一份与 backend 是同一个镜像（同一个 tag），由 backend
+    # 那个服务构建出来。写两遍 build 会让 `docker compose build` 对同一个 tag 构建两次
+    # （第二次是缓存命中，但并行构建同一个 tag 没有必要）。代价是 `docker compose up -d mcp`
+    # 单独跑、且镜像还没构建过时会尝试去 registry 拉 `kybase-backend:0.1.0` 并失败——
+    # 正常入口是整份起：`docker compose up -d --build`。
+    image: kybase-backend:0.1.0
+    container_name: kybase-app-mcp
+    restart: unless-stopped
+    user: "1000:1001"
+    command:
+      - python
+      - -m
+      - app.mcp_server.server
+      - --transport
+      - http
+      # 默认只监听 127.0.0.1（见 server.py 的说明）；这里显式放开到容器全网卡，
+      # 靠下面那条 ports 决定宿主机上谁能连
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+    environment: *backend-env
+    volumes:
+      - /vol1/1000/docker/kybase/data:/data
+    ports:
+      # MCP 客户端（Claude Desktop / Cursor 这类）从局域网连过来
+      - "${KYLAB_MCP_PORT:-8765}:8765"
+    depends_on:
+      backend:
+        # 等后端健康再起：schema 是由应用在启动时引导/校验的，
+        # 后端起不来时先起 MCP 只会得到一堆连不上库的报错
+        condition: service_healthy
+    healthcheck:
+      # 打一次 TCP 连接就够：MCP 那个端点上没有不鉴权的探针路径
+      # （每个请求都要 Authorization），带假凭据去探只会得到 401，分辨不出"服务没起来"。
+      # **tcp 通不通才是这里要判的东西**。
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket,sys; s=socket.socket(); s.settimeout(4); sys.exit(0 if s.connect_ex(('127.0.0.1',8765))==0 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - 1panel-network
+
+  frontend:
+    build:
+      # 前端**自足**：package.json / pnpm-lock.yaml / pnpm-workspace.yaml / src 都在
+      # frontend/ 下，构建不需要仓库里别的目录，所以上下文就用 frontend/。
+      # 它自己那份 .dockerignore 负责挡掉 node_modules / dist。
+      context: ../src/frontend
+      args:
+        # 与后端那份 `UV_INDEX_URL` 同一个理由：这台机器到境外带宽极差，走国内镜像站。
+        # 默认仍写官方源，换机器时不用改 Dockerfile。
+        NPM_REGISTRY: https://registry.npmmirror.com
+    image: kybase-frontend:0.1.0
+    container_name: kybase-app-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        # 等后端健康再起 nginx：否则首屏先看到一个 502，用户以为部署失败
+        condition: service_healthy
+    ports:
+      # **8081 是接旧 kylab-app-frontend 的位置**：切换时旧前端停掉、这个顶上，
+      # 访问地址不变（http://192.168.31.18:8081），客户端与书签不用改。
+      # 变量名沿用 `KYLAB_HTTP_PORT`（与旧那份 compose 同名，`.env` 可以照抄）。
+      - "${KYLAB_HTTP_PORT:-8081}:80"
+    networks:
+      - 1panel-network
+
+networks:
+  1panel-network:
+    external: true

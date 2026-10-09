@@ -1,0 +1,16 @@
+# 构建上下文里**不能带上本机装好的依赖**：
+# pnpm 会把平台相关的可选依赖装进来（`esbuild` 的 win32 二进制、`@tailwindcss/oxide-win32`……），
+# 这些文件被 `COPY . .` 带进 Linux 镜像后，构建阶段会拿 Windows 的二进制去跑 → 直接失败。
+# 排掉它们之后上下文也小一半以上，避免"本机能建、镜像里报平台错"这种最难查的形态。
+node_modules
+**/node_modules
+
+dist
+coverage
+
+# 版本库与本地配置不该进镜像
+.git
+.gitignore
+*.log
+tsconfig.tsbuildinfo
+.vite

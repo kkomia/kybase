@@ -1,0 +1,226 @@
+# kybase 一键起（v0.1.0）：PostgreSQL + MinIO + 后端 + 前端 四件套。
+#
+# **这一份是给"干净机器"的**：它连 PG 与 MinIO 一起建，起来就能用。
+# NAS 上那份（`deploy/nas/docker-compose.yml`）**不含存储层**——那台机器上的
+# PG 与 MinIO 早就跑着了，而且是与旧 kylab-app 共用的同一套（见那份的文件头）。
+#
+# **部分已验证**：这台开发机没有 docker，所以这份 compose 整体仍未经"一键起"实测。
+# 但其中的 postgres 服务**已按同一份定义在真实部署服务器上跑通**——NAS 上那个
+# `kylab-postgres` 跑的就是 `pgvector/pgvector:pg17-trixie`（PG 17.11 + pgvector 0.8.6，
+# schema 由应用自检引导成功，HNSW + KNN 实测可用）。minio 相关 service 与整体编排仍待实测。
+# 两档部署的完整口径见 `docs/部署指南-v0.1.md`。
+#
+# schema 由 **应用** 在启动时拥有（单一属主，避免两个真相来源）。现在可直接用
+# 应用自带的自检入口引导/校验，不必手工 psql：
+#   python -m app.storage.postgres_impl.validate
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# 起来之后：
+#   界面        http://localhost:8080
+#   API         http://localhost:8080/api/v1/health
+#   MinIO 控制台 http://localhost:9001（账号密码同 KYLAB_S3_ACCESS_KEY/SECRET_KEY）
+#
+# 存储分工（架构设计 v0.2 §8）：
+#   postgres  元数据 + 向量(pgvector) + 全文(tsvector)
+#   minio     原件 / Markdown 产物 / 图片
+#   kybase-data 卷  DuckDB 表格副本（以及未配 S3 时的原件回退目录）
+#
+# **这一份里的库名 / 桶名 / 卷名/凭据都是这套 compose 自己建的**（`kybase` 一族），
+# 与 NAS 那份刻意不同：那边共用的是 kylab 的库与桶（数据零迁移），这边是全新的机器
+# 与全新的存储，用同名反而会让人以为两边是同一套。
+name: kybase
+
+services:
+  # ---- PostgreSQL（含 pgvector）----
+  #
+  # 官方 pgvector 镜像：只带 vector 一个扩展，许可证是 PostgreSQL License，
+  # 镜像干净、版本可预期。
+  #
+  # 选 pg17 而不是 pg18：**NAS 上生产跑的就是这一个镜像**（PG 17.11 + pgvector 0.8.6），
+  # 同一版本、同一扩展，避免"开发能跑、部署行为不同"这类最难查的问题。
+  #
+  # 要升大版本（如 pg18-trixie）必须按 PostgreSQL 的版本升级流程处理数据目录，
+  # 不是改一行 tag 的事。
+  #
+  # 若需要 BM25 全文检索（pg_search）或 PostGIS，可换 paradedb/paradedb：
+  # 它自带这些扩展，但**社区版是 AGPLv3**，且会在 public 下建
+  # spatial_ref_sys（PostGIS）等与项目无关的对象。当前 schema 用的是
+  # 内建 tsvector，不需要它。
+  postgres:
+    image: pgvector/pgvector:pg17-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${KYLAB_PG_USER:-kybase}
+      POSTGRES_PASSWORD: ${KYLAB_PG_PASSWORD:-kybase-dev-secret}
+      POSTGRES_DB: ${KYLAB_PG_DB:-kybase}
+      # 显式指定，避免数据落进镜像声明的匿名卷而不是我们挂的目录
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - kybase-pg:/var/lib/postgresql/data
+    # PG 的并行查询要共享内存，默认 64MB 偏小
+    shm_size: 256mb
+    # 不对外暴露 5432：库只给 compose 网络内的后端用。
+    # 需要从宿主机连（调试/迁移）时取消下面两行注释。
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KYLAB_PG_USER:-kybase} -d ${KYLAB_PG_DB:-kybase}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  # ---- MinIO（S3 兼容对象存储）----
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # 与后端共用同一对凭据，避免"两处各写一份、改一处忘另一处"
+      MINIO_ROOT_USER: ${KYLAB_S3_ACCESS_KEY:-kybase}
+      MINIO_ROOT_PASSWORD: ${KYLAB_S3_SECRET_KEY:-kybase-dev-secret}
+    volumes:
+      - kybase-objects:/data
+    ports:
+      # 控制台只在宿主机本机可达；S3 API 端口供 compose 网络内的后端使用
+      - "127.0.0.1:${KYLAB_MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${KYLAB_MINIO_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  # 一次性任务：建桶。MinIO 不会自动建桶，没桶后端启动校验就会失败。
+  #
+  # **两个桶**：知识库桶（原件 / Markdown / 图片）与备份快照桶 `kybase-backup`——
+  # 两者分开是刻意的（对象生命周期完全不同：一个是索引的原件，一个是用户会按恢复点
+  # 整份删的整机快照）。两条 `mc mb` 都幂等，重复跑不报错；**备份桶那条不是必需的**：
+  # 后端"启动不校验桶"，缺桶时握手会如实报 `capabilities.snapshot.available=false`
+  # 加一句可执行的下一步，第一次真的上传时还会顺手补建。放在这里只是让一键起的机器
+  # 开箱就绪。
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_kybase: http://${KYLAB_S3_ACCESS_KEY:-kybase}:${KYLAB_S3_SECRET_KEY:-kybase-dev-secret}@minio:9000
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "mc mb --ignore-existing kybase/${KYLAB_S3_BUCKET:-kybase} && mc mb --ignore-existing kybase/${KYLAB_BACKUP_BUCKET:-kybase-backup}"
+    restart: "no"
+
+  backend:
+    build:
+      # **上下文是仓库根**：镜像里要装仓库自带的 skills/，
+      # 而 COPY 只能从上下文里取文件（见 backend/Dockerfile 的说明）。
+      # 仓库根那份 .dockerignore 负责挡住 .venv / node_modules / .git。
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: kybase-backend:${KYLAB_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # 数据都落在挂载卷里，容器重建不丢
+      KYLAB_DATA_DIR: /data
+      # **时区显式设出来**：定时任务的 cron 按服务器本地时间解释，
+      # 而容器默认是 UTC——不设这一行，"每天 9 点的早报"会在北京时间 17 点跑，
+      # 而这种现象几乎不会被归因到"容器的时区"。换别的时区改这一行即可。
+      TZ: ${TZ:-Asia/Shanghai}
+      # ---- 存储后端 ----
+      # 库与对象存储只走内网服务名；宿主机不暴露端口
+      KYLAB_DATABASE_URL: postgresql://${KYLAB_PG_USER:-kybase}:${KYLAB_PG_PASSWORD:-kybase-dev-secret}@postgres:5432/${KYLAB_PG_DB:-kybase}
+      KYLAB_S3_ENDPOINT: http://minio:9000
+      KYLAB_S3_ACCESS_KEY: ${KYLAB_S3_ACCESS_KEY:-kybase}
+      KYLAB_S3_SECRET_KEY: ${KYLAB_S3_SECRET_KEY:-kybase-dev-secret}
+      KYLAB_S3_BUCKET: ${KYLAB_S3_BUCKET:-kybase}
+      KYLAB_S3_REGION: ${KYLAB_S3_REGION:-us-east-1}
+      # 容器内网互通走 http
+      KYLAB_S3_SECURE: "false"
+      # 备份快照桶：**与知识库那个桶分开**，同一个 MinIO、同一对凭据。
+      # 由 minio-init 建出来（缺桶也不阻塞启动，见那个服务的注释）。
+      KYLAB_BACKUP_BUCKET: ${KYLAB_BACKUP_BUCKET:-kybase-backup}
+      # ---- 应用 ----
+      # 鉴权**永远生效**（没有开关）。首次打开时访问界面会进
+      # 「创建管理员账号」向导；在此之前业务接口一律 401。
+      # 签名下载链接用；不设则后端**拒绝签发**（而不是发一条无效链接）。
+      # 不设也行：首次 setup 会自动生成一条并落库。
+      KYLAB_URL_SIGNING_SECRET: ${KYLAB_URL_SIGNING_SECRET:-}
+      # 允许的来源。走 nginx 同源反代时用不到，直连后端时需要
+      KYLAB_CORS_ORIGINS: ${KYLAB_CORS_ORIGINS:-http://localhost:8080}
+      # 内嵌消费线程：**单容器部署要留着它**，否则上传后没人处理队列
+      KYLAB_RUN_WORKER: ${KYLAB_RUN_WORKER:-true}
+      # 仓库自带的技能在镜像里（`/app/skills`，本仓是官方那个
+      # `kylab-knowledge-base`），镜像里已把这个变量设成它。这里显式写出来是为了
+      # **可覆盖**：想让技能目录指向别处（挂一份自己的、或复现"技能列表是空的"
+      # 这类问题时换个目录）改这一行即可。
+      KYLAB_SKILLS_DIR: ${KYLAB_SKILLS_DIR:-/app/skills}
+      # ---- 长期记忆 ----
+      # 记忆与人设文件（MEMORY.md / SOUL.md / PROFILE.md / AGENTS.md）落在
+      # KYLAB_DATA_DIR 下的 memory/ 里（容器里是挂载卷的 /data/memory），
+      # 应用**启动时就幂等铺好模板**；那四个文件的浏览与编辑不受开关影响。
+      # 开关管的是另一半：过去的对话会不会被召回、会不会自动沉淀——那要 ReMe
+      # （记忆服务）在 KYLAB_MEMORY_BASE_URL 上活着，而这份 compose 里没有它，
+      # 所以默认仍是关（打开只会得到一句"连不上"）。要真用起来：另起一个 ReMe，
+      # 把地址指过去，再在「设置 → 长期记忆」里打开。
+      # 这三项是 .env 引导值：网页上改过之后以库里的值为准（见
+      # services/runtime_config.py 的三层优先级）。
+      KYLAB_MEMORY_ENABLED: ${KYLAB_MEMORY_ENABLED:-false}
+      KYLAB_MEMORY_BASE_URL: ${KYLAB_MEMORY_BASE_URL:-http://127.0.0.1:2333}
+      KYLAB_MEMORY_WORKSPACE: ${KYLAB_MEMORY_WORKSPACE:-memory}
+    volumes:
+      - kybase-data:/data
+    # 不直接对外暴露 8000：统一从 nginx 进，避免绕过反代后
+    # 出现"一半请求带 X-Forwarded-*、一半不带"的排查噩梦。
+    # 需要直连调试时取消下面两行的注释
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # **MCP 不在这份里**：它要与 backend 共用同一份数据目录（DuckDB 单写者），
+  # 而它的对外面只有知识库那 10 个工具（见 `app/mcp_server/server.py` 模块头）。
+  # 要开 MCP 就照 `deploy/nas/docker-compose.yml` 里那个 mcp 服务加一节——
+  # 同一镜像、`command` 换成 `python -m app.mcp_server.server --transport http`、
+  # 把 8765 发布出来，环境变量与 backend 逐字相同。
+  frontend:
+    build:
+      context: ../frontend
+    image: kybase-frontend:${KYLAB_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        # 等后端健康再起 nginx：否则首屏会先看到一个 502，
+        # 用户以为部署失败
+        condition: service_healthy
+    ports:
+      - "${KYLAB_HTTP_PORT:-8080}:80"
+
+volumes:
+  kybase-data:
+    # 具名卷由 docker 管理，位置随平台而变。
+    # 要固定到某个路径（比如挂到 NAS）就换成 bind mount：
+    #   driver_opts: { type: none, device: /srv/kybase, o: bind }
+  kybase-pg:
+    # PG 数据目录。**备份要在这里做**（pg_dump），不能靠拷文件：
+    # 运行中的 data 目录直接拷贝是不一致的。
+  kybase-objects:
+    # MinIO 的对象数据（原件 / Markdown / 图片）
