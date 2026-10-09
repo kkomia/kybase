@@ -10,6 +10,12 @@ It deliberately prints **the passages**, not a generated answer. That is where t
 is — traceable sources; a script that summarised them would throw away the thing that
 makes the result usable for verification.
 
+The one thing it prints *before* the passages is the backend's own verdict line
+(`summary`): the service leads every search result with a one-line judgement of how to
+read the batch (how many candidates, how many survived convergence, and `fit` — whether
+the material actually answers the question). Same order as MCP, so `fit=none` reads as
+"the base cannot answer this" rather than being buried under a dozen passages.
+
 Usage:
     python kylab_query.py --query "眼轴怎么监测"
     python kylab_query.py --query "..." --kb kb_abc123 --top-k 8
@@ -106,6 +112,13 @@ def _print_hits(result: dict, *, query: str, as_json: bool) -> None:
         return
 
     hits = result.get("hits", [])
+    # 判定在前（v0.55）：后端把一句话判定（`summary`）放在响应最前面，人读模式也照同一个
+    # 顺序来——先给"这批命中是什么状态"，再给原文。`fit=none` 那句"资料里没有"尤其不能
+    # 排在片段后面：排在后面，读的人就先被片段带走了。
+    verdict = result.get("summary")
+    if verdict:
+        print(f"[判定] {verdict}\n")
+
     if not hits:
         # 空结果**不是错误**，但要说清它意味着什么，以及下一步该看哪里。
         print(f"没有找到与「{query}」相关的原文片段。")

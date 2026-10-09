@@ -20,9 +20,27 @@ the evidence, and a summary is not.
 2. Call `search` with a natural-language query and the relevant `knowledge_base_ids`.
    Leave `knowledge_base_ids` empty only when the user genuinely wants to search
    everything.
-3. Read the returned passages and answer **from them**, citing the document name
+3. **Read the verdict before the passages.** Every `search` result leads with
+   `summary` (a one-line verdict) and `distribution`; `hits` comes after them — that key
+   order *is* the reading order. `distribution.fit` says whether this material actually
+   answers the question:
+   - `strong` — the material is on point; answer from it;
+   - `weak` — only part of it matches; answer just the point that was asked;
+   - **`none` — the base cannot answer this.** Say so plainly. Do **not** build an answer
+     out of those passages: they are the noise the floor let through, and citing them is
+     worse than admitting the gap;
+   - `unknown` — the library's embedding model is uncalibrated, so fit cannot be judged;
+     passages come back as asked, without convergence. Judge for yourself and do not
+     claim the material is absent from a fit score.
+4. Read the returned passages and answer **from them**, citing the document name
    (and page/heading when present) for each claim.
-4. If a result set is empty or clearly off-topic, reformulate and search again before
+5. **Too many hits? Converge instead of dumping them into the context.** `keep` (1–20),
+   `min_score` (absolute cosine, 0–1) and `per_doc` (1–10 per document) are the three
+   knobs — pass your own values, or follow `distribution.suggested`, and query again.
+   `decision` reports what actually took effect, and its `decided_by` says whether the
+   knobs came from your `keep` / `min_score` or followed the suggestion. The same three
+   parameters exist on the REST search endpoint.
+6. If a result set is empty or clearly off-topic, reformulate and search again before
    concluding the material is absent. Retrieval is keyword- and vector-sensitive:
    "眼轴监测" and "监测眼轴长度" can rank differently.
 
@@ -31,7 +49,7 @@ the evidence, and a summary is not.
 | Tool | Use it when | Do not |
 | --- | --- | --- |
 | `list_knowledge_bases` | Always, at the start; and again after the user adds documents | Assume a library id — they are generated and opaque |
-| `search` | The default action for answering anything | Use it as a substitute for reading the returned text; the passages are the answer's basis |
+| `search` | The default action for answering anything | Use it as a substitute for reading the returned text; the passages are the answer's basis. Also: read `summary` / `distribution.fit` **first** — `fit="none"` means these passages do not answer the question, and a hit count is not evidence of fit |
 | `list_documents` | The user asks what a library contains, or you need to check whether a document finished processing | Use `search` to survey a library — it only returns passages related to a query, never the full inventory |
 | `get_document_status` | After an upload, or when search finds nothing | Assume a non-`indexed` document is searchable; it is not |
 | `get_document_content` | You need the document itself rather than the passages one query matched — `search` answers "what does the base say about X", this answers "what does this document say". `format="markdown"` (default) returns the parsed body text; `format="original"` returns the original file as base64 with its `filename` / `media_type` / `size_bytes` | Use it as a substitute for `search` — a whole document in the context is rarely necessary and long ones are not readable. Markdown over 200 000 characters comes back cut off with `truncated=true`: **that is not the whole document**, so never conclude something is absent from what the cut copy omits. An original file over 32 MB is refused outright (the error points at the REST download endpoint) instead of truncated |
@@ -78,7 +96,9 @@ they belong to the Agent side; `upload_document` is how content gets in here.)
 **Ground every claim in a returned passage.** If the passages don't support an answer, say
 so plainly — "the knowledge base doesn't cover this" is a useful answer. Do not fill the
 gap from general knowledge without labelling it as such: the user asked their own
-documents precisely because general knowledge was not the point.
+documents precisely because general knowledge was not the point. And when a result's
+`fit` is `none`, that is the service telling you the same thing — pass it on instead of
+writing an answer the passages cannot support.
 
 **Quote or point to the source.** Give the document name; add page and heading path when
 the service returns them. A claim the user cannot trace back is not usable for their purposes.
@@ -146,7 +166,9 @@ reach, but the tool set still includes deletion — only expose it on a network 
 ## Proxying a plain REST client
 
 If the agent runtime cannot speak MCP, `scripts/kylab_query.py` in this Skill calls the
-REST API directly and prints the passages. Same retrieval, no MCP client needed:
+REST API directly and prints the verdict line first, then the passages. Same retrieval,
+no MCP client needed (with `--json` the backend response, verdict included, passes
+through unchanged):
 
 ```bash
 python scripts/kylab_query.py --base-url http://127.0.0.1:8000 --query "眼轴怎么监测"
