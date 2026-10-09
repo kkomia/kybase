@@ -56,16 +56,18 @@ MCP_TOOL_NAMES: tuple[str, ...] = tuple(TOOL_NAMES)
 #: 服务层对未知关键字会直接 TypeError，而模型偶尔会多带一个字段——
 #: 为此让整个工具失败不值得。
 #:
-#: **只列 :data:`MCP_TOOL_NAMES` 里的那些**：这里多列一个不会有事
-#: （它挂不上），少一个会直接 KeyError（服务起不来），而两者的门禁是同一条用例
-#: （见 ``tests/unit/services/test_tools.py::test_every_tool_has_a_parameter_whitelist``
-#: 与 ``tests/unit/mcp_server/test_server.py``）。
+#: **这张表必须与 ``tool_definitions()`` 的 ``inputSchema`` 逐参数对齐**：不一致
+#: 有两种表现，而两种都不会报错——白名单多一个（模型传了却被服务层忽略）或少一个
+#: （schema 里写着、传了却不起作用，见 ``search`` 的 ``keep`` / ``min_score`` /
+#: ``per_doc``：它们在描述里让模型用来按分布收敛条数，却长期被白名单丢掉）。
+#: 那条等式由 ``tests/unit/services/test_tools.py::test_parameter_whitelists_match_the_schemas``
+#: 逐工具钉住；工具名的覆盖由 ``test_every_tool_has_a_parameter_whitelist`` 钉住。
 _PARAMS: dict[str, tuple[str, ...]] = {
     "list_knowledge_bases": (),
     "create_knowledge_base": ("name", "description"),
     "upload_document": ("knowledge_base_id", "filename", "content_base64"),
     "add_data_source": ("knowledge_base_id", "kind", "url", "name"),
-    "search": ("query", "knowledge_base_ids", "top_k"),
+    "search": ("query", "knowledge_base_ids", "top_k", "keep", "min_score", "per_doc"),
     "list_documents": ("knowledge_base_id", "query", "limit"),
     "get_document_status": ("document_id",),
     "get_document_content": ("document_id", "format"),

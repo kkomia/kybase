@@ -909,6 +909,8 @@ def test_every_tool_has_a_parameter_whitelist() -> None:
     对外面就是它——不再是"按白名单过滤出来的子集"。这条等式仍然有它守的东西：
     哪天有人往表里加一个 Agent 侧工具，``_PARAMS`` 与 MCP 面会一起跟上，
     而"加了什么"必须是有意识的（``test_server.py`` 那边还钉着名字）。
+
+    参数层面的对齐见下一条用例。
     """
     from app.mcp_server.server import _PARAMS, MCP_TOOL_NAMES
 
@@ -916,4 +918,26 @@ def test_every_tool_has_a_parameter_whitelist() -> None:
     assert set(MCP_TOOL_NAMES) == set(TOOL_NAMES), (
         "对外面就是这张纯知识库工具表：两边不一样说明有一侧漏改了"
     )
+
+
+def test_parameter_whitelists_match_the_schemas() -> None:
+    """``_PARAMS`` 的每一项都必须与 ``tool_definitions()`` 的 ``inputSchema`` 逐参数对齐。
+
+    **这条守的是一类不会报错的漂**：白名单少一个参数，schema 与描述里却写着它，
+    于是模型照着传、服务端安静丢掉——表现为"这个参数没起作用"。``search`` 的
+    ``keep`` / ``min_score`` / ``per_doc`` 就是这么失效了很长一段时间
+    （《外部接入指南》§10 登记过）。
+
+    多一个也一起管：那说明 schema 与实现里已经没有它了，白名单还留着。
+    """
+    from app.mcp_server.server import _PARAMS
+
+    specs = {item["name"]: item for item in tool_definitions()}
+    for name in TOOL_NAMES:
+        declared = set(specs[name]["inputSchema"].get("properties", {}))
+        assert set(_PARAMS[name]) == declared, (
+            f"{name} 的参数白名单与 schema 不一致："
+            f"白名单多 {sorted(set(_PARAMS[name]) - declared)}、"
+            f"少 {sorted(declared - set(_PARAMS[name]))}"
+        )
 

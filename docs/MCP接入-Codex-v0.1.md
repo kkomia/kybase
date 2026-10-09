@@ -98,7 +98,7 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
 | `codex mcp list` 显示 auth 失败 / 工具调用全 401 | 凭据没带上：环境变量名拼错、终端没重开、或 Key 已撤销 | 回管理台确认 Key 还在；`echo $KYBASE_MCP_KEY`（Windows: `echo %KYBASE_MCP_KEY%`） |
 | 403 越权 | Key 绑了库范围，查的库不在范围内；或者这把 Key 限了**工具范围**，你要调的工具不在其中 | 换不限范围的 Key，或把目标库 / 目标工具加进范围（改范围要**撤销后重发**，见上文「只放开一部分工具」） |
 | 连接超时 / 拒绝 | 不在局域网，或 NAS 上 `kybase-app-mcp` 容器没在跑 | `docker ps \| grep kybase-app-mcp`（NAS 上）；本机先 `curl http://192.168.31.18:8765/mcp` 应回 400/401 而不是拒连 |
-| `search` 传了 `keep`/`min_score`/`per_doc` 没效果 | 已知缺口：这三个参数在 MCP 通道被参数白名单丢掉（《外部接入指南》§3.5） | 用 `top_k` 控制条数 |
+| `search` 传了 `keep`/`min_score`/`per_doc` 没效果 | 这三个参数 2026-10-09 起已进白名单；若仍无效，是 `_PARAMS` 与 schema 又漂了（门禁 `test_parameter_whitelists_match_the_schemas` 会红） | 用 `top_k` 控制条数，或按 `distribution` 的建议传这三个 |
 | 想关写操作 / 只放开一部分工具 | **在服务端收窄**，不要靠客户端配置：建 Key 时勾「工具范围」 | 只读档 Key 天然没有写权限；要更细就建一把工具范围的 Key——只勾 `search`、`list_knowledge_bases`、`list_documents`、`get_document_status`、`get_document_content` 这类只读工具，它连 `create_knowledge_base` / `upload_document` / `add_data_source` / `delete_document` 都调不动 |
 
 ## 使用口径（给模型也给人）
