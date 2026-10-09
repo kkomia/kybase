@@ -119,7 +119,7 @@ function isSearchStep(step: { tool?: string; label?: string }): boolean {
 /**
  * 编号列表**之后**那一段原文（`【前 N 条的正文开头】…`），没有就给空串。
  *
- * ⚠️ **现在没有任何渲染路径调用它**（2026-09-30 用户批注："搜索网页的不显示 request
+ * 注意：**现在没有任何渲染路径调用它**（2026-09-30 用户批注："搜索网页的不显示 request
  * 和 response，只显示网页列表"）——搜索步展开时只画 `ui/SearchHits.tsx` 那张清单，
  * 清单之外的这段原文**整档不再渲染**（抓页那一档同理，见 `fetchedBodies`）。
  * 撤掉的是**渲染那一侧**（调用点在 `ui/ToolchainFlow.tsx`）：这一段文本本身仍在返回里，
@@ -196,7 +196,7 @@ export function fetchedPagesOfSteps(
 /**
  * 抓页返回里**去掉每一页的抬头**（`【标题】` 与 `来源：url` 两行）之后剩下的正文。
  *
- * ⚠️ 与 `searchExcerptTail` 同一档：**现在没有任何渲染路径调用它**。抓页步展开只剩
+ * 注意：与 `searchExcerptTail` 同一档：**现在没有任何渲染路径调用它**。抓页步展开只剩
  * 一张网页清单（2026-09-30 用户批注"搜索网页的不显示 request 和 response，只显示网页列表"，
  * 抓页同档处理），抬头之后的正文**整档不再渲染**；真要把这一档从解析层也撤掉时，
  * 它和 `searchExcerptTail` 一起删。

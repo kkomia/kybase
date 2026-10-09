@@ -23,9 +23,9 @@
  *    所以"松手"这件事由我们负责：清空容器。
  * 5. **舞台宽度要量容器的父节点，不能量容器自己**（2026-10-05 疯狂闪屏的根因）。
  *    容器是**滚动容器**（`.kylab-office`：`overflow: auto; max-height: 70vh`），11 页叠起来
- *    必然出竖直滚动条 ⇒ 它的 `clientWidth` 少了约 15px。而重渲染（第 1 条）第一件事是
- *    `host.innerHTML = ''` ⇒ 容器里空了 ⇒ 撑不到 70vh ⇒ 滚动条消失 ⇒ `clientWidth` 涨回
- *    约 15px ⇒ `ResizeObserver` 触发 ⇒ `setWidth` ⇒ effect 再跑 ⇒ 又清空、又重建……
+ *    必然出竖直滚动条 → 它的 `clientWidth` 少了约 15px。而重渲染（第 1 条）第一件事是
+ *    `host.innerHTML = ''` → 容器里空了 → 撑不到 70vh → 滚动条消失 → `clientWidth` 涨回
+ *    约 15px → `ResizeObserver` 触发 → `setWidth` → effect 再跑 → 又清空、又重建……
  *    **判据的输入被它自己触发的那次渲染改掉了**，于是无限"清空 → 重建"，屏幕上就是闪屏。
  *    改成观察容器的**父节点**（调用点上那层就是 `FilePreview` 里的 `.kylab-preview`：
  *    `display: flex; flex-direction: column; width: 100%` 的普通盒子，**不是滚动容器**），

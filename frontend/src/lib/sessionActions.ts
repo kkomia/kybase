@@ -77,7 +77,7 @@ export async function logout(): Promise<void> {
  * 原先这里是 `Promise<boolean>`：`catch` 一律 `clearSessionToken()` + `false`，
  * 于是**网络抖动 / 超时 / 后端 5xx** 与"你的登录真过期了"被当成同一件事：
  * 用户被强制登出，而且**本地令牌被删掉**（网好了还得重新输密码）。
- * 实测报告 D07 记的就是这一条，`client.ts` 其实**早就给错误标了 `status`** ✗ 没人看。
+ * 实测报告 D07 记的就是这一条，`client.ts` 其实**早就给错误标了 `status`**，只是没人看。
  *
  * 三态之后调用方才能各做各的：
  * - `ok`：身份拿到了；
