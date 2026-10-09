@@ -2147,7 +2147,7 @@ def _query(  # type: ignore[no-untyped-def]
     ``stats_floor`` 非空 = **开启动态返回**（v0.54）：程序先按兜底低阈值收候选、
     统计分布，再按 ``keep`` / ``min_score`` / ``per_doc``（模型给的，或分布的建议）收敛。
     """
-    from app.services.kb.retrieval import RetrievalQuery
+    from app.services.retrieval import RetrievalQuery
 
     return RetrievalQuery(
         query=query,
