@@ -1,0 +1,126 @@
+# 客户端运行时（边车）的**真实依赖**清单 —— P4-3
+#
+# ## 这份清单是**算出来的**，不是"看出来的"
+#
+# 口径：**以 `import app.sidecar` 的实测 `sys.modules` 为准** ——
+# 只读脚本 `scripts/sidecar-closure.py`（不装包 / 不打网络 / 不改运行时 / 不杀进程）。
+# 上一版的教训：靠"读代码看它 import 了什么"写出来的清单**不等于**真实闭包 ✗，
+# 四轮实测各逼出一个缺项（`typing_extensions` 单文件 .py → `_cffi_backend` 根 .pyd →
+# `pydantic_settings` → `jieba`）—— **清单 ≠ 闭包** ✓。
+#
+# ## Phase B：把"客户端用不到的服务器后端"从闭包里赶出去
+#
+# 惰性化的那一刀落在 `app/core/storage.py`（"唯一允许 import 具体实现"的组合根）：
+# 三个后端改成**按需导入**（只有 `build_stores()` 那一刻才 import）✓ ——
+# 于是客户端那条装配路径（`sidecar.Clients` / `LocalServices`）永远不导入它们 ✓。
+# 实测效果（同一脚本，改前 → 改后）：
+#   顶层模块 **39 → 28**；这些全部从闭包里消失 ✓：
+#   `psycopg` / `psycopg_binary` / `psycopg_pool`（约 9.5 MB）、`boto3` / `botocore` /
+#   `s3transfer` / `jmespath` / `urllib3` / `six` / `python-dateutil`（约 21.8 MB）、
+#   `duckdb` / `_duckdb`（约 35.6 MB）、`jieba`（约 40.9 MB）⇒ **约 108 MB 不再进客户端** ✓✓。
+#
+# ## 版本口径
+# 全部从**当前开发 venv 实测**读出来（`importlib.metadata`），不是"最新版"；传递依赖也全部 pin。
+#
+# ## 离线装配的五种形态（都踩过）
+# 1. **目录**（绝大多数包）；2. **单文件 `.py`**（`typing_extensions.py`）；
+# 3. **site-packages 根下的 `.pyd`**（`_cffi_backend.cp312-win_amd64.pyd`）；
+# 4. **伴生目录**（`*.libs/`，重型二进制包才有）；5. **`.dist-info/`（元数据）**。
+# → 所以离线拷贝**按每个发行包的 `RECORD` 逐文件拷** ✓（RECORD 本身就是"这个包到底有哪些文件"的答案 ✓）。
+#
+# ## 红线
+# 1. 绝不打包 dev venv（`backend/.venv`，约 400 MB）；
+# 2. 绝不打包 LibreOffice（约 700 MB）—— 本机装了只"检测后使用"；
+# 3. 不裁 `backend/app` 的源码（整份拷）；
+# 4. 离线装配不拷 `*.chm`（pywin32 的 2.5 MB 帮助文件，运行期用不到）。
+#
+# ## 装法
+# 联网：`powershell -ExecutionPolicy Bypass -File scripts\build-sidecar-runtime.ps1 -IndexUrl https://pypi.org/simple`
+# 离线（推荐，从开发 venv 按 RECORD 拷）：`... -Offline`
+# 本文件**存成 UTF-8 带 BOM**：pip 按本机 locale（GBK）猜编码，无 BOM 时中文注释会 UnicodeDecodeError（实测过）。
+
+# ---------------------------------------------------------------- 1) 四个根（边车真的用）
+fastapi==0.141.1          # 边车的 HTTP 入口（GET /health、POST /turn）
+uvicorn==0.52.4           # ASGI 服务器。⚠️ 它**不在闭包里**：`sidecar.main()` 里是函数内 import
+httpx==0.28.1             # 两个远端客户端：KB 的 POST /api/v1/search、模型的 /model-proxy/*
+pydantic==2.13.5          # /turn 的请求与响应模型
+
+# ---------------------------------------------------------------- 2) 传递依赖
+starlette==1.6.0          # FastAPI 底层：路由、请求/响应、SSE 的 StreamingResponse
+pydantic_core==2.46.5     # pydantic 的 Rust 内核
+pydantic-settings==2.15.0 # 链路：services.runtime_config → core.config（读 .env）
+python-dotenv==1.2.3      #   ↑ 读 .env 用
+annotated-types==0.8.0    # pydantic 的类型标注约束
+annotated-doc==0.0.5      # FastAPI 0.141 的依赖
+typing-inspection==0.4.4  # pydantic 的运行时类型自省
+typing_extensions==4.16.0 # ★ 单文件 .py（离线装配最容易漏的形态）
+anyio==4.15.1             # httpx / starlette 的异步原语
+idna==3.19                # 域名国际化（httpx 处理 URL）
+certifi==2026.7.22        # HTTPS 根证书。⚠️ 不在闭包里（httpx 真正发请求时才 import）
+httpcore==1.0.9           # httpx 的传输层。⚠️ 同上（运行期才 import，烟测证明必须有）
+h11==0.16.0               # httpcore 的 HTTP/1.1 实现；uvicorn 也用它
+click==8.5.0              # uvicorn 的命令行入口
+python-multipart==0.0.32  # FastAPI 表单/上传（导入链带进来）
+markdown-it-py==4.2.0     # 技能/文档渲染那条链带进来
+mdurl==0.1.2              #   ↑ 的依赖
+PyYAML==6.0.3             # 配置/技能 frontmatter 那条链带进来
+
+# ---------------------------------------------------------------- 2b) **运行期按需**（不在导入闭包里，但工具真调时必须装）
+#
+# 口径与 2) 不同：这些包是**惰性 import**（`office.py` 在函数体里 import），闭包脚本看不见它们；
+# 但导出三件（`export_table` / `export_document` / `export_deck`）真被调用时会 import 它们 →
+# **不装就是"工具在、一调就失败"**（2026-09-30 实测：模型如实回
+# "生成 .xlsx 需要额外装 openpyxl" 就是这么冒出来的）。
+#
+# 为什么值得装：桌面缺了它，"要一份文件"这类请求在**本机跑的链**上交不出东西
+# （网页那条链一直交得出来）——这是两条链之间最后一处能力差。
+# 体量：这七件合计约 **28 MB**（大头是 Pillow 14.8 + lxml 8.9），运行时 17 → ≈45 MB，
+# **仍在规格的 40–60 MB 目标线内**（见《客户端运行时-打包规格》§1/§4 那张表）。
+et-xmlfile==2.0.0      # openpyxl 的依赖
+openpyxl==3.1.5        # export_table（xlsx）
+lxml==6.1.3            # python-docx / python-pptx 的 XML 后端
+Pillow==12.3.0         # python-pptx 处理图片
+XlsxWriter==3.2.9      # python-pptx 的图表数据依赖
+python-docx==1.2.0     # export_document（docx）
+python-pptx==1.0.2     # export_deck（pptx）
+
+# ---------------------------------------------------------------- 3) 导入闭包带来的（功能上边车用不到）
+argon2-cffi==25.1.0           # 链条：agent_tools → agent_exec → agent_files → api_key → core.security
+argon2-cffi-bindings==26.1.0  #   ↑ 的编译扩展
+cffi==2.1.1                   #   ↑ 的依赖（含 site-packages 根下的 `_cffi_backend*.pyd`）
+pycparser==3.0                # cffi 解析 C 声明
+
+# ---------------------------------------------------------------- 4) 闭包里有、但**实测不该装**（负结果，别加回来）
+# `pywin32`（约 11.9 MB：pythonwin 3.5 + win32 3.4 + win32comext 2.7 + win32com 1 + system32 0.8）：
+#   它出现在**开发 venv** 的闭包里，是因为 venv 的 `pywin32.pth` 在 site 引导阶段就 import 了它 ✗ ——
+#   那是**开发 venv 的产物**，不是应用的依赖 ✓。实测从装配里去掉后 `--help` 与烟测照旧通过 ✓。
+# `Pygments`（约 4.5 MB）：没有任何 `app/**` 模块 import 它（AST 扫描 126 个可达模块，0 命中 ✓），
+#   是某个依赖在导入期顺带拽进来的；实测去掉后照旧通过 ✓（父包留到下一轮定位 ✓）。
+# `_virtualenv`：开发 venv 的产物 ✗（不是任何包的依赖）→ 不拷 ✓。
+# `sniffio`：开发 venv 里没有它，闭包也不需要（anyio 4.x 已内联该判断）✓。
+# 注：`sniffio` **不写** —— 开发 venv 里没有它，闭包也不需要（anyio 4.x 已内联该判断）。
+# 注：`psycopg*` / `duckdb` / `boto3` / `botocore` / `jieba` / `urllib3` / `six` / `python-dateutil`
+#     已在 Phase B 里**从闭包消失** ✓ —— 它们不再出现在这份清单里 ✓（详见上面那段 Phase B）。
+
+# ---------------------------------------------------------------- 5) M2 阶段 3 又量了一次：本地后端面把 api 层带进了闭包
+#
+# 背景：边车现在挂 `local_router`（`app/sidecar.py` → `app/api/v1/router.py`）✓，
+# 于是**整个 `app.api.v1` 包**第一次进了客户端闭包 —— 其中三个模块是
+# **模块级 `import httpx`**（`api/v1/settings.py` / `services/failures.py` /
+# `services/site_icons.py`，后者经 `api/v1/chat.py` 与 `api/v1/site_icons.py` 可达）。
+# `httpx/__init__.py` 里那句 `from ._main import main` 会顺带拽进 click + pygments ✗
+# —— 实测闭包 **17 → 21 个发行包**（多出 httpx / click / Pygments / idna）。
+#
+# 处置按既有手法：三处改成 `from app.core.lazy_httpx import httpx`（那个模块就是
+# 为这件事写的，文件头有完整理由）✓，调用点一个字没改 ✓。复测：**21 → 17**，
+# 与阶段 3 的基线**逐个对得上**（`scripts/sidecar-closure.py`，2026-10-01）。
+#
+# 顺带定位了 4) 里那条悬案："Pygments 是哪个依赖拽进来的" → 答：httpx 的 CLI 入口
+# （pygments 是它的语法高亮依赖）。所以 4) 那句"父包留到下一轮定位"可以结案了 ✓。
+#
+# ⚠️ 另一处**运行期按需**（同 2b 的口径，但这次是**已知缺口**、未处置）：
+# `recall`（记忆召回）在服务层要 **jieba**（`services/retrieval/coverage._jieba`，惰性 import）。
+# 阶段 3 之前这条走 NAS（那边有 jieba）；收编到本机之后，**打包运行时里没有 jieba**
+# → 桌面端调 `recall` 会在调用那一刻 `ModuleNotFoundError` ✗。两条出路：
+# 往这里加 jieba（约 +40.9 MB），或让记忆召回在缺 jieba 时只用"相邻字对"那条通道
+# （`memory_files._word_pairs` 不依赖分词）。**留给架构师定**（见阶段 3 报告）。

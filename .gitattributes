@@ -1,0 +1,26 @@
+# 换行与文本属性（跨平台脚本必须固定，否则 Windows 检出会把 .sh 变成 CRLF 而无法执行）
+* text=auto eol=lf
+
+# Windows 优先的脚本保留 CRLF，避免 PowerShell 解析异常
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余源码与文档一律 LF
+*.py text eol=lf
+*.sh text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.pdf binary
+*.db binary

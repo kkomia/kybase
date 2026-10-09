@@ -1,0 +1,16 @@
+{
+  "name": "kylab-deck-render",
+  "private": true,
+  "description": "幻灯片写盘层：DeckPlan.to_dict() 的 JSON → .pptx（PptxGenJS + chart xml 后处理）",
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "main": "render.mjs",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "image-size": "^1.2.1",
+    "jszip": "^3.10.1",
+    "pptxgenjs": "^4.0.1"
+  }
+}

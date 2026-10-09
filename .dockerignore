@@ -1,0 +1,28 @@
+# 后端镜像的构建上下文是**仓库根**（deploy/ 下两份 compose 的 backend.build.context），
+# 为的是让 COPY 能取到仓库自带的 skills/（见 backend/Dockerfile 的说明）。
+#
+# 上下文一大，docker 每次构建都会把它**整个**打包发给守护进程：这台开发机上
+# backend/.venv（约 400M）、frontend/node_modules（约 300M）与 .git（约 50M）
+# 加起来就是几百 MB 的白传流量——而构建真正要的只有 backend/（代码 + 依赖清单 +
+# README）与 skills/。所以这里的口径是：**只排除构建不可能用到的东西**，
+# 不试图做"最小上下文"（排除错了会让构建以一种难查的方式失败）。
+#
+# 注意：这个文件只对"上下文 = 仓库根"的构建生效；frontend 的上下文是
+# frontend/，要看它自己的 .dockerignore（现在没有）。
+.git
+.gitignore
+.github
+.venv
+backend/.venv
+backend/.env
+backend/data
+backend/tests
+frontend
+desktop
+docs
+scripts
+tests
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/*.log

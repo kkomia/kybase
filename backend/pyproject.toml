@@ -1,0 +1,163 @@
+[project]
+name = "kylab-backend"
+version = "0.1.0"
+description = "KYLAB 知识库后端服务：FastAPI + MCP Server（架构设计 v0.2 §2.1）"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    # FastAPI 的文件上传（multipart/form-data）依赖它，属于核心能力
+    "python-multipart>=0.0.9",
+    # 存储与检索是核心能力（M1 起），不再放进 extras。
+    # `sqlite-vec` 已于 v0.12 随 SQLite 一起删除，别再加回来：向量走 pgvector（HNSW）。
+    "jieba>=0.42",
+    # 目标存储：PostgreSQL。psycopg3 同时支持同步/异步，这里用同步以保持
+    # storage 层接口不变（详见 storage/postgres_impl/connection.py 的说明）；
+    # binary 版免去本地编译。pgvector 的 Python 类型适配待向量层落地时再加。
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+    # 对象存储（原件 / Markdown 产物 / 图片）。放基础依赖而不是 extra：
+    # Dockerfile 虽然 --all-extras，但漏装 extra 的后果是"第一次上传才炸"，
+    # 而不是启动时炸——这类失败不该赌。
+    "boto3>=1.35",
+    # 口令慢哈希（多用户登录）。SHA-256 不得用于口令（core/security.py 的约定），
+    # 口令熵低、必须抗离线爆破；选 argon2 而不是 bcrypt：后者有 72 字节截断的坑
+    "argon2-cffi>=23.1",
+    # 负载面板要读**本机** CPU / 内存（services/system_load.py）。
+    # 不用 /proc 自己解析：那只在 Linux 上成立，而这个项目要在 Windows 上开发。
+    "psutil>=6.0",
+    # Markdown 解析。**核心依赖而不是 parsers extra**（v0.47 从 extra 提上来）：
+    # 记忆召回现在按 AST 切块（标题做面包屑、代码块不被劈开，见
+    # services/memory_files.py），而记忆层随时会被用到——放在 extra 里的后果是
+    # "没装 parsers 的部署一召回就炸"，与"漏装 extra 的后果是第一次上传才炸"
+    # 属于同一类失败，而这一类不该赌。入库管线那半边本来也用它。
+    "markdown-it-py>=3.0",
+]
+
+# 按里程碑分层引入的重依赖
+[project.optional-dependencies]
+# 表格结构化副本（架构 §5.2，MVP 缓做，仅先保留写入路径）
+tabular = [
+    "duckdb>=1.1",
+]
+# 解析插件层（M2 起启用）
+parsers = [
+    "pypdf>=5.1",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "pandas>=2.2",
+    # numpy 本来跟着 pandas 进来，这里**显式写出来**：记忆的向量那一路（可选功能，
+    # 默认关，惰性导入见 services/memory_index.py）直接用 numpy 做余弦。
+    # 写明白是为了下一个人不用靠"pandas 会带它"这种隐式依赖活着。
+    "numpy>=2.0",
+    # markdown-it-py 在**核心依赖**里（记忆召回也用它切块），这里不再重复列
+]
+# Office 产出（v0.21，见 services/office.py 的方案 A 说明）。
+# **读**那半边不在这里：入库管线早已能解析这四种格式（local_office / Tabular /
+# local_pdf），这里补的是**产出**——agent 整理出的结论要能变成能发给别人的文件。
+# python-pptx 与 reportlab 是这一层仅有的两个新依赖；docx / xlsx 用 parsers
+# extra 里已有的 python-docx 与 openpyxl。
+office = [
+    "python-pptx>=1.0",
+    # PDF 产出。中文必须有一个 CJK 字体，reportlab 自带 CID 字体（STSong-Light）
+    # 不需要额外字体文件，所以没有其它 PDF 库的字体配置负担
+    "reportlab>=4.2",
+    # 图表（v0.56，见《开发计划》§12.338 完善方案 2）。放在 office 这一档而不是
+    # 新开一个 extra：**"画一张图"与"导出一份文件"是同一件事的两半**——图要么作为
+    # 图片交付物单独给出，要么由 openpyxl 内嵌进 .xlsx（见 `office.build_xlsx` 的
+    # `charts` 参数）。分开两档的后果是"装了导出没装图"，而那恰好是 G-03 的形状
+    # （xlsx 数字全对、没有图表）。
+    #
+    # 为什么是**预装**而不是"让它自己 pip install"：实测 K-03 用 60 步 / 361 秒
+    # 全耗在装它上面（pip 被 60 秒上限反复掐断、换镜像、建 venv、uv 也失败），
+    # 最后交白卷。画一张图需要的解析器不该由模型在沙箱里现装。
+    "matplotlib>=3.9",
+]
+# MCP 接入层（M4 起启用）
+mcp = [
+    # **必须是 2.x**：本模块用的是 ``MCPServer``（1.x 里叫 ``FastMCP``，
+    # 且没有 ``add_tool``）。官方迁移指南说明 "要么改用 MCPServer、
+    # 要么把依赖钉在 mcp<2"，这里选前者。
+    "mcp>=2",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "respx>=0.22",
+    "pytest-xdist>=3.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ---------------------------------------------------------------- ruff
+# 工程规范 §6：后端 lint 用 ruff
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["app", "tests"]
+extend-exclude = ["data", "tests/fixtures"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff 自有规则
+    "ASYNC",# flake8-async
+    "S",    # flake8-bandit（凭据与常见安全问题）
+]
+ignore = [
+    # 本仓库注释与文档字符串以中文为主，全角标点是有意为之，不按"易混淆字符"告警
+    "RUF001",  # 字符串中的歧义字符
+    "RUF002",  # 文档字符串中的歧义字符
+    "RUF003",  # 注释中的歧义字符
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试允许 assert，也允许用假凭据/假密钥做夹具（不涉及真实入库）
+"tests/**" = ["S101", "S105", "S106", "S107"]
+"app/core/config.py" = ["S105", "S106"]  # 配置项默认值为空，非真实凭据
+# FastAPI 的依赖注入就是靠默认参数里的 Depends/Query/File 实现的，B008 在此属误报
+"app/api/**" = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ---------------------------------------------------------------- pytest
+# 工程规范 §5.2：本地与 CI 用 `pytest tests/ -m "not bench and not cloud"`
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "cloud: 需要真实云端解析/embedding API（默认跳过，避免消耗免费额度）",
+    "bench: 性能与容量基准（手动触发，发布前执行）",
+    "local: 只依赖本机 SQLite 与文件系统，不需要 PostgreSQL",
+]
+
+# ---------------------------------------------------------------- coverage
+[tool.coverage.run]
+# TestClient 会在自己的线程里跑事件循环（应用生命周期就在那儿），
+# 不声明 thread 的话那些行统计不到，会误判成"没覆盖"
+concurrency = ["thread"]
