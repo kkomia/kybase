@@ -53,7 +53,6 @@ vi.mock('@/api/search', async (importOriginal) => ({
 
 import { getDocument, uploadDocument } from '@/api/documents'
 import { grantShare, listShares, revokeShare } from '@/api/shares'
-import { resetProviderStore, setProviderStatusForTest } from '@/api/provider'
 import {
   createDataSource,
   deleteDataSource,
@@ -90,37 +89,13 @@ function renderDialog(node: React.ReactNode) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  resetProviderStore()
 })
 
 afterEach(() => {
   vi.clearAllMocks()
-  resetProviderStore()
 })
 
 describe('上传弹窗', () => {
-  it('**上限与格式从握手取**（M3 阶段 6，R8）：提供者说 5MB / 收 epub+md，界面就按它走', async () => {
-    const user = userEvent.setup()
-    setProviderStatusForTest({
-      state: 'ready',
-      available: true,
-      reason: '',
-      checked_at: '2026-10-03T10:00:00Z',
-      base_url: 'http://nas:8000/api/v1',
-      credential: 'configured',
-      protocol_version: 1,
-      capabilities: { ingest: { max_bytes: 5 * 1024 * 1024, extensions: ['epub', 'md'] } },
-    })
-
-    renderDialog(<UploadDialog open kbId="kb-1" onClose={vi.fn()} onUploaded={vi.fn()} />)
-
-    // 提示跟着握手变（不再是硬编码的 200MB / "PDF、Word…"）
-    expect(await screen.findByText(/支持 EPUB 与 Markdown。单个文件不超过 5MB/)).toBeInTheDocument()
-    // 本地拒收的判据也用它
-    await user.upload(screen.getByLabelText('选择文件'), makeFile('大.epub', 6 * 1024 * 1024))
-    expect(await screen.findByText('超过 5MB 上限，请先压缩或切分')).toBeInTheDocument()
-  })
-
   it('超过单文件上限：本地就标为「未接收」且不发请求（不等后端读完才回 413）', async () => {
     const user = userEvent.setup()
     renderDialog(<UploadDialog open kbId="kb-1" onClose={vi.fn()} onUploaded={vi.fn()} />)

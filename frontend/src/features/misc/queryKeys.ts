@@ -12,9 +12,6 @@
 /** 任务中心：任务列表。 */
 export const TASKS_QUERY_KEY = ['tasks', 'list'] as const
 
-/** 任务中心：定时任务列表。 */
-export const SCHEDULES_QUERY_KEY = ['scheduled-tasks'] as const
-
 /** 概览：统计窗口（天）。 */
 export const DASHBOARD_WINDOW_DAYS = 365
 

@@ -10,25 +10,17 @@ import { cleanup } from '@testing-library/react'
  *
  * ## 它治的是什么
  *
- * 2026-10-02 前端全量跑出现**跨用例干扰的抖动**（单跑必绿、全量偶尔红，红的用例还不固定：
- * 一次红在设置弹窗的「知识库连接那一节」，下一次红在「连不上时显示原因」）。根因不在断言，
- * 而在**请求逃到真网络 + 晚到的结论写进复位后的共享状态**：
+ * 用例之间**跨条干扰**的抖动（单跑必绿、全量偶尔红，红的用例还不固定）：根因不在断言，
+ * 而在**请求逃到真网络**——某条链的 `fetch` 不在调用点上，于是上一条用例挂出去的读可能在
+ * 下一条用例里才真打出去。那时用例自己的替身已经撤了（`vi.unstubAllGlobals()`），真
+ * `fetch` 回到 `globalThis` 上 → 它真打网络，而"成不成"随这台机器当时的状态变，
+ * 于是"红了哪一条"也就跟着变。
  *
- * 1. `requestLocal()` / `requestLocal` 那一族的第一次 `fetch` **不在调用点上**——它要先
- *    `resolveLocalBase()`（问壳要基址 + 探一次活），所以"这几行代码发出去的读"要过几拍才真打
- *    出去；
- * 2. 于是**上一条用例挂出去的读，可能在下一条用例里才打 `fetch`**。那时用例自己的替身已经
- *    撤了（`vi.unstubAllGlobals()`），真 `fetch` 回到 `globalThis` 上 → 它真打网络：
- *    这台机器上有没有边车在跑（壳开着时它就在 8765），决定了那条请求成不成、写什么进共享
- *    store（`api/provider` / `api/backup` / `api/sidecar` 这几份都是模块级单份）——
- *    于是"红了哪一条"随机器状态变。
- *
- * ## 三条纪律（与 `tests/unit/layout/local-data-strip.test.tsx` 里那套逐条同形）
+ * ## 三条纪律
  *
  * 1. `beforeEach` 先装一层**默认替身**：`/health` 通、其余一律抛错。各用例自己的
  *    `vi.stubGlobal('fetch', …)` 会盖在它上面；这一层管的是"**忘了 stub 的那条不许静默
- *    走真网络**"（实测：整份用例在这个替身下 73 个文件全绿，说明没有哪一条用例真的
- *    依赖"真网络能通"）；
+ *    走真网络**"；
  * 2. `afterEach` **先把还在飞的链条走完**（`drain()`：让它在**本用例自己的替身**下把
  *    `fetch` 打完），再撤替身、装一层**"网络禁用"记账器**——真 `fetch` 从此不回
  *    `globalThis`，任何漏出来的调用都被记进 `escapes` 并立刻抛错；
@@ -37,11 +29,8 @@ import { cleanup } from '@testing-library/react'
  *
  * ## 为什么放在全局一份
  *
- * 与文件末那三件 jsdom 兜底同一个理由（"别再让每个测试文件各带一份兜底副本"）：读那三份
- * 共享 store 的用例文件有二十来个，逐份抄同一段纪律只会让"后来新增的文件忘了抄"成为下一个
- * 抖动源。产品侧另有一道**同形的闸门**（`api/provider.ts` 的 `generation`、`api/sidecar.ts`
- * 的 `probeGeneration`、`api/backup.ts` 先前那一位）：复位之后，之前发出去的结论一律作废
- * ——所以**哪怕**真有晚到的结论，也盖不掉复位之后摆好的状态。
+ * 与文件末那三件 jsdom 兜底同一个理由（"别再让每个测试文件各带一份兜底副本"）：
+ * 逐份抄同一段纪律，只会让"后来新增的文件忘了抄"成为下一个抖动源。
  */
 
 /** 漏出替身的那些请求（按用例 + URL 记下来）。**必须永远是空的**。 */
@@ -61,8 +50,7 @@ async function drain(): Promise<void> {
  */
 function defaultFetch(url: string): Response {
   const target = String(url)
-  // 探活那一趟（`sidecarAvailable` 的 `/health`）是**每条链的必经之路**：放它过去，
-  // 免得"忘了 stub"的表现全变成"边车不可达"（那是另一条错误路径）
+  // `/health` 那条探活放它过去：免得"忘了 stub"的表现全变成"服务不可达"（那是另一条错误路径）
   if (target.endsWith('/health')) {
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,

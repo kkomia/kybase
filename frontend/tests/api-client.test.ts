@@ -6,8 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { API_BASE, request, requestLocal, resetSessionProbeForTest } from '@/api/client'
-import { resetSidecarProbe, setLocalDataForTest } from '@/api/sidecar'
+import { API_BASE, request, resetSessionProbeForTest } from '@/api/client'
 import { SESSION_TOKEN_STORAGE_KEY, useSessionStore } from '@/lib/session'
 import { clearSessionToken, sessionToken, setSessionToken } from '@/lib/session'
 
@@ -296,51 +295,7 @@ describe('401：先核会话，只有真失效才登出', () => {
     expect(useSessionStore.getState().reloginCount).toBe(before)
   })
 
-  it('⑥ 真机那条路（本机档：预览要签名链接打在边车上）也不把人弹走', async () => {
-    // 壳里 `/conversations/**` 走边车（`requestLocal`），而边车那条 401 按后端的设计
-    // **永远不是"你的会话失效了"**（`api/auth.py::current_caller`：本机档不看 Authorization）。
-    setSessionToken('kylab_st_alive')
-    resetSidecarProbe()
-    vi.stubGlobal('__TAURI__', {
-      core: { invoke: vi.fn(async () => ({ port: 8765, base: 'http://127.0.0.1:8765' })) },
-    })
-    const calls: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        const target = String(url)
-        calls.push(target)
-        if (target.endsWith('/health')) return jsonResponse(200, { ok: true })
-        if (target.includes('/files/download-url')) {
-          return jsonResponse(401, {
-            code: 'unauthorized',
-            message: '尚未配置下载签名密钥，请联系管理员',
-          })
-        }
-        if (target.endsWith(PROBE)) return meOk()
-        return jsonResponse(404, { message: '用例没预备这条请求' })
-      }),
-    )
-    const before = useSessionStore.getState().reloginCount
-
-    const failure = (await requestLocal('/conversations/c1/files/download-url').catch(
-      (error: unknown) => error,
-    )) as Error
-
-    expect(failure.message).toBe('尚未配置下载签名密钥，请联系管理员')
-    expect(sessionToken()).toBe('kylab_st_alive')
-    expect(window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY)).toBe('kylab_st_alive')
-    expect(useSessionStore.getState().reloginCount).toBe(before)
-    // 业务那条打的是**边车**，探活打的是**服务器**（凭据的权威在服务器）
-    expect(
-      calls.some((call) => call.startsWith('http://127.0.0.1:8765/api/v1/conversations/')),
-    ).toBe(true)
-    expect(calls.filter((call) => call.endsWith(PROBE))).toHaveLength(1)
-  })
-
   afterEach(() => {
     resetSessionProbeForTest()
-    resetSidecarProbe()
-    setLocalDataForTest(undefined)
   })
 })

@@ -32,8 +32,7 @@
  * ——所以分组头连同它的箭头、展开态、以及"收起时才点亮"的那个组级选中态一起删掉，
  * 三条子项提成顶层导航项（`NAV_ITEMS`），行样式沿用导航项那一套（`NAV_ROW`）。
  *
- * 三项**不按提供者状态显隐**：连不上的处置在页面自己身上（路由守卫仍在
- * `features/knowledge/ProviderRoute.tsx`，而这一档里它直接放行）。
+ * 三项**无条件渲染**：连不上的处置在页面自己身上（页面进页时那条读会报它自己的错）。
  * 顺序照旧：所有知识库（`/knowledge-bases`）/ 概览（`/`，exact）/ 任务中心（`/tasks`）；
  * 选中态也照旧**各算各的**（`isActive`），不再有"整组亮起来"那一条。
  *
@@ -60,8 +59,6 @@ import { preloadPage } from '@/app/routes'
 import { RiBook2Line, RiDashboardLine, RiTaskLine } from '@remixicon/react'
 
 import { Logo } from '@/features/chat/ui/Logo'
-import { useKnowledgeProviderStatus } from '@/api/provider'
-import { warmKnowledgeBases } from '@/features/knowledge/store'
 import { cn } from '@/lib/utils'
 
 import { AccountMenu } from './AccountMenu'
@@ -117,27 +114,11 @@ export function SideNav() {
   const { collapsed, toggleSidebar } = useSidebar()
 
   /**
-   * 知识库提供者的状态：这里**只用来做预取的那半扇门**（见 `preloadKnowledgeBases`）。
-   *
-   * 它**不决定**导航项显不显示——三项无条件渲染（上游 R5 的口径）。
-   */
-  const provider = useKnowledgeProviderStatus()
-
-  /**
-   * 导航项被划过/聚焦时顺手做的两件事（照上游 M4 阶段 5 的预取先例）：
-   *
-   * ① 把那一页的代码拉下来（点进去不必等 chunk，与导航项同一条做法）；
-   * ② 把「上次看到的库列表」先取回来（**本机回环**，个位数毫秒）——点进去标题与卡片
-   *    就已经在了。
-   *
-   * ②只在有"本机留的那份"时才做（`provider.gate`）：这一档知识库就是服务端自己，
-   * 没有"本机留的那份"，所以这一跳**在这一档恒不发生**。
-   * 叫一次**不等于**打一次请求：内存已有、或那一份已经画过/实时到了，它就地返回。
+   * 导航项被划过/聚焦时顺手把那一页的代码拉下来（点进去不必等 chunk，
+   * 与导航项同一条做法）。列表数据由页面自己进页时拉，导航项不替它发请求。
    */
   function preloadKnowledgeBases(): void {
     preloadPage('knowledgeBases')
-    if (!provider.gate) return
-    void warmKnowledgeBases()
   }
 
   function isActive(to: string, exact: boolean): boolean {

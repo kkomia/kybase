@@ -57,30 +57,11 @@ import {
   type ImpactReport,
 } from '@/api/documents'
 import { createFolder, deleteFolder, listFolders, renameFolder, type Folder } from '@/api/folders'
-import {
-  docListViewKey,
-  getKbCacheDocuments,
-  getKbCacheFolders,
-  revalidateKbCache,
-} from '@/api/kbCache'
-import { providerGateApplies } from '@/api/provider'
 import { MeterBar, SkeletonRows, StatusTag } from '@/features/knowledge/composites'
 import { DocumentDrawer } from '@/features/knowledge/DocumentDrawer'
 import { KbSearchPanel } from '@/features/knowledge/KbSearchPanel'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { ShareDialog } from '@/features/knowledge/ShareDialog'
-import {
-  LIVE_FRAME,
-  createSnapshotGate,
-  docListViewOf,
-  revalidateTargetOf,
-  snapshotFrame,
-  snapshotNote,
-  snapshotPayload,
-  snapshotRows,
-  withoutProgress,
-  type SnapshotFrame,
-} from '@/features/knowledge/snapshot'
 import { messageOf, notify, useKnowledgeBases, usePolling } from '@/features/knowledge/store'
 import { useOperatorStore } from '@/lib/operator'
 import {
@@ -207,16 +188,12 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
    * 名册为空（没配名册、或鉴权开着而没人名）时不摆一列"未记录"。
    */
   const roster = useOperatorStore((state) => state.roster)
-  /** 上传约束（M3 阶段 6）：上限与格式提示从握手取，兜底见 `uploadLimits.ts`。 */
+  /** 上传约束：上限与格式提示的唯一出口是 `uploadLimits.ts`。 */
   const limits = useUploadLimits()
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  /** 文档列表这一块是"上次看到的内容"还是刚取回来的（决定页顶那一行小字，§4.3-③）。 */
-  const [frame, setFrame] = useState<SnapshotFrame>(LIVE_FRAME)
-  /** 「先画一帧」的闸门（§4.3-①②）：文档列表 / 目录树 / 未归档计数三个视图各记各的账。 */
-  const snapshotGate = useRef(createSnapshotGate()).current
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [searchDraft, setSearchDraft] = useState('')
@@ -287,7 +264,7 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     setSearchParams(query, { replace: true })
   }
 
-  /* ------------------------------------------------------------ 先画一帧（M4 阶段 5） */
+  /* ------------------------------------------------------------ 筛选与列表加载 */
 
   const buildFilter = useCallback((): DocumentListFilter => {
     const filter: DocumentListFilter = {}
@@ -299,93 +276,9 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     return filter
   }, [activeFolder, searchQuery, stageFilter, sourceFilter])
 
-  /**
-   * 「先画一帧」：把本机留的那份**这一视图**的内容先摆上来（§4.3 的时序规则）。
-   *
-   * 三条纪律逐条落在下面：
-   *
-   * - **只在「这个视图还没有实时结果」时画**：闸门的 `claim` 把"画过 / 已有实时结果 /
-   *   正在飞"一并算掉——不满足就**连请求都不发**；带搜索或筛选的视图**没有副本**
-   *   （决策点 D-D），压根不画（照旧骨架屏）；
-   * - **实时结果永远赢**：回来时实时那条线已经落地了就把这一帧丢掉（`stillWanted`）；
-   * - **只填第一帧**：画过（或那份内容本来就是空的）之后这个视图就记成"了结"（`settle`），
-   *   不再画第二次——换到别的视图是另一个键，那是那个视图自己的第一帧。
-   *
-   * 失败静默：它是顺手快一点的那一下，页面自己那条实时读才是权威（也是报错的位置）。
-   */
-  const paintDocuments = useCallback(async () => {
-    if (!kbId) return
-    const view = docListViewOf(buildFilter(), page, DOCUMENT_PAGE_SIZE)
-    if (!view) return
-    const viewKey = docListViewKey(kbId, view)
-    if (!snapshotGate.claim(viewKey)) return
-    try {
-      const snapshot = await getKbCacheDocuments(kbId, view)
-      if (!snapshot?.available || !snapshotGate.stillWanted(viewKey)) return
-      const rows = snapshotRows<DocumentSummary>(snapshot).map(withoutProgress)
-      snapshotGate.settle(viewKey)
-      // 空的那一份摆不上任何东西：不置帧（不置帧才不会一边摆骨架屏一边说"上次更新于 X"）
-      if (rows.length === 0) return
-      setDocuments(rows)
-      setTotal(snapshotPayload<{ total?: number }>(snapshot)?.total ?? rows.length)
-      setFrame(snapshotFrame(snapshot.fetched_at))
-    } catch {
-      // 见上：静默
-    } finally {
-      snapshotGate.release(viewKey)
-    }
-  }, [buildFilter, kbId, page, snapshotGate])
-
-  /** 目录树那一份：与文档列表**同屏**，不做就是"半屏"。 */
-  const paintFolders = useCallback(async () => {
-    if (!kbId) return
-    const viewKey = `folders:${kbId}`
-    if (!snapshotGate.claim(viewKey)) return
-    try {
-      const snapshot = await getKbCacheFolders(kbId)
-      if (!snapshot?.available || !snapshotGate.stillWanted(viewKey)) return
-      const rows = snapshotRows<Folder>(snapshot)
-      snapshotGate.settle(viewKey)
-      if (rows.length === 0) return
-      setFolders(rows)
-    } catch {
-      // 静默（与上面同）
-    } finally {
-      snapshotGate.release(viewKey)
-    }
-  }, [kbId, snapshotGate])
-
-  /**
-   * 「未归档」计数那一份：它就是文档列表的 `root` 视图加 `size:1`
-   * （后端那边也是这一次读落成同一个 `doc_list` 的键，不必单开资源）。
-   *
-   * 这一份画的是**那个数**（0 也是内容：树上要显示"0"），所以它不按行数判空。
-   */
-  const paintCounts = useCallback(async () => {
-    if (!kbId) return
-    const viewKey = docListViewKey(kbId, { root: true, page: 1, size: 1 })
-    if (!snapshotGate.claim(viewKey)) return
-    try {
-      const snapshot = await getKbCacheDocuments(kbId, { root: true, page: 1, size: 1 })
-      if (!snapshot?.available || !snapshotGate.stillWanted(viewKey)) return
-      const total = snapshotPayload<{ total?: number }>(snapshot)?.total
-      if (typeof total !== 'number') return
-      snapshotGate.settle(viewKey)
-      setUnfiledCount(total)
-    } catch {
-      // 静默（与上面同）
-    } finally {
-      snapshotGate.release(viewKey)
-    }
-  }, [kbId, snapshotGate])
-
-  /* ------------------------------------------------------------ 列表加载 */
-
   const loadDocuments = useCallback(async () => {
     if (!kbId) return
     const filter = buildFilter()
-    // 这一读对应哪个视图（带筛选的那一档没有键：它本来就不留副本，D-D）
-    const view = docListViewOf(filter, page, DOCUMENT_PAGE_SIZE)
     try {
       const list = await listDocuments(kbId, {
         ...filter,
@@ -400,41 +293,36 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
         setLoading(false)
         return
       }
-      // 实时结果落地：这个视图从此不许再被快照盖（§4.3-②），小字那一行也就收了
-      if (view) snapshotGate.live(docListViewKey(kbId, view))
       setDocuments(list.items)
       setTotal(list.total)
       setError('')
-      setFrame(LIVE_FRAME)
     } catch (cause) {
-      // 失败**不清**已经画上的那一帧：内容还在屏幕上，顶上那句话由它说（§4.5）
+      // 失败**不清**已经拿到的列表：内容还在屏幕上，顶上那句话由它说
       setError(messageOf(cause, '文档列表加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [buildFilter, kbId, page, snapshotGate])
+  }, [buildFilter, kbId, page])
 
   const loadFolders = useCallback(async () => {
     if (!kbId) return
     try {
       setFolders((await listFolders(kbId)).items)
-      snapshotGate.live(`folders:${kbId}`)
     } catch {
       // 目录读不到不该挡住文档列表：退化成"还没有目录"
       setFolders([])
     }
-  }, [kbId, snapshotGate])
+  }, [kbId])
 
   /** 「未归档」计数：树上的数字要准，所以单独查一次根目录范围（`limit: 1` 只要那个 total）。 */
   const loadCounts = useCallback(async () => {
     if (!kbId) return
     try {
       setUnfiledCount((await listDocuments(kbId, { root: true, limit: 1 })).total)
-      snapshotGate.live(docListViewKey(kbId, { root: true, page: 1, size: 1 }))
     } catch {
       setUnfiledCount(null)
     }
-  }, [kbId, snapshotGate])
+  }, [kbId])
 
   const refreshAll = useCallback(async () => {
     await Promise.all([loadDocuments(), loadFolders(), loadCounts()])
@@ -444,18 +332,14 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     // 列表随筛选/页码变；`loadDocuments` 的依赖里带着这几项。
     // `loading` 只在**首次**那一轮让位给骨架屏（之后换筛选不该把整块列表换成骨架）
     if (documents.length === 0) setLoading(true)
-    // 先画一帧（与那次实时读并行）：画上了就不摆骨架屏（§4.3-③）
-    void paintDocuments()
     void loadDocuments()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadDocuments])
 
   useEffect(() => {
-    void paintFolders()
     void loadFolders()
-    void paintCounts()
     void loadCounts()
-  }, [loadFolders, loadCounts, paintFolders, paintCounts])
+  }, [loadFolders, loadCounts])
 
   useEffect(() => {
     // 进页面时把库清单拉回来（标题与设置弹窗的"文档 N 篇"都要它）
@@ -475,8 +359,6 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     setSelected([])
     setExpanded({})
     setPage(1)
-    // 小字那一行也跟着清：上一库的"上次更新于 X"与新库无关
-    setFrame(LIVE_FRAME)
   }, [kbId])
 
   /** 搜文件名逐键触发，但**防抖**：中文输入还会带上拼音中间态。 */
@@ -535,28 +417,6 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     intervalMs: POLL_INTERVAL_MS,
     immediate: false,
   })
-
-  /**
-   * 焦点回到窗口：先让本机确认**当前视图**那一份，再自己拉一次实时（§4.4 的接点）。
-   *
-   * 一次焦点**只确认一份**（当前文档列表那一键；带了搜索/筛选时它没有键，退而确认库详情
-   * ——见 `revalidateTargetOf`）："一个页面三个视图一起炸"正是那一条要避免的。
-   * `revalidate` 是**显式动作**（不是每次挂载都发，也不在这里轮询）；后面那次实时读是
-   * **可见更新**——用户从别的窗口切回来看到的是刚确认过的内容。
-   *
-   * 门控：只有本机档才做（`providerGateApplies`）。服务器档的知识库就是它自己，
-   * 那一档一个字都不改（与 M3 同一条纪律）。
-   */
-  useEffect(() => {
-    const onFocus = () => {
-      if (!providerGateApplies() || !kbId) return
-      void revalidateKbCache(
-        revalidateTargetOf(kbId, buildFilter(), page, DOCUMENT_PAGE_SIZE),
-      ).then(() => refreshAll())
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [buildFilter, kbId, page, refreshAll])
 
   /* ------------------------------------------------------------ 多选 */
 
@@ -947,16 +807,6 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
     if (action === 'sources') void refreshAll()
   }
 
-  /**
-   * 页顶那一行小字（§4.5：在线「上次更新于 X」/ 断连「现在连不上，这是上次看到的内容（X）」）。
-   *
-   * 文档列表那一帧若是"上次看到的"，先说它的时间；否则看**库本身**那一份（标题与权限位
-   * 从库列表来）——只要屏幕上还有一份是上次看到的，就说清楚。断连的判据是**这一页那次
-   * 实时读失败**（`error`）：内容还在（快照那一帧没被清），但必须如实说"现在连不上"。
-   */
-  const snapshotShown: SnapshotFrame = frame.fromSnapshot ? frame : store
-  const note = snapshotNote(snapshotShown, error !== '')
-
   return (
     <div className="page-shell">
       {/* 页头：标题 + **紧贴标题的**设置齿轮。
@@ -971,17 +821,10 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
         ) : null}
       </div>
 
-      {/* 快照那一帧的时间戳：实时结果一落地就收（§4.3-③） */}
-      {note ? <p className="kb-snapshot-line">{note}</p> : null}
-
       {error ? <p className="kb-error-line">{error}</p> : null}
 
-      {/*
-        只读分享那句话**只在权限位确认过的时候说**。快照帧上 `can_write` 一律是假
-        （D-B：那一位是按调用者身份算的，本机那份里根本没有它），照旧说"你是只读权限"
-        就是把"未确认"说成了"确认过"——写入口因此晚一步出现，但**说法不能提前**。
-      */}
-      {knowledgeBase && !knowledgeBase.can_write && !store.fromSnapshot ? (
+      {/* 只读分享：看得到内容但没有写入口（`can_write` 由后端按调用者身份算）。 */}
+      {knowledgeBase && !knowledgeBase.can_write ? (
         <p className="kb-readonly-note">
           这是别人分享给你的库，你是只读权限：可以检索与查看，不能上传或删除。
         </p>
@@ -1987,7 +1830,7 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
   )
 }
 
-/** 清单是否还没拉过（空数组 = 该拉一次）。 */ /* ------------------------------------------------------------------ 进度口径 */
+/* ------------------------------------------------------------------ 进度口径 */
 
 /** 把列表行上的进度折成进度条的分段（与旧 `useProgress.ts` 同一口径）。 */
 function progressSegments(document: DocumentSummary, pulsing: boolean) {

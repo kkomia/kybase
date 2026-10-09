@@ -23,13 +23,6 @@
  *    远端连不上也能进界面"准备的，而本仓库**没有本机档**——服务端就是知识库本身，
  *    `/auth/*` 也在它上面。远端问不出来（`status === null`）时照旧落登录页，
  *    那里会如实报"读不到"，比放一个人进一页什么都做不了的界面清楚。
- *
- * ## 知识库那几条路由仍包一层 `ProviderRoute`
- *
- * 守卫（`features/knowledge/ProviderRoute.tsx`）判的是"**本机档**里提供者接上了没有"：
- * 这一档的 `providerGateApplies()` 为假（知识库就是服务端自己），守卫**一个字都不管**、
- * 直接放行。留着它不是为了现在，而是因为这四条路由的守卫在上游是同一份代码——
- * 少一处分叉，将来真出现"前端在别处、知识库在这台"的形态时行为一致。
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect, useState } from 'react'
@@ -40,7 +33,6 @@ import { ensureAuthStatus, restoreSession } from '@/lib/sessionActions'
 import { hasCredential, sessionToken, useSessionStore } from '@/lib/session'
 import { loadRoster } from '@/lib/operator'
 import { PAGES } from '@/app/routes'
-import { ProviderRoute } from '@/features/knowledge/ProviderRoute'
 import { AppShell } from '@/features/layout'
 
 // 懒加载的**入口函数**都在 `app/routes.ts` 里（侧栏的 hover 预热要用同一批函数，
@@ -228,41 +220,14 @@ export function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/dashboard" element={<Navigate to="/" replace />} />
                 {/*
-                  四条知识库路由包一层守卫（`ProviderRoute`）。这一档里提供者就是服务端
-                  自己，守卫**直接放行**（文件头最后那一段）；深链接照旧可达。
+                  四条知识库路由**直接挂页面**：v0.29 起只有服务器一套，知识库就是服务端
+                  自己，没有"提供者接没接上"这回事——原先那层守卫（`ProviderRoute`）
+                  在这一档是恒放行的摆设，已随本机档一起删掉。深链接照旧可达。
                 */}
-                <Route
-                  path="/knowledge-bases"
-                  element={
-                    <ProviderRoute>
-                      <KnowledgeBasesView />
-                    </ProviderRoute>
-                  }
-                />
-                <Route
-                  path="/kb/:kbId"
-                  element={
-                    <ProviderRoute>
-                      <KnowledgeBaseView />
-                    </ProviderRoute>
-                  }
-                />
-                <Route
-                  path="/kb/:kbId/wiki"
-                  element={
-                    <ProviderRoute>
-                      <WikiView />
-                    </ProviderRoute>
-                  }
-                />
-                <Route
-                  path="/documents/:documentId"
-                  element={
-                    <ProviderRoute>
-                      <DocumentView />
-                    </ProviderRoute>
-                  }
-                />
+                <Route path="/knowledge-bases" element={<KnowledgeBasesView />} />
+                <Route path="/kb/:kbId" element={<KnowledgeBaseView />} />
+                <Route path="/kb/:kbId/wiki" element={<WikiView />} />
+                <Route path="/documents/:documentId" element={<DocumentView />} />
                 {/* 任务中心：流水线任务（摄入 / 解析 / 索引）与运行负载 */}
                 <Route path="/tasks" element={<TasksPage />} />
                 {/* 旧地址保留成重定向，免得旧书签变 404（与上游同一处置） */}

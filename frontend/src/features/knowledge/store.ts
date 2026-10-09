@@ -19,7 +19,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { getKbCacheKnowledgeBases } from '@/api/kbCache'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -30,15 +29,6 @@ import {
 } from '@/api/knowledgeBases'
 import { getRegistry, type RegisteredModel, type Registry } from '@/api/modelRegistry'
 import type { DocStats } from '@/lib/format'
-
-import {
-  LIVE_FRAME,
-  createSnapshotGate,
-  snapshotFrame,
-  snapshotRows,
-  withoutPermissions,
-  type SnapshotFrame,
-} from './snapshot'
 
 /* ---------------------------------------------------------------- 提示 */
 
@@ -72,8 +62,6 @@ interface KnowledgeBaseState {
   summaries: Record<string, DocStats>
   loading: boolean
   error: string
-  /** 这一份清单的来历（§4.3-③：`fromSnapshot` 为真 = 屏幕上这份是「上次看到的内容」）。 */
-  frame: SnapshotFrame
 }
 
 let kbState: KnowledgeBaseState = {
@@ -81,15 +69,10 @@ let kbState: KnowledgeBaseState = {
   summaries: {},
   loading: false,
   error: '',
-  frame: LIVE_FRAME,
 }
 const kbListeners = new Set<() => void>()
 /** 正在飞的那次列表请求：并发调用合并成一次（页面上曾把 `/knowledge-bases` 发三遍）。 */
 let kbInflight: Promise<void> | null = null
-/** 「先画一帧」的闸门（见 `snapshot.ts`）：库列表这一个视图。 */
-let kbGate = createSnapshotGate()
-/** 库列表这一个视图的键（本页自己的记账，不上接口）。 */
-const KB_LIST_VIEW = 'kb_list'
 
 function setKbState(patch: Partial<KnowledgeBaseState>): void {
   kbState = { ...kbState, ...patch }
@@ -105,68 +88,19 @@ function summaryIndex(items: KnowledgeBase[]): Record<string, DocStats> {
   return Object.fromEntries(items.map((kb) => [kb.id, summaryOf(kb)]))
 }
 
-/**
- * 先画一帧：把本机留的那份**库列表**摆上来（M4 阶段 5 / §4.3 的时序规则）。
- *
- * 四条判据按顺序，一条都不能少：
- *
- * 1. **内存里有清单就不画**（可能是刚建的库）：这也是"内存已有 → 跳过"那条规则的原文；
- * 2. `claim` 一并算上"画过 / 已有实时结果 / 正在飞"——不满足就**连请求都不发**；
- * 3. 回来时实时那条线已经赢了 → 丢掉（`stillWanted`）：晚到的旧响应不许盖新结果；
- * 4. 内容与实时读**同形**，只少权限位（`withoutPermissions`）与进度那一类活数据。
- *
- * 失败**静默**：它是顺手快一点的那一下，页面自己那条实时读才是权威，
- * 报错的位置在那一条线上（本机后端没起来不该在知识库页上多一句红字）。
- */
-async function paintKnowledgeBases(): Promise<void> {
-  if (kbState.items.length > 0) return
-  if (!kbGate.claim(KB_LIST_VIEW)) return
-  try {
-    const snapshot = await getKbCacheKnowledgeBases()
-    if (!snapshot?.available || !kbGate.stillWanted(KB_LIST_VIEW)) return
-    if (kbState.items.length > 0) return
-    const items = snapshotRows<KnowledgeBase>(snapshot).map(withoutPermissions)
-    kbGate.settle(KB_LIST_VIEW)
-    // 空的（"一个库都没有"）摆不上任何东西：不写内存也不置帧——一边摆骨架屏一边说
-    // "这是上次看到的内容"是自相矛盾的。等实时那条读自己说。
-    if (items.length === 0) return
-    setKbState({ items, summaries: summaryIndex(items), frame: snapshotFrame(snapshot.fetched_at) })
-  } catch {
-    // 见上：静默（这一条不是报错的位置）
-  } finally {
-    kbGate.release(KB_LIST_VIEW)
-  }
-}
-
-/**
- * 预热：侧栏那一项被划过/聚焦时，先把「上次看到的库列表」取回来
- * （M4 阶段 5；照 12.55 任务中心的预取先例）。
- *
- * 叫一次**不等于**打一次请求：内存已有、或这个视图已经画过/实时到了，它就地返回
- * （判定全在上面那个闸门里）。所以挂在悬停/聚焦上不会把请求放大。
- */
-export function warmKnowledgeBases(): Promise<void> {
-  return paintKnowledgeBases()
-}
-
 async function loadKnowledgeBases(): Promise<void> {
   if (kbInflight) return kbInflight
   setKbState({ loading: true })
-  // 与实时读**并行发起**：这一读打本机回环（个位数毫秒），一分钟都不挡实时那条线
-  void paintKnowledgeBases()
   kbInflight = (async () => {
     try {
       const body = await listKnowledgeBases()
-      // 实时结果到了：这个视图从此刻起不许再被快照盖（§4.3-②），小字那一行也就收了
-      kbGate.live(KB_LIST_VIEW)
       setKbState({
         items: body.items,
         summaries: summaryIndex(body.items),
         error: '',
-        frame: LIVE_FRAME,
       })
     } catch (cause) {
-      // 失败**不清**已经画上的那一帧：内容还在屏幕上，顶上那句「现在连不上…」由它说
+      // 失败**不清**已经拿到的清单：内容还在屏幕上，顶上那句错误由它说
       setKbState({ error: messageOf(cause, '知识库列表加载失败') })
     } finally {
       setKbState({ loading: false })
@@ -209,10 +143,6 @@ export interface KnowledgeBaseStore {
   summaries: Record<string, DocStats>
   loading: boolean
   error: string
-  /** 这一份清单是「上次看到的内容」画的帧（实时结果一到即清，§4.3-②）。 */
-  fromSnapshot: boolean
-  /** 那份内容是什么时候看到的（`fetched_at`）；实时帧为空串。 */
-  snapshotAt: string
   load: () => Promise<void>
   refreshSummaries: () => Promise<void>
   create: (payload: KnowledgeBaseCreate) => Promise<KnowledgeBase>
@@ -228,9 +158,8 @@ export function useKnowledgeBases(): KnowledgeBaseStore {
   useEffect(() => {
     const listener = () => bump((value) => value + 1)
     kbListeners.add(listener)
-    // **挂上订阅之后再对一次表**（与 `api/provider.ts` 同一处理）：清单可能在
-    // "这次渲染"与"挂上订阅"之间被改（比如侧栏悬停预热先画了一帧），而那一瞬间的
-    // 广播没人听见——`useState` + 订阅的经典缺口，订阅后这一次重读把它补上。
+    // **挂上订阅之后再对一次表**：清单可能在"这次渲染"与"挂上订阅"之间被改，
+    // 而那一瞬间的广播没人听见——`useState` + 订阅的经典缺口，订阅后这一次重读把它补上。
     bump((value) => value + 1)
     return () => {
       kbListeners.delete(listener)
@@ -242,8 +171,6 @@ export function useKnowledgeBases(): KnowledgeBaseStore {
     summaries: kbState.summaries,
     loading: kbState.loading,
     error: kbState.error,
-    fromSnapshot: kbState.frame.fromSnapshot,
-    snapshotAt: kbState.frame.snapshotAt,
     load: loadKnowledgeBases,
     refreshSummaries: loadKnowledgeBases,
     create: createKnowledgeBaseInList,
@@ -255,9 +182,8 @@ export function useKnowledgeBases(): KnowledgeBaseStore {
 
 /** 测试用：把模块级缓存清干净（生产代码不该调它）。 */
 export function resetKnowledgeBaseCache(): void {
-  kbState = { items: [], summaries: {}, loading: false, error: '', frame: LIVE_FRAME }
+  kbState = { items: [], summaries: {}, loading: false, error: '' }
   kbInflight = null
-  kbGate = createSnapshotGate()
   for (const listener of kbListeners) listener()
 }
 

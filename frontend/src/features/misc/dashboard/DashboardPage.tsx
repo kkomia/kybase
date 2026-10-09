@@ -13,25 +13,19 @@
  * 都用 `React.lazy`——静态 import 会让驾驶舱首屏必须先下完这个包；异步化之后
  * 数字卡片与骨架先画出来，图表包到了再补上。
  *
- * ## 知识库那几块按提供者状态分流（本机档的判据）
+ * ## 知识库那几块直接画
  *
- * `/stats/dashboard` 数的是**知识库**的文档与任务，而本机档里知识库在**提供者**那台
- * （`backend/app/api/v1/router.py` 的"明确不挂"那一段），这条端点**不挂本机档**——
- * 没接上还硬打它，屏幕上只会是一行 `Not Found` 加一片空白。所以五个大数、活跃度、
- * 构成、知识库规模那几块只在 `kbReady` 时画：还没问出结论时画一个占位（按缺席渲染，
- * 与 `features/knowledge/ProviderRoute.tsx` 同一条口径），问出结论且没接上时换成一块
- * 空态（原因与下一步用后端给的那句 `reason`，这里不另写一句把它盖掉）。
+ * `/stats/dashboard` 数的就是知识库的文档与任务，v0.29 起只有服务器一套（知识库就是
+ * 这台服务自己），这条端点一直在。所以五个大数、活跃度、构成、知识库规模那几块**直接
+ * 请求、直接画**：不再有"提供者在别处、可能没接上"那一档，也就不需要占位与空态分流。
  *
- * **模型用量那一节不受影响**：它走 `/stats/usage`，那是本机挂了的
- * （`local.stats_reads`）——本机的数据不该因为知识库在别处而藏起来。
+ * **模型用量那一节**走 `/stats/usage`，与上面那几块并行取。
  */
 import { DASHBOARD_WINDOW_DAYS, USAGE_WINDOW_DAYS } from '@/features/misc/queryKeys'
 import { lazy, Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 
-import { useLocalBackend } from '@/api/local'
-import { useKnowledgeProviderStatus } from '@/api/provider'
 import type { ActivityPoint } from '@/api/stats'
 import { getDashboard, getUsage } from '@/api/stats'
 import { Button } from '@/ui/button'
@@ -111,24 +105,9 @@ export function DashboardPage() {
   const usageDays = USAGE_WINDOW_DAYS
   const [metric, setMetric] = useState<Metric>('documents')
 
-  /**
-   * 这一档的知识库在不在（见文件头那一段）。
-   *
-   * - 有本机后端（本机档）→ 知识库在**提供者**那台，要握手 `ready` 才算接上；
-   * - 没有本机后端（服务器档）→ 知识库就是它自己，`/local/status` 一有结论就算接上。
-   *
-   * `kbPending` 是"还没问出结论"：那时不画数据块，也不提前判它"没接上"（不猜）。
-   */
-  const local = useLocalBackend()
-  const provider = useKnowledgeProviderStatus()
-  const kbReady = local.present ? provider.ready : local.settled
-  const kbPending = local.present ? !provider.settled : !local.settled
-
   const dashboard = useQuery({
     queryKey: ['stats', 'dashboard', windowDays],
     queryFn: () => getDashboard(windowDays),
-    // 没接上就**一条都不发**：这条端点不挂本机档，打过去只会是 404
-    enabled: kbReady,
   })
   /** 模型用量：与驾驶舱并行取；取不到只是这一块空着。 */
   const usage = useQuery({
@@ -331,116 +310,98 @@ export function DashboardPage() {
 
   return (
     <PageShell title="概览">
-      {/*
-        知识库那几块的三态（判据见组件上面那一小段）：
-        还没问出结论 → 一个占位；问出来且没接上 → 一块空态（原因在后端那句 `reason` 里）；
-        接上了 → 与原来**一字不差**地画全套（含错误路径那条 `ErrorLine`）。
-      */}
-      {kbPending ? (
-        <p data-testid="dashboard-kb-pending" className="text-text-tertiary">
-          正在确认知识库连接…
-        </p>
-      ) : !kbReady ? (
-        <EmptyState
-          title="知识库还没接上"
-          hint={provider.reason || provider.error || '这台机器还没接上知识库'}
-        />
-      ) : (
-        <>
-          {dashboard.isError && <ErrorLine>{messageOf(dashboard.error)}</ErrorLine>}
+      <>
+        {dashboard.isError && <ErrorLine>{messageOf(dashboard.error)}</ErrorLine>}
 
-          {/* 一、结论：六个大数 */}
-          <ul className="m-figures">
-            {figureSlots.map((item) => (
-              <li key={item.label} className={item.wide ? 'm-figure m-figure-wide' : 'm-figure'}>
-                <span className="m-figure-label">{item.label}</span>
-                <span
-                  className={
-                    item.ready
-                      ? 'm-figure-value tabular'
-                      : 'm-figure-value tabular m-figure-pending'
-                  }
-                >
-                  {item.value}
-                </span>
-                {/* 注解是**可选**的：没有异常、没有口径要交代时就不摆这一行
-                （`全部已索引` / `全部在窗口内` 那一批解释小字已删） */}
-                {item.note ? <span className="m-figure-note">{item.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-
-          {/* 二、节奏：点状图 + 趋势 */}
-          <h2 className="m-group-title">活跃度</h2>
-          <div className="panel m-card-block">
-            <div className="m-block-head">
-              <span className="m-block-title">
-                近 {summary?.window_days ?? windowDays} 天入库节奏
+        {/* 一、结论：六个大数 */}
+        <ul className="m-figures">
+          {figureSlots.map((item) => (
+            <li key={item.label} className={item.wide ? 'm-figure m-figure-wide' : 'm-figure'}>
+              <span className="m-figure-label">{item.label}</span>
+              <span
+                className={
+                  item.ready ? 'm-figure-value tabular' : 'm-figure-value tabular m-figure-pending'
+                }
+              >
+                {item.value}
               </span>
-              {/* 图例只留**色阶样本**：样本本身已经把"深=多"说清楚了，再加一句
+              {/* 注解是**可选**的：没有异常、没有口径要交代时就不摆这一行
+                （`全部已索引` / `全部在窗口内` 那一批解释小字已删） */}
+              {item.note ? <span className="m-figure-note">{item.note}</span> : null}
+            </li>
+          ))}
+        </ul>
+
+        {/* 二、节奏：点状图 + 趋势 */}
+        <h2 className="m-group-title">活跃度</h2>
+        <div className="panel m-card-block">
+          <div className="m-block-head">
+            <span className="m-block-title">
+              近 {summary?.window_days ?? windowDays} 天入库节奏
+            </span>
+            {/* 图例只留**色阶样本**：样本本身已经把"深=多"说清楚了，再加一句
               "颜色越深表示当天入库越多"就是替图形说话（2026-09-24 删解释小字）。
               方块与图上的分档同源（HEAT_STEPS）。这里不再带 `m-block-hint`：
               那个类只管文字的字号与颜色，而这一格已经没有字了。 */}
-              <span className="m-heat-legend">
-                <HeatLegend />
-              </span>
-            </div>
-            {summary ? (
-              <ActivityHeatmap activity={summary.activity} maxCell={MAX_CELL} />
-            ) : (
-              <SkeletonBlock variant="card" rows={1} />
-            )}
+            <span className="m-heat-legend">
+              <HeatLegend />
+            </span>
           </div>
+          {summary ? (
+            <ActivityHeatmap activity={summary.activity} maxCell={MAX_CELL} />
+          ) : (
+            <SkeletonBlock variant="card" rows={1} />
+          )}
+        </div>
 
-          {summary && (
-            <div className="panel m-card-block">
-              <div className="m-block-head">
-                <span className="m-block-title">趋势</span>
-                <div className="m-metric-switch">
-                  {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={metric === key ? 'm-metric-tab m-metric-tab-on' : 'm-metric-tab'}
-                      onClick={() => setMetric(key)}
-                    >
-                      {METRIC_LABELS[key]}
-                    </button>
-                  ))}
-                </div>
+        {summary && (
+          <div className="panel m-card-block">
+            <div className="m-block-head">
+              <span className="m-block-title">趋势</span>
+              <div className="m-metric-switch">
+                {(Object.keys(METRIC_LABELS) as Metric[]).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={metric === key ? 'm-metric-tab m-metric-tab-on' : 'm-metric-tab'}
+                    onClick={() => setMetric(key)}
+                  >
+                    {METRIC_LABELS[key]}
+                  </button>
+                ))}
               </div>
-              <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
-                <EChart option={trendOption} height={200} />
-              </Suspense>
             </div>
-          )}
+            <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
+              <EChart option={trendOption} height={200} />
+            </Suspense>
+          </div>
+        )}
 
-          {/* 三、构成 */}
-          {summary && (
-            <>
-              <h2 className="m-group-title">构成</h2>
-              <div className="m-chart-grid">
-                <div className="panel m-card-block">
-                  <div className="m-block-head">
-                    <span className="m-block-title">流水线阶段分布</span>
-                  </div>
-                  <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
-                    <EChart option={stageOption} height={200} />
-                  </Suspense>
+        {/* 三、构成 */}
+        {summary && (
+          <>
+            <h2 className="m-group-title">构成</h2>
+            <div className="m-chart-grid">
+              <div className="panel m-card-block">
+                <div className="m-block-head">
+                  <span className="m-block-title">流水线阶段分布</span>
                 </div>
-                <div className="panel m-card-block">
-                  <div className="m-block-head">
-                    <span className="m-block-title">文件类型</span>
-                  </div>
-                  <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
-                    <EChart option={suffixOption} height={200} />
-                  </Suspense>
-                </div>
+                <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
+                  <EChart option={stageOption} height={200} />
+                </Suspense>
               </div>
-            </>
-          )}
-        </>
-      )}
+              <div className="panel m-card-block">
+                <div className="m-block-head">
+                  <span className="m-block-title">文件类型</span>
+                </div>
+                <Suspense fallback={<SkeletonBlock variant="card" rows={1} />}>
+                  <EChart option={suffixOption} height={200} />
+                </Suspense>
+              </div>
+            </div>
+          </>
+        )}
+      </>
 
       {/* 三、模型用量。**刻意不算钱**：单价随供应商/版本/缓存/折扣不断变，
           内置价目表必然过期，而过期的价钱比不给更糟——用户会照着它做决定。
@@ -490,62 +451,61 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* 四、各库规模（与上面那几块同一档：没接上时整块不画） */}
-      {kbReady &&
-        (summary ? (
-          <>
-            <h2 className="m-group-title">知识库规模</h2>
-            {!hasAnyDocument ? (
-              <EmptyState
-                title="还没有文档"
-                hint="到「知识库」页建一个库并上传文档，这里会出现规模与活跃度统计。"
-              >
-                <Button asChild>
-                  <Link to="/knowledge-bases">去知识库</Link>
-                </Button>
-              </EmptyState>
-            ) : (
-              <div className="panel">
-                <div className="panel-head m-list-head" aria-hidden="true">
-                  <span className="m-col-name">知识库</span>
-                  <span className="m-col-num">文档</span>
-                  <span className="m-col-num">切块</span>
-                  <span className="m-col-time">最近活动</span>
-                </div>
-                <ul className="m-list">
-                  {summary.knowledge_bases.map((kb) => (
-                    <li key={kb.id} className="m-list-item">
-                      <Link className="m-kb-link" to={`/kb/${kb.id}`}>
-                        <span className="m-col-name">
-                          <span className="m-kb-name">{kb.name}</span>
-                          {/* 模型 id 与库名之间**必须有缝**：`.m-col-name` 是纯 flex:1 容器，
+      {/* 四、各库规模 */}
+      {summary ? (
+        <>
+          <h2 className="m-group-title">知识库规模</h2>
+          {!hasAnyDocument ? (
+            <EmptyState
+              title="还没有文档"
+              hint="到「知识库」页建一个库并上传文档，这里会出现规模与活跃度统计。"
+            >
+              <Button asChild>
+                <Link to="/knowledge-bases">去知识库</Link>
+              </Button>
+            </EmptyState>
+          ) : (
+            <div className="panel">
+              <div className="panel-head m-list-head" aria-hidden="true">
+                <span className="m-col-name">知识库</span>
+                <span className="m-col-num">文档</span>
+                <span className="m-col-num">切块</span>
+                <span className="m-col-time">最近活动</span>
+              </div>
+              <ul className="m-list">
+                {summary.knowledge_bases.map((kb) => (
+                  <li key={kb.id} className="m-list-item">
+                    <Link className="m-kb-link" to={`/kb/${kb.id}`}>
+                      <span className="m-col-name">
+                        <span className="m-kb-name">{kb.name}</span>
+                        {/* 模型 id 与库名之间**必须有缝**：`.m-col-name` 是纯 flex:1 容器，
                             两个 span 当行内元素排会贴在一起（`城市建成环境研究现状BAAI/bge-m3`
                             ——2026-09-24 用户截图圈的就是这处排版缺陷）。缝写在调用点：
                             工具类压 `@layer components` 里的 `.m-kb-model`，不会打架 */}
-                          <span className="m-kb-model ml-[var(--space-2)]">
-                            {kb.embedding_model_id}
-                          </span>
+                        <span className="m-kb-model ml-[var(--space-2)]">
+                          {kb.embedding_model_id}
                         </span>
-                        <span className="m-col-num tabular">{formatCount(kb.documents)}</span>
-                        <span className="m-col-num tabular">{formatCount(kb.chunks)}</span>
-                        <span className="m-col-time">
-                          {kb.last_activity ? (
-                            <span className="tabular">{formatRelativeTime(kb.last_activity)}</span>
-                          ) : (
-                            <StatusTag tone="neutral" label="还没有文档" />
-                          )}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        ) : (
-          // 驾驶舱数据还没到：这一块先给骨架，标题已经在上面了
-          <SkeletonBlock variant="list" rows={3} />
-        ))}
+                      </span>
+                      <span className="m-col-num tabular">{formatCount(kb.documents)}</span>
+                      <span className="m-col-num tabular">{formatCount(kb.chunks)}</span>
+                      <span className="m-col-time">
+                        {kb.last_activity ? (
+                          <span className="tabular">{formatRelativeTime(kb.last_activity)}</span>
+                        ) : (
+                          <StatusTag tone="neutral" label="还没有文档" />
+                        )}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      ) : (
+        // 驾驶舱数据还没到：这一块先给骨架，标题已经在上面了
+        <SkeletonBlock variant="list" rows={3} />
+      )}
     </PageShell>
   )
 }

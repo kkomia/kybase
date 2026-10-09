@@ -9,7 +9,7 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
@@ -23,69 +23,15 @@ vi.mock('@/api/knowledgeBases', () => ({
   })),
 }))
 
-vi.mock('@/api/schedules', () => ({
-  listScheduledTasks: vi.fn(),
-  createScheduledTask: vi.fn(),
-  updateScheduledTask: vi.fn(),
-  deleteScheduledTask: vi.fn(),
-  runScheduledTaskNow: vi.fn(),
-}))
-
-// 「有没有本机后端」那条判据（`api/local.ts`）在本文件里**逐档摆答案**：
-// 任务中心的「定时任务」分段只看它（`useLocalBackend`）。探那一趟不出网络——
-// 默认替身会把 `/local/status` 记成"漏出替身的请求"，而且那不是这一份要验的东西。
-vi.mock('@/api/local', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/local')>()),
-  getLocalStatus: vi.fn(),
-}))
-
-import {
-  listScheduledTasks,
-  runScheduledTaskNow,
-  updateScheduledTask,
-  type ScheduledTask,
-} from '@/api/schedules'
-import { getLocalStatus, resetLocalBackendForTest, setLocalBackendForTest } from '@/api/local'
-import { resetProviderStore, setProviderStatusForTest, type ProviderStatus } from '@/api/provider'
 import { cancelTasks, getTaskLoad, listTasks, type SystemLoad, type TaskSummary } from '@/api/tasks'
 import { renderMisc } from '@/features/misc/testing/harness'
 import { resetToasts } from '@/features/misc/shared/toast'
 import { TasksPage, tasksRefetchInterval } from '@/features/misc/tasks/TasksPage'
 import { useSessionStore } from '@/lib/session'
 
-/** 提供者握手成功的结论（这一页的「流水线任务」那一半按 `provider.ready` 分流）。 */
-const KB_READY: ProviderStatus = { state: 'ready', available: true }
-
 const listTasksMock = vi.mocked(listTasks)
 const getTaskLoadMock = vi.mocked(getTaskLoad)
 const cancelTasksMock = vi.mocked(cancelTasks)
-const listSchedulesMock = vi.mocked(listScheduledTasks)
-const runScheduleNowMock = vi.mocked(runScheduledTaskNow)
-const updateScheduleMock = vi.mocked(updateScheduledTask)
-const localStatusMock = vi.mocked(getLocalStatus)
-
-function schedule(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
-  return {
-    id: 'sch-1',
-    name: '每日早报',
-    prompt: '把昨天的构建日志汇总成三条结论',
-    kind: 'cron',
-    cron: '0 9 * * *',
-    run_at: null,
-    next_run_at: '2026-09-24T01:00:00Z',
-    enabled: true,
-    kb_ids: [],
-    conversation_id: 'conv-1',
-    last_run_at: '2026-09-23T01:00:00Z',
-    last_status: 'ok',
-    last_error: '',
-    run_count: 3,
-    schedule_text: '每天 09:00',
-    created_at: null,
-    updated_at: null,
-    ...overrides,
-  }
-}
 
 function task(overrides: Partial<TaskSummary> = {}): TaskSummary {
   return {
@@ -160,70 +106,16 @@ function glyphOf(panel: HTMLElement, name: string): HTMLElement {
   return within(panel).getByRole('img', { name })
 }
 
-/**
- * 页签当前态的抓手。
- *
- * 上一轮这里钉的是那对**垫 span**（`data-slot="segment-current"` / `segment-label"`）：
- * 当时 `tokens.css` 的元素重置没进 `@layer`，压掉了原语自带的
- * `data-[state=active]:bg-surface` / `px-3` / `font-medium`，只能把底与字手写进 span。
- * 根因修掉之后垫层退回原语，于是这里改钉**原语自己的钩子**：
- *
- * - 两个触发的类名**逐字相同**（差别只在 Radix 给的 `data-state`）——当前态不再靠
- *   "给当前项多加几个类"实现，谁再手写一套就会在这里挂掉；
- * - 白底、字色、框内距都在原语的类里（评审 T1 的病正是这几条被吃掉）。
- *
- * jsdom 不算样式（`vite.config.ts` 里 `test.css: false`），"当前项真的白底"由真浏览器
- * 取证：`.shots/batch2/11-tasks.png`，以及第六批那份探针里逐页签读到的计算样式
- * （当前档 `background-color: rgb(255, 255, 255)` + 墨色 500 字重 + `padding-left: 12px`，
- * 另一档透明 + 次级灰；`.shots/batch6/probe-misc/after-summary.json` 的 `tabs` 一节）。
- * 这里守的是"别再手写一遍"。
- */
-function tabShape(trigger: HTMLElement) {
-  const cls = trigger.className
-  return {
-    activeStyles:
-      cls.includes('data-[state=active]:bg-surface') &&
-      cls.includes('data-[state=active]:text-text-primary'),
-    padded: cls.includes('px-3'),
-    // 垫层已退回原语：触发按钮里不再有那个绝对定位的 span
-    patched: trigger.querySelector('[data-slot="segment-current"]') !== null,
-  }
-}
-
-/**
- * 这一份用例的网络记账器（断言"那一条没发"时看它）。
- *
- * 用**直接赋值**而不是 `vi.stubGlobal`：`tests/setup.ts` 那层默认替身靠同一种写法，
- * 而 `vi.unstubAllGlobals()` 会把那份文件装上的 jsdom 兜底一起撤掉
- * （`tests/local-backend-gate.test.tsx` 里记着那条教训）。
- */
-const fetchedUrls: string[] = []
-
 beforeEach(() => {
   vi.clearAllMocks()
   resetToasts()
-  fetchedUrls.length = 0
+  // 真网络一律挡住：漏出去的请求会被记成一条带 URL 的失败
   globalThis.fetch = (async (url: string) => {
-    fetchedUrls.push(String(url))
-    throw new TypeError('这一份用例不发真请求')
+    throw new TypeError(`这一份用例不发真请求：${String(url)}`)
   }) as unknown as typeof fetch
   useSessionStore.setState({ token: '', currentUser: null, authStatus: null, reloginCount: 0 })
   listTasksMock.mockResolvedValue({ items: [task()] })
   getTaskLoadMock.mockRejectedValue(new Error('403'))
-  listSchedulesMock.mockResolvedValue({ items: [schedule()], timezone: 'CST UTC+08:00' })
-  // 判据的默认档：**有本机后端**（桌面壳那一份）——这一份的大部分用例验的是那一档的形状。
-  // 要摆"没有本机后端"的那两条用例自己再摆一次（`setLocalBackendForTest('absent')`）
-  localStatusMock.mockRejectedValue(new Error('这一份用例不探本机后端'))
-  setLocalBackendForTest('local')
-  // 知识库那一条同理：默认摆成**握手成功**（要摆"没接上"的用例自己再摆一次）
-  setProviderStatusForTest(KB_READY)
-})
-
-afterEach(() => {
-  // 模块级单份状态（`api/local.ts` 与 `api/provider.ts` 各有一份）必须由调用方复位，
-  // 否则会串到下一条用例
-  resetLocalBackendForTest()
-  resetProviderStore()
 })
 
 describe('任务中心', () => {
@@ -444,26 +336,6 @@ describe('任务中心', () => {
     expect(screen.getByText('执行中.pdf')).toBeInTheDocument()
   })
 
-  it('页签就是原语本身：当前态由 @/ui/tabs 自带的类画出来，不再垫 span（评审 T1）', async () => {
-    renderMisc(<TasksPage />)
-    const pipeline = await screen.findByRole('tab', { name: '流水线任务' })
-    const schedules = screen.getByRole('tab', { name: '定时任务' })
-
-    // 语义态仍由 Radix 给（T1 只缺视觉，这一条不许改坏）
-    expect(pipeline).toHaveAttribute('aria-selected', 'true')
-    expect(schedules).toHaveAttribute('aria-selected', 'false')
-    // 两个触发**同一个形状**：类名逐字相同，当前态由 `data-state` + 原语的类决定
-    expect(pipeline.className).toBe(schedules.className)
-    expect(tabShape(pipeline)).toEqual({ activeStyles: true, padded: true, patched: false })
-    expect(tabShape(schedules)).toEqual({ activeStyles: true, padded: true, patched: false })
-
-    // 切过去之后当前态跟着走（同一个钩子，不另写一套）
-    await userEvent.click(schedules)
-    expect(schedules).toHaveAttribute('aria-selected', 'true')
-    expect(pipeline).toHaveAttribute('aria-selected', 'false')
-    expect(tabShape(schedules).patched).toBe(false)
-  })
-
   it('点开详情用 pre 显示失败原文（可选中复制，而不是 title 属性）', async () => {
     listTasksMock.mockResolvedValue({
       items: [
@@ -652,128 +524,5 @@ describe('任务中心', () => {
     })
     // 本进程那格拿不到 RSS：一样是"—"，名字里也不带读数
     expect(glyphOf(panel, '本进程常驻内存占机器内存')).toHaveTextContent('—')
-  })
-})
-
-describe('定时任务分段', () => {
-  it('显示服务器时区、上一轮结论与下次时间（"下次几点"只能靠它，猜错的代价是它在你睡觉时跑）', async () => {
-    renderMisc(<TasksPage />)
-    // 分段控件已经是 @/ui/tabs（Radix）：role=tab 由库给，键盘左右键也能切
-    const tab = await screen.findByRole('tab', { name: '定时任务' })
-    expect(tab).toHaveAttribute('data-slot', 'tabs-trigger')
-    await userEvent.click(tab)
-
-    expect(await screen.findByText('每日早报')).toBeInTheDocument()
-    expect(screen.getByText(/时间按服务器时区（CST UTC\+08:00）计算/)).toBeInTheDocument()
-    expect(screen.getByText('每天 09:00')).toBeInTheDocument()
-    expect(screen.getByText(/上次跑成了（/)).toBeInTheDocument()
-    expect(screen.getByText(/下次 2026-09-24/)).toBeInTheDocument()
-    expect(screen.getByText('跑过 3 次')).toBeInTheDocument()
-  })
-
-  it('「立即跑一次」只入队（不动调度字段），「停用」改的是 enabled', async () => {
-    runScheduleNowMock.mockResolvedValue({ task_id: 't1', detail: '已入队' })
-    listSchedulesMock
-      .mockResolvedValueOnce({ items: [schedule()], timezone: 'CST UTC+08:00' })
-      .mockResolvedValue({ items: [schedule({ enabled: false })], timezone: 'CST UTC+08:00' })
-    updateScheduleMock.mockResolvedValue(schedule({ enabled: false }))
-
-    renderMisc(<TasksPage />)
-    await userEvent.click(await screen.findByRole('tab', { name: '定时任务' }))
-
-    await userEvent.click(await screen.findByRole('button', { name: '立即跑一次' }))
-    await waitFor(() => expect(runScheduleNowMock).toHaveBeenCalledWith('sch-1'))
-    // 只是入队：调度字段一个字都没改
-    expect(updateScheduleMock).not.toHaveBeenCalled()
-
-    await userEvent.click(screen.getByRole('button', { name: '停用' }))
-    await waitFor(() =>
-      expect(updateScheduleMock).toHaveBeenCalledWith('sch-1', { enabled: false }),
-    )
-  })
-})
-
-/*
- * 「定时任务」那一章的显隐（2026-10-05，NAS 网页端退役）。
- *
- * 那一族端点（`/scheduled-tasks`）只挂在本机档上，服务器档没有它——所以判据不是
- * "这一页在不在"（任务中心两档都在），而是"这一页**里面**有没有这一段"。
- * 判据与侧栏 / 路由表是同一个（`api/local.ts`），这里按两档各摆一次答案。
- */
-describe('定时任务分段的显隐（按"有没有本机后端"）', () => {
-  it('没有本机后端：那一段不在，留下的是知识库那一半', async () => {
-    setLocalBackendForTest('absent')
-    renderMisc(<TasksPage />)
-
-    // 列表照样渲染（这一页在这一档仍然在，只是少了定时任务那一段）
-    expect(
-      await screen.findByRole('button', { name: /查看任务详情：解析 手册\.pdf/ }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '流水线任务' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: '定时任务' })).not.toBeInTheDocument()
-    // 那一段自己那条读也一次都不发（它只由 SchedulePanel 发，而面板没渲染）
-    expect(listSchedulesMock).not.toHaveBeenCalled()
-  })
-
-  it('有本机后端：两个分段都在（桌面壳那一档一个字没改）', async () => {
-    setLocalBackendForTest('local')
-    renderMisc(<TasksPage />)
-
-    expect(await screen.findByRole('tab', { name: '定时任务' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '流水线任务' })).toBeInTheDocument()
-  })
-})
-
-/*
- * 「流水线任务」那一半的知识库分流（见 `TasksPage.tsx` 的文件头）。
- *
- * `/tasks` 与 `/tasks/load` 数的都是知识库那边的家当（本机档**不挂**它们，
- * `backend/app/api/v1/router.py` 的"明确不挂"那一段），没接上时发过去只会是一行 `Not Found`。
- * 判据与概览页同一套（`kbReady` / `kbPending`，两边各写一处、口径相同）。**「定时任务」
- * 那一段不受它管**：那一族的数据在本机，显隐仍旧只看"有没有本机后端"——第一条用例专门核这一点。
- */
-describe('流水线任务：知识库接没接上的分流', () => {
-  const KB_UNCONFIGURED: ProviderStatus = {
-    state: 'unconfigured',
-    available: false,
-    reason: '还没配知识库提供者的地址（到「设置 → 知识库连接」里填一下，或问管理员要）',
-  }
-
-  it('本机档 + 提供者没接上：两个查询都不发、内容区换成空态，「定时任务」那一段照旧在', async () => {
-    // 管理员视角：这样"负载也不发"就只可能是 kbReady 这一条判据挡下来的（而不是非管理员）
-    asAdmin()
-    setProviderStatusForTest(KB_UNCONFIGURED)
-    renderMisc(<TasksPage />)
-
-    expect(await screen.findByText('知识库还没接上')).toBeInTheDocument()
-    expect(screen.getByText(KB_UNCONFIGURED.reason as string)).toBeInTheDocument()
-    expect(listTasksMock).not.toHaveBeenCalled()
-    expect(getTaskLoadMock).not.toHaveBeenCalled()
-    expect(fetchedUrls.filter((url) => url.includes('/api/v1/tasks'))).toEqual([])
-    // 列表那一块一件都不画（也没有"加载失败"那条错误行）
-    expect(screen.queryByText('还没有任务')).toBeNull()
-    expect(document.querySelector('.m-error-line')).toBeNull()
-    // 「定时任务」那一段的判据**一个字没改**：有本机后端 ⇒ 还在
-    expect(screen.getByRole('tab', { name: '定时任务' })).toBeInTheDocument()
-  })
-
-  it('本机档 + 提供者 ready：列表照旧（那一条被请求到）', async () => {
-    renderMisc(<TasksPage />)
-
-    expect(
-      await screen.findByRole('button', { name: /查看任务详情：解析 手册\.pdf/ }),
-    ).toBeInTheDocument()
-    expect(listTasksMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('还没问出提供者结论：只画占位，不画列表、也不提前发请求（不猜）', async () => {
-    setProviderStatusForTest(null)
-    renderMisc(<TasksPage />)
-
-    expect(screen.getByTestId('tasks-kb-pending')).toBeInTheDocument()
-    expect(screen.queryByText('还没有任务')).toBeNull()
-    // 还没结论 ≠ 没接上：空态那句不许提前出现
-    expect(screen.queryByText('知识库还没接上')).toBeNull()
-    expect(listTasksMock).not.toHaveBeenCalled()
   })
 })

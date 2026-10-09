@@ -20,8 +20,6 @@ import {
   chunkOverlapMax,
   SUGGESTED_COUNT_DEFAULT,
 } from '@/api/knowledgeBases'
-import { revalidateKbCache } from '@/api/kbCache'
-import { useKnowledgeProviderStatus, providerGateApplies } from '@/api/provider'
 import { EmptyState, InfoTip, SkeletonRows } from '@/features/knowledge/composites'
 import { chunkingErrorOf, numberOr, parseIntOrNull } from '@/features/knowledge/chunking'
 import {
@@ -32,7 +30,6 @@ import {
 } from '@/features/knowledge/ingestTrend'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { RangeField } from '@/features/knowledge/RangeField'
-import { snapshotNote } from '@/features/knowledge/snapshot'
 import { Sparkline } from '@/features/knowledge/Sparkline'
 import {
   SuggestedQuestionsFields,
@@ -96,10 +93,6 @@ function trendTitleOf(trend: IngestTrend | undefined): string | undefined {
 export function KnowledgeBasesView() {
   const store = useKnowledgeBases()
   const registry = useModelRegistry()
-  /** 提供者的能力集（M3 阶段 6）：建库按 `capabilities.embedding.configured` 决定可用。 */
-  const provider = useKnowledgeProviderStatus()
-  /** 取出来单放：它是模块级那个函数，引用稳定——焦点那个 effect 不必每次渲染重挂监听。 */
-  const refreshSummaries = store.refreshSummaries
 
   const [createOpen, setCreateOpen] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -112,33 +105,12 @@ export function KnowledgeBasesView() {
 
   useEffect(() => {
     // 计数随列表一起回来，不必再单独拉一轮汇总。
-    // **`store.load()` 里先画一帧**（M4 阶段 5）：本机留的那份库列表与这次实时读
-    // 并行发起，内存里已经有清单时**连请求都不发**（判定在 store 那个闸门里）
     void store.load()
     // 提前把注册表拉回来：这样"没有可用嵌入模型"能在点开弹窗**之前**就显示在页头上
     void registry.load()
     // 只做首屏这两次加载
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  /**
-   * 焦点回到窗口：先让本机确认一份，再自己拉一次实时（§4.4 的接点）。
-   *
-   * 两件事分工不同：`revalidate` 是**显式动作**（不是每次挂载都发，也不在这里轮询），
-   * 去的是本机后端，它顺手把本机那一份更新掉（下次冷启动更快）；后面那次实时读是
-   * **可见更新**——用户从别的窗口切回来，看到的是刚确认过的内容。
-   *
-   * 门控：只有本机档才做（`providerGateApplies`）。服务器档的知识库就是它自己，
-   * 那一档一个字都不改（与 M3 同一条纪律）。同一份的单飞与最短间隔在本机后端那边。
-   */
-  useEffect(() => {
-    const onFocus = () => {
-      if (!providerGateApplies()) return
-      void revalidateKbCache({ resource: 'kb_list' }).then(() => refreshSummaries())
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [refreshSummaries])
 
   const embeddingModels = registry.embeddingModels
   const defaultModel = embeddingModels.find((model) => model.id === registry.defaultEmbeddingPk)
@@ -156,16 +128,7 @@ export function KnowledgeBasesView() {
 
   /** 没有任何可用的嵌入模型：建库入口整体挡掉。**加载完成前不算"没有"**——那是闪一下的误报。 */
   const noEmbeddingModel = registry.modelOptionsLoaded && embeddingModels.length === 0
-  /**
-   * 提供者那一侧的嵌入能力（M3 阶段 6）：`configured=false` 时**建库入口也挡掉**。
-   *
-   * 与上面那条不是同一件事：注册表说的是"这台机器上登记了哪些模型"，
-   * 而 `capabilities.embedding.configured` 说的是"**提供者现在真的配好了向量化**"
-   * （服务器档没这一位时为 `undefined`，那就只按注册表判，不凭空拦人）。
-   * 两条任一为真都挡：能建库但检不出向量，用户拿到的是一个查不到东西的库。
-   */
-  const providerEmbeddingOff = provider.capabilities?.embedding?.configured === false
-  const createBlocked = noEmbeddingModel || providerEmbeddingOff
+  const createBlocked = noEmbeddingModel
   /** 有模型但没选默认：必须明确挑一个（没有"不指定"这条路了）。 */
   const mustPickModel = !defaultModel && embeddingModels.length > 0
 
@@ -245,14 +208,6 @@ export function KnowledgeBasesView() {
     return name.trim().slice(0, 1).toUpperCase()
   }
 
-  /**
-   * 页顶那一行小字（M4 阶段 5 / §4.5）。
-   *
-   * 断连的判据是**这一次实时读失败**（`store.error`）：内容还在屏幕上（是上次看到的那份），
-   * 所以要说清"现在连不上"，而不是让用户以为这是刚取回来的。
-   */
-  const note = snapshotNote(store, store.error !== '')
-
   return (
     <div className="page-shell">
       <div className="kb-head-actions">
@@ -263,22 +218,13 @@ export function KnowledgeBasesView() {
         </Button>
       </div>
 
-      {/* 建不了库时**页面级**就说清原因：等用户填完名字再报错，白填一遍。
-          两条原因分开说——**下一步动作不一样**（一条去登记模型，一条去配向量化）。 */}
-      {providerEmbeddingOff ? (
-        <p className="kb-blocked-note">
-          提供者那侧的向量化还没配好（`capabilities.embedding.configured` 为假），暂时无法新建
-          知识库。请在 NAS 上把嵌入模型配好，再回来。
-        </p>
-      ) : noEmbeddingModel ? (
+      {/* 建不了库时**页面级**就说清原因：等用户填完名字再报错，白填一遍。 */}
+      {noEmbeddingModel ? (
         <p className="kb-blocked-note">
           还没有可用的嵌入模型，暂时无法新建知识库。请到「设置 → 模型注册」添加供应商并登记
           向量化模型，再到「设置 → 向量化」把它选为默认。
         </p>
       ) : null}
-
-      {/* 快照那一帧的时间戳（在线"上次更新于 X" / 断连"现在连不上…"）：实时结果一落地就收 */}
-      {note ? <p className="kb-snapshot-line">{note}</p> : null}
 
       {store.error ? <p className="kb-error-line">{store.error}</p> : null}
 
@@ -426,9 +372,8 @@ export function KnowledgeBasesView() {
                 </span>
                 {createBlocked ? (
                   <p className="text-note">
-                    {providerEmbeddingOff
-                      ? '提供者那侧的向量化还没配好，无法建库。请先在 NAS 上把嵌入模型配好。'
-                      : '还没有可用的嵌入模型，无法建库。请先到「设置 → 模型注册」添加供应商并登记向量化模型，再到「设置 → 向量化」把它选为默认。'}
+                    还没有可用的嵌入模型，无法建库。请先到「设置 →
+                    模型注册」添加供应商并登记向量化模型，再到「设置 → 向量化」把它选为默认。
                   </p>
                 ) : (
                   <Select

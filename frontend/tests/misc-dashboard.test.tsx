@@ -11,19 +11,11 @@
  */
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/stats', () => ({
   getDashboard: vi.fn(),
   getUsage: vi.fn(),
-}))
-
-// 「有没有本机后端」这条判据在本文件里**逐档摆答案**（概览页那一半按它 + 提供者状态分流，
-// 见 `DashboardPage.tsx` 的文件头）。探那一趟不出网络：默认替身会把 `/local/status`
-// 记成"漏出替身的请求"，而那不是这一份要验的东西（写法与 `tests/misc-tasks.test.tsx` 相同）。
-vi.mock('@/api/local', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/local')>()),
-  getLocalStatus: vi.fn(),
 }))
 
 vi.mock('@/features/misc/dashboard/EChart', () => ({
@@ -42,8 +34,6 @@ vi.mock('@/features/misc/dashboard/EChart', () => ({
   },
 }))
 
-import { getLocalStatus, resetLocalBackendForTest, setLocalBackendForTest } from '@/api/local'
-import { resetProviderStore, setProviderStatusForTest, type ProviderStatus } from '@/api/provider'
 import { getDashboard, getUsage, type Dashboard } from '@/api/stats'
 import {
   checkableTrend,
@@ -54,27 +44,8 @@ import { HEAT_STEPS } from '@/features/misc/dashboard/ActivityHeatmap'
 import { renderMisc } from '@/features/misc/testing/harness'
 import { resetToasts } from '@/features/misc/shared/toast'
 
-/** 提供者握手成功的结论（这一页的头几块按 `provider.ready` 决定画不画）。 */
-const KB_READY: ProviderStatus = { state: 'ready', available: true }
-
-/** 没接上那一档：`reason` 是空态里那句提示词的原话（由后端给，前端照抄不另写）。 */
-const KB_UNCONFIGURED: ProviderStatus = {
-  state: 'unconfigured',
-  available: false,
-  reason: '还没配知识库提供者的地址（到「设置 → 知识库连接」里填一下，或问管理员要）',
-}
-
 const getDashboardMock = vi.mocked(getDashboard)
 const getUsageMock = vi.mocked(getUsage)
-const localStatusMock = vi.mocked(getLocalStatus)
-
-/**
- * 这一份用例的网络记账器（断言"那一条没发"时看它）。
- *
- * 用**直接赋值**而不是 `vi.stubGlobal`，理由与 `tests/misc-tasks.test.tsx` 里那一份逐字相同
- * （`vi.unstubAllGlobals()` 会把 `tests/setup.ts` 装上的 jsdom 兜底一起撤掉）。
- */
-const fetchedUrls: string[] = []
 
 function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
   return {
@@ -114,16 +85,9 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
 beforeEach(() => {
   vi.clearAllMocks()
   resetToasts()
-  fetchedUrls.length = 0
   globalThis.fetch = (async (url: string) => {
-    fetchedUrls.push(String(url))
-    throw new TypeError('这一份用例不发真请求')
+    throw new TypeError(`这一份用例不发真请求：${String(url)}`)
   }) as unknown as typeof fetch
-  // 判据的默认档：**本机后端在 + 提供者握手成功**——这一份的大部分用例验的就是这一档的
-  // 形状（头几块照旧全套画出来）。要摆别的档的用例自己再摆一次
-  localStatusMock.mockRejectedValue(new Error('这一份用例不探本机后端'))
-  setLocalBackendForTest('local')
-  setProviderStatusForTest(KB_READY)
   getDashboardMock.mockResolvedValue(dashboard())
   getUsageMock.mockResolvedValue({
     days: 30,
@@ -164,13 +128,6 @@ beforeEach(() => {
     unreported_calls: 0,
     estimated_tokens: 5000,
   } as never)
-})
-
-afterEach(() => {
-  // 模块级单份状态（`api/local.ts` 与 `api/provider.ts` 各有一份）必须由调用方复位，
-  // 否则会串到下一条用例（表现是"档位时有时无"）
-  resetLocalBackendForTest()
-  resetProviderStore()
 })
 
 describe('驾驶舱', () => {
@@ -335,44 +292,7 @@ describe('驾驶舱', () => {
     expect(daily.labels).toHaveLength(10)
     expect(daily.values).toEqual(Array.from({ length: 10 }, () => 2))
   })
-})
-
-/*
- * 知识库没接上时的分流（2026-10-05）。
- *
- * `/stats/dashboard` 数的正是知识库的家当，而本机档里知识库在**提供者**那台——
- * 这条端点不挂本机档（`backend/app/api/v1/router.py` 的"明确不挂"那一段），没接上时
- * 打过去只会是一行 `Not Found` 加一片空白。所以这一页按提供者状态分三态，而且
- * **没接上时一条请求都不发**（下面前两条用 api 替身 + fetch 记账器一起核）。
- *
- * 「模型用量」那一节不受它管：它走本机的 `/stats/usage`（`local.stats_reads`）。
- */
-describe('概览：知识库接没接上的分流', () => {
-  it('本机档 + 提供者没接上：不发 dashboard 那条，画空态（用后端给的原因），模型用量照旧', async () => {
-    setProviderStatusForTest(KB_UNCONFIGURED)
-    renderMisc(<DashboardPage />)
-
-    // 空态：标题 + 后端那句原因（前端不另写一句把它盖掉）
-    expect(await screen.findByText('知识库还没接上')).toBeInTheDocument()
-    expect(screen.getByText(KB_UNCONFIGURED.reason as string)).toBeInTheDocument()
-
-    // 那一条请求**一条都没发**
-    expect(getDashboardMock).not.toHaveBeenCalled()
-    expect(fetchedUrls.filter((url) => url.includes('/stats/dashboard'))).toEqual([])
-    // 五个大数、活跃度、构成、知识库规模都不画
-    expect(document.querySelector('.m-figures')).toBeNull()
-    expect(screen.queryByText('活跃度')).toBeNull()
-    expect(screen.queryByText('构成')).toBeNull()
-    expect(screen.queryByText('知识库规模')).toBeNull()
-    // 没接上不是"加载失败"：那条错误行不许出现
-    expect(document.querySelector('.m-error-line')).toBeNull()
-
-    // 模型用量照旧（数据在本机，与知识库接没接上无关）
-    expect(getUsageMock).toHaveBeenCalled()
-    expect(await screen.findByText('调用次数')).toBeInTheDocument()
-  })
-
-  it('本机档 + 提供者 ready：五个大数与图表照旧（dashboard 那条被请求到）', async () => {
+  it('五个大数与三块图一次画齐（dashboard 那条一直会发）', async () => {
     renderMisc(<DashboardPage />)
 
     expect(await screen.findByText('产品手册')).toBeInTheDocument()
@@ -383,18 +303,5 @@ describe('概览：知识库接没接上的分流', () => {
     expect(screen.getByText('构成')).toBeInTheDocument()
     expect(screen.getByText('知识库规模')).toBeInTheDocument()
     expect(await screen.findByTestId('chart-line')).toBeInTheDocument()
-  })
-
-  it('还没问出提供者结论：只画占位，不画大数、也不提前把请求发出去（不猜）', async () => {
-    setProviderStatusForTest(null)
-    renderMisc(<DashboardPage />)
-
-    expect(screen.getByTestId('dashboard-kb-pending')).toBeInTheDocument()
-    expect(document.querySelector('.m-figures')).toBeNull()
-    // 还没结论 ≠ 没接上：空态那句不许提前出现
-    expect(screen.queryByText('知识库还没接上')).toBeNull()
-    expect(getDashboardMock).not.toHaveBeenCalled()
-    // 占位期间用量那一条照旧发（本机的数据，不等提供者）
-    expect(getUsageMock).toHaveBeenCalled()
   })
 })

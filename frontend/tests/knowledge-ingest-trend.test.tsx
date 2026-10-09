@@ -43,12 +43,6 @@ vi.mock('@/api/modelRegistry', async (importOriginal) => ({
   getRegistry: vi.fn(),
 }))
 
-// 本机留的那一份（M4 阶段 5）：默认不回答 = 没有副本。
-vi.mock('@/api/kbCache', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/kbCache')>()),
-  getKbCacheKnowledgeBases: vi.fn(),
-}))
-
 // 趋势图的取数口径全在这里：每库一次 `GET /knowledge-bases/{id}/documents`
 vi.mock('@/api/documents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/documents')>()),
@@ -56,13 +50,11 @@ vi.mock('@/api/documents', async (importOriginal) => ({
 }))
 
 import { listKnowledgeBases } from '@/api/knowledgeBases'
-import { getKbCacheKnowledgeBases } from '@/api/kbCache'
 import { listDocuments } from '@/api/documents'
 import { getRegistry } from '@/api/modelRegistry'
 
 const listKbsMock = vi.mocked(listKnowledgeBases)
 const registryMock = vi.mocked(getRegistry)
-const kbCacheMock = vi.mocked(getKbCacheKnowledgeBases)
 const listDocsMock = vi.mocked(listDocuments)
 
 function makeKB(overrides: Partial<KnowledgeBase> = {}): KnowledgeBase {
@@ -151,7 +143,6 @@ beforeEach(() => {
     capabilities: {},
     provider_presets: [],
   })
-  kbCacheMock.mockResolvedValue(null)
   listDocsMock.mockResolvedValue({ items: [], total: 0, limit: 200, offset: 0 })
 })
 

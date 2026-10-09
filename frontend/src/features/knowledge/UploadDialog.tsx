@@ -110,10 +110,7 @@ export function UploadDialog({ open, kbId, folderId, onClose, onUploaded }: Uplo
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [notice, setNotice] = useState('')
-  /**
-   * 上限与格式提示**从握手取**（M3 阶段 6，R8）：提供者那边改了上限/格式，
-   * 这里的提示与本地拒收的判据当场跟着变，不会出现"写着支持却被拒"。
-   */
+  /** 上限与格式提示的唯一出口是 `uploadLimits.ts`（与后端那几个常量对齐）。 */
   const limits = useUploadLimits()
   const fileInput = useRef<HTMLInputElement | null>(null)
   const folderInput = useRef<HTMLInputElement | null>(null)

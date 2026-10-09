@@ -58,16 +58,6 @@ vi.mock('@/api/knowledgeBases', async (importOriginal) => ({
   createKnowledgeBase: vi.fn(),
 }))
 
-// M4 阶段 5：本机留的那一份（`/local/kb-cache/*`）。默认不回答（= 没有副本）——
-// 那些用例只关心"这一读有没有发、以什么形状发"。
-vi.mock('@/api/kbCache', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/kbCache')>()),
-  getKbCacheKnowledgeBases: vi.fn(),
-  getKbCacheDocuments: vi.fn(),
-  getKbCacheFolders: vi.fn(),
-  revalidateKbCache: vi.fn(),
-}))
-
 vi.mock('@/api/modelRegistry', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/modelRegistry')>()),
   getRegistry: vi.fn().mockResolvedValue({
@@ -90,7 +80,6 @@ import {
   setDocumentDisabled,
 } from '@/api/documents'
 import { createFolder, listFolders } from '@/api/folders'
-import { getKbCacheDocuments, getKbCacheFolders, getKbCacheKnowledgeBases } from '@/api/kbCache'
 import { listKnowledgeBases } from '@/api/knowledgeBases'
 
 const listDocsMock = vi.mocked(listDocuments)
@@ -103,9 +92,6 @@ const impactMock = vi.mocked(getDocumentImpact)
 const partsMock = vi.mocked(listDocumentParts)
 const disabledMock = vi.mocked(setDocumentDisabled)
 const listKbMock = vi.mocked(listKnowledgeBases)
-const kbCacheDocsMock = vi.mocked(getKbCacheDocuments)
-const kbCacheFoldersMock = vi.mocked(getKbCacheFolders)
-const kbCacheListMock = vi.mocked(getKbCacheKnowledgeBases)
 const successToast = vi.mocked(toast.success)
 const errorToast = vi.mocked(toast.error)
 
@@ -620,52 +606,5 @@ describe('单篇动作', () => {
     expect(screen.queryByRole('button', { name: /上传文档/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '按内容检索' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '说明书.pdf 的操作' })).toBeInTheDocument()
-  })
-})
-
-describe('先画一帧（M4 阶段 5）', () => {
-  it('挂载时三个视图各画一次：文档列表（当前视图那一键）、目录树、未归档计数', async () => {
-    renderView()
-    await screen.findByText('说明书.pdf')
-
-    // 文档列表：当前视图（第 1 页、一页 20 篇）那一个键——与实时读同一次筛选
-    expect(kbCacheDocsMock).toHaveBeenCalledWith('kb-1', { page: 1, size: 20 })
-    // 「未归档」计数就是同一个资源的 `root` + `size:1` 视图（后端那边也落成同一个键）
-    expect(kbCacheDocsMock).toHaveBeenCalledWith('kb-1', { root: true, page: 1, size: 1 })
-    // 目录树与文档列表**同屏**，所以也要画（不做就是"半屏"）
-    expect(kbCacheFoldersMock).toHaveBeenCalledWith('kb-1')
-  })
-
-  it('快照那一帧上不说"你是只读权限"：未确认不等于确认过是只读', async () => {
-    let resolveLive: (value: { items: KnowledgeBase[] }) => void = () => {}
-    listKbMock.mockReturnValue(new Promise((done) => (resolveLive = done)))
-    kbCacheListMock.mockResolvedValue({
-      // 本机留的那一份：**没有权限位**（后端进快照前就剥掉了，D-B）
-      available: true,
-      resource: 'kb_list',
-      scope_key: '',
-      reason: '',
-      items: [{ id: 'kb-1', name: '产品手册', document_count: 2, last_activity: null }],
-      payload: null,
-      version: 'sha256:abc',
-      source: 'reader',
-      fetched_at: new Date().toISOString(),
-      checked_at: new Date().toISOString(),
-      stale: false,
-      last_error: '',
-      revalidating: false,
-    })
-    renderView()
-
-    // 标题这一份已经先画上了（库列表是本机留的那一份）
-    expect(await screen.findByRole('heading', { level: 1, name: '产品手册' })).toBeInTheDocument()
-    expect(await screen.findByText('说明书.pdf')).toBeInTheDocument()
-    // 权限位还没确认：既不摆写入口，也**不许**把它说成"你是只读权限"
-    expect(screen.queryByText(/只读权限/)).toBeNull()
-    expect(screen.queryByRole('button', { name: '产品手册 的设置' })).toBeNull()
-
-    // 实时那一份落地：确认它**确实**是只读的，这句话才出现
-    resolveLive({ items: [makeKB({ can_write: false, can_manage: false })] })
-    expect(await screen.findByText(/只读权限/)).toBeInTheDocument()
   })
 })

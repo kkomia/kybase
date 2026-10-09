@@ -34,21 +34,12 @@ vi.mock('@/api/modelRegistry', async (importOriginal) => ({
   getRegistry: vi.fn(),
 }))
 
-// M4 阶段 5：本机留的那一份（`/local/kb-cache/knowledge-bases`）。默认不回答
-// （= 没有副本），下面那条用例只关心"这一读有没有发"。
-vi.mock('@/api/kbCache', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api/kbCache')>()),
-  getKbCacheKnowledgeBases: vi.fn(),
-}))
-
 import { createKnowledgeBase, listKnowledgeBases } from '@/api/knowledgeBases'
-import { getKbCacheKnowledgeBases } from '@/api/kbCache'
 import { getRegistry } from '@/api/modelRegistry'
 
 const listMock = vi.mocked(listKnowledgeBases)
 const createMock = vi.mocked(createKnowledgeBase)
 const registryMock = vi.mocked(getRegistry)
-const kbCacheMock = vi.mocked(getKbCacheKnowledgeBases)
 const successToast = vi.mocked(toast.success)
 
 function makeKB(overrides: Partial<KnowledgeBase> = {}): KnowledgeBase {
@@ -280,20 +271,5 @@ describe('新建知识库', () => {
     await user.click(screen.getByRole('button', { name: /新建知识库/ }))
 
     expect(screen.getByRole('slider', { name: '块长' })).toHaveValue('512')
-  })
-})
-
-describe('先画一帧（M4 阶段 5）', () => {
-  it('挂载时就发起"本机留的那一份"那一读（与实时读并行，判定在 store 的闸门里）', async () => {
-    listMock.mockResolvedValue({ items: [makeKB()] })
-    renderView()
-    await screen.findByText('产品手册')
-
-    // 这一读是"顺手快一点"的那一下：不进 UI 的等待链，也不该改变实时读的行为
-    expect(kbCacheMock).toHaveBeenCalledTimes(1)
-    expect(listMock).toHaveBeenCalledTimes(1)
-    // 没有副本时一切照旧（不摆额外的话、不报错）
-    expect(screen.queryByText(/上次更新于/)).toBeNull()
-    expect(screen.queryByText(/现在连不上/)).toBeNull()
   })
 })

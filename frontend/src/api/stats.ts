@@ -5,9 +5,7 @@
  * 又容易出现"上半页是新的、下半页是旧的"。
  */
 
-// 用量那一族**归本机**（`/stats/usage` 在 `LOCAL_PATHS` 里，本机档薄重声明了它）；
-// 上面概览那条仍在服务器（`/stats/dashboard` 数的是知识库的文档与任务，不挂本机档）
-import { request, requestLocal } from './client'
+import { request } from './client'
 
 export interface ActivityPoint {
   day: string
@@ -102,11 +100,7 @@ export interface Usage {
  *
  * **只有 token 与调用量，没有费用**：单价随供应商、版本、缓存命中与折扣不断变，
  * 内置价目表必然过期——而过期的价钱比不给更糟，用户会照着它做决定。
- *
- * 走 `requestLocal`：这一族**薄重声明在本机档**（`local.stats_reads`，见
- * `api/v1/local.py`）——用量记的是**这台机器**上跑过的那些调用（模型凭据与调用链都在本机），
- * 所以壳里读本机那份才是对的。没有本机后端的那一档由 `resolveLocalBase` 落到服务器。
  */
 export function getUsage(days = 30): Promise<Usage> {
-  return requestLocal(`/stats/usage?days=${days}`)
+  return request(`/stats/usage?days=${days}`)
 }
