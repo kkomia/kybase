@@ -14,6 +14,10 @@
 所以这个端点里**没有任何一张自己的清单**：加一个工具时，上面三处跟着走，
 这里一行都不用改。
 
+**指纹也来自同一处**（``surface_fingerprint()``）：它是那张表本身的摘要，控制台把它
+显示出来，用户对着两次部署的值一比就知道契约有没有变过——版本号做不到这件事，
+理由写在 ``services/tools.py`` 那个函数里。这里只转发，不自己算。
+
 **它不注入 ``Services``**：目录是纯元数据，读它不查库——一旦这个端点开始依赖库，
 "目录"就会跟着数据长（比如按库过滤工具），而工具面与库范围是两回事。
 
@@ -30,7 +34,7 @@ from fastapi import APIRouter
 from app.api.auth import ReadDep
 from app.api.v1.schemas import SkillOut, ToolCatalogOut, ToolOut, ToolParamOut
 from app.core.config import get_settings
-from app.services.tools import TOOL_META, TOOL_NAMES, tool_definitions
+from app.services.tools import TOOL_META, TOOL_NAMES, surface_fingerprint, tool_definitions
 
 router = APIRouter(tags=["tools"])
 
@@ -92,6 +96,9 @@ def list_tools(_caller: ReadDep) -> ToolCatalogOut:
             )
             for name in TOOL_NAMES
         ],
+        # 指纹只**转发**，不在这里自己算：它必须与 MCP 那侧（serverInfo.version 与
+        # `--list-tools` 打出来的那个）是同一个数，两处各算一遍迟早对不上。
+        surface_fingerprint=surface_fingerprint(),
         mcp_endpoint=_mcp_endpoint(get_settings().mcp_public_url),
         skill=SkillOut(
             name=SKILL_NAME,

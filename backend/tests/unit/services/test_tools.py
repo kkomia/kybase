@@ -494,6 +494,126 @@ def test_search_converges_on_the_knobs_the_model_gives(
     assert len(result["hits"]) <= 1
 
 
+# --------------------------------------------------------------------- 翻页（v0.63）
+
+
+def _ingest_text(services: Services, kb: str, filename: str, content: str) -> str:  # type: ignore[no-untyped-def]
+    """传一份正文并跑完摄入（不跑流水线就检索不到它）。
+
+    内容各不相同是刻意的：``upload_document`` 按内容去重，同一份正文传三次只会进一份
+    ——而这一批用例要的正是"好几段可翻"。
+    """
+    uploaded = call_tool(
+        services,
+        "upload_document",
+        {
+            "knowledge_base_id": kb,
+            "filename": filename,
+            "content_base64": base64.b64encode(content.encode()).decode(),
+        },
+        caller=Caller(is_admin=True),
+    )
+    assert uploaded["is_duplicate"] is False, "三份正文必须是三份内容，否则没有可翻的第二页"
+    services.ingest.ingest(uploaded["document_id"])
+    return uploaded["document_id"]
+
+
+def _paging_library(services: Services, kb: str) -> None:
+    """往库里灌三份都提到「眼轴长度」的正文——翻页至少要翻得动两页。"""
+    for index in range(3):
+        _ingest_text(
+            services,
+            kb,
+            f"眼轴第{index}节.md",
+            f"# 眼轴第{index}节\n\n眼轴长度的测量方法第 {index} 节："
+            f"这一段讲第 {index} 种测量方式，以及它在第 {index} 次随访里的记录口径。\n"
+            f"第 {index} 节的结论只有一句：眼轴长度要看趋势，单次数值说明不了什么。\n",
+        )
+
+
+def test_search_pages_the_survivors_with_the_same_verdict_on_every_page(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """一页一条地翻到底：拼起来等于不翻页那一份，判定逐字不变。
+
+    这是"把一本书关于某个主题的内容看全"那条路在 MCP 上的最小验收——``top_k`` 是能翻到
+    的总量、``keep`` 是一页几条、``next_offset`` 说下一页从哪开始。
+    """
+    _paging_library(services, kb)
+    query = {"query": "眼轴长度的测量方法", "knowledge_base_ids": [kb], "top_k": 10}
+
+    whole = call_tool(services, "search", {**query, "keep": 10}, caller=admin)
+    assert len(whole["hits"]) >= 2, "这份夹具要够翻两页"
+    assert whole["offset"] == 0
+    assert whole["next_offset"] is None, "keep ≥ 幸存者数时这一页就是全部"
+
+    pages: list[dict] = []
+    payload = call_tool(services, "search", {**query, "keep": 1}, caller=admin)
+    while True:
+        pages.append(payload)
+        assert len(pages) < 50, "next_offset 把调用方送进了死循环"
+        if payload["next_offset"] is None:
+            break
+        payload = call_tool(
+            services, "search", {**query, "keep": 1, "offset": payload["next_offset"]}, caller=admin
+        )
+
+    walked = [hit["chunk_id"] for page in pages for hit in page["hits"]]
+    assert len(walked) == len(set(walked)), "两页之间不许重叠"
+    assert walked == [hit["chunk_id"] for hit in whole["hits"]], "拼起来必须等于那整份名单"
+
+    for index, page in enumerate(pages):
+        assert len(page["hits"]) == 1, "keep=1 就是一页一条"
+        assert page["returned"] == len(page["hits"])
+        assert page["offset"] == index, "起点就是上一页的 next_offset"
+        # **判定与收敛的产物在每一页上都一模一样**：调用方正是靠它决定要不要接着翻。
+        # 与"一页给全部"那次比只差 `decision.keep` 一位（页大小是调用方传的，不是判定）。
+        assert page["summary"] == whole["summary"]
+        assert page["distribution"] == whole["distribution"]
+        assert page["filtered_out"] == whole["filtered_out"]
+        assert {**page["decision"], "keep": whole["decision"]["keep"]} == whole["decision"]
+    assert pages[-1]["next_offset"] is None, "最后一页要说清「没有更多了」"
+
+
+def test_an_offset_past_the_end_returns_an_empty_page(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """「翻过头了」不是错：空 ``hits`` + ``next_offset: null``，**判定照旧**。
+
+    报错的话，调用方会把"翻到底了"读成"检索坏了"——而它明明已经拿到了全部内容。
+    """
+    _paging_library(services, kb)
+    query = {"query": "眼轴长度的测量方法", "knowledge_base_ids": [kb], "top_k": 10, "keep": 10}
+
+    whole = call_tool(services, "search", query, caller=admin)
+    beyond = call_tool(services, "search", {**query, "offset": 9999}, caller=admin)
+
+    assert beyond["hits"] == []
+    assert beyond["next_offset"] is None
+    assert beyond["offset"] == 9999, "回显传进来的起点（只是没有那一条可给）"
+    assert beyond["summary"] == whole["summary"]
+    assert beyond["decision"] == whole["decision"]
+
+
+def test_a_garbage_offset_degrades_to_the_first_page(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """起点给垃圾（字符串 / 负数 / 列表）**只影响它自己**：折成 0，检索照常。
+
+    与 ``top_k`` / ``keep`` / ``min_score`` 同一条取舍（见 `_int_or_none`）：
+    SDK 那层的类型校验已经让开，所以垃圾值真的会到这一层。给错一个"从第几条开始"
+    就让整次检索失败不划算——多翻一页而已。
+    """
+    _paging_library(services, kb)
+    query = {"query": "眼轴长度的测量方法", "knowledge_base_ids": [kb], "top_k": 10, "keep": 1}
+
+    first = call_tool(services, "search", query, caller=admin)
+    for garbage in ("第二页", -5, [], {"从": 2}, None):
+        degraded = call_tool(services, "search", {**query, "offset": garbage}, caller=admin)
+        assert degraded["offset"] == 0, f"{garbage!r} 该折成 0"
+        assert degraded["hits"] == first["hits"], f"{garbage!r} 该退回第一页"
+
+
 # --------------------------------------------------------------------- 文档状态
 
 
@@ -983,3 +1103,317 @@ def test_parameter_whitelists_match_the_schemas() -> None:
             f"少 {sorted(declared - set(_PARAMS[name]))}"
         )
 
+
+# ------------------------------------------------------- 对外的契约指纹（v0.62）
+
+
+def test_surface_fingerprint_is_stable_across_calls() -> None:
+    """同一份工具表算出来的指纹必须每次都一样（它是"契约摘要"，不是随机数）。
+
+    ``sha256`` 前 12 位十六进制：短到放得进版本串，又足够区分一次契约改动。
+    """
+    from app.services.tools import surface_fingerprint
+
+    first = surface_fingerprint()
+
+    assert first == surface_fingerprint()
+    assert len(first) == 12
+    assert all(char in "0123456789abcdef" for char in first)
+
+
+def test_surface_fingerprint_changes_with_a_description(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**描述改了指纹就得变**：描述是写给模型的契约的一部分（"什么时候该用"就在里面）。
+
+    这一条是这次改动的核心诉求的反面表述：客户端要能**发现**契约变过。
+    版本号做不到（那是发版号，实测连着几次部署都是 0.1.0）。
+    """
+    from app.services import tools as tools_module
+    from app.services.tools import surface_fingerprint
+
+    before = surface_fingerprint()
+    original = tools_module.tool_definitions
+
+    def tampered() -> list[dict]:
+        items = original()
+        items[0]["description"] = items[0]["description"] + "（改了）"
+        return items
+
+    monkeypatch.setattr(tools_module, "tool_definitions", tampered)
+
+    assert surface_fingerprint() != before
+
+
+def test_surface_fingerprint_changes_with_a_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """加一个参数（schema 变了）同样要变——参数面的改动是最容易漏报的一种契约变更。"""
+    from app.services import tools as tools_module
+    from app.services.tools import surface_fingerprint
+
+    before = surface_fingerprint()
+    original = tools_module.tool_definitions
+
+    def tampered() -> list[dict]:
+        items = original()
+        search = next(item for item in items if item["name"] == "search")
+        search["inputSchema"]["properties"]["新的旋钮"] = {"type": "integer"}
+        return items
+
+    monkeypatch.setattr(tools_module, "tool_definitions", tampered)
+
+    assert surface_fingerprint() != before
+
+
+def test_surface_fingerprint_changes_with_the_output_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``outputSchema`` 也是契约（客户端会照它校验结构化输出），所以它进指纹。"""
+    from app.services import tools as tools_module
+    from app.services.tools import surface_fingerprint
+
+    before = surface_fingerprint()
+    original = tools_module.tool_definitions
+
+    def tampered() -> list[dict]:
+        items = original()
+        search = next(item for item in items if item["name"] == "search")
+        search["outputSchema"] = {"type": "object", "properties": {"别的": {"type": "string"}}}
+        return items
+
+    monkeypatch.setattr(tools_module, "tool_definitions", tampered)
+
+    assert surface_fingerprint() != before
+
+
+# ---------------------------------------------------- 结构化输出那一份（v0.62）
+
+
+def test_only_the_tools_with_an_output_schema_have_a_builder() -> None:
+    """带 ``outputSchema`` 的工具与有压缩函数的工具**必须一一对应**。
+
+    声明了 ``outputSchema`` 就必须每次都给 ``structuredContent``（客户端照它校验，
+    缺了直接报错）；反过来，有压缩函数却没有 schema 等于白算一份没人校验的东西。
+    """
+    from app.services.tools import STRUCTURED_CONTENT
+
+    declared = {item["name"] for item in tool_definitions() if item.get("outputSchema") is not None}
+
+    assert set(STRUCTURED_CONTENT) == declared
+    assert declared, "至少 search 要给机器可读的那一份（它就是这个产品的判定）"
+
+
+def test_search_structured_content_keeps_the_verdict_keys() -> None:
+    """压缩后的对象必须**每个键都在**：``outputSchema`` 声明了几个，缺一个就是硬报错。"""
+    from app.services.tools import (
+        SEARCH_OUTPUT_SCHEMA,
+        search_structured_content,
+        surface_fingerprint,
+    )
+
+    payload = {
+        "summary": "一句话判定",
+        "distribution": {"fit": "strong", "count": 3},
+        "decision": {"keep": 3, "decided_by": "model"},
+        "returned": 3,
+        "filtered_out": 1,
+        "offset": 3,
+        "next_offset": 6,
+        "query": "眼轴",
+        "hits": [{"document_id": "doc_1"}],
+    }
+
+    structured = search_structured_content(payload)
+
+    assert set(structured) == set(SEARCH_OUTPUT_SCHEMA["required"])
+    assert structured["summary"] == "一句话判定"
+    assert structured["fit"] == "strong"
+    assert structured["decision"] == payload["decision"]
+    assert structured["returned"] == 3
+    assert structured["filtered_out"] == 1
+    # 翻页的两项照搬：按 schema 读的调用方也要能自己接着翻，不必去文本里找那一行
+    assert structured["offset"] == 3
+    assert structured["next_offset"] == 6
+    assert structured["surface_fingerprint"] == surface_fingerprint()
+
+
+def test_search_structured_content_survives_the_empty_early_return() -> None:
+    """**一个库都没有**那条提前返回也要压得出全部键（可空的那几个是 ``None``）。
+
+    那条路的文本载荷只有 ``query`` / ``hits`` / ``note`` 加翻页那两项——不兜底的话，
+    调用方照 ``outputSchema`` 校验会当场报"少字段"，而那是最不该失败的一种情况。
+    """
+    from app.services.tools import search_structured_content
+
+    structured = search_structured_content(
+        {
+            "query": "随便问问",
+            "hits": [],
+            "offset": 0,
+            "next_offset": None,
+            "note": "没有任何知识库",
+        }
+    )
+
+    assert structured["summary"] == ""
+    assert structured["fit"] is None
+    assert structured["distribution"] is None
+    assert structured["decision"] is None
+    assert structured["returned"] == 0
+    assert structured["offset"] == 0
+    assert structured["next_offset"] is None, "空页不能回一个数——那是把调用方送进死循环"
+    assert str(structured["surface_fingerprint"])
+
+
+# --------------------------------------------------------- 判定字段的形状（v0.62）
+
+
+def test_search_hits_carry_their_basis_and_lexical_score(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """MCP 的每条命中都要说清"我是哪条通道捞上来的"，并把词面分交出来。
+
+    与 REST 的 ``SearchHitOut`` 是同一批字段（同一个服务在两个入口给出两种形状，
+    是最难查的一类不一致）。
+    """
+    document_id = _parsed_document(services, kb)
+
+    result = call_tool(
+        services, "search", {"query": "眼轴长度", "knowledge_base_ids": [kb]}, caller=admin
+    )
+
+    assert result["hits"], "库里刚灌进一份命中率极高的文档"
+    assert {hit["document_id"] for hit in result["hits"]} == {document_id}
+    for hit in result["hits"]:
+        assert hit["basis"] in {"vector", "fulltext"}
+        assert (hit["similarity"] is not None) == (hit["basis"] == "vector")
+        assert "lexical_score" in hit
+
+
+def test_search_decision_counts_the_unscored_hits(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """``decision.unscored_kept`` 必须在场（0 也必须在场）——缺键与"没有绕过"是两回事。
+
+    用户那条反馈的正面答案就在这里：把 ``min_score`` 提到 0.99 却还有命中时，
+    这一位说得出"这几条没有余弦可比"。
+    """
+    result = call_tool(
+        services,
+        "search",
+        {"query": "眼轴", "knowledge_base_ids": [kb], "min_score": 0.99},
+        caller=admin,
+    )
+
+    assert "unscored_kept" in result["decision"]
+    assert isinstance(result["decision"]["unscored_kept"], int)
+
+
+def test_per_doc_alone_is_reported_as_the_callers_own_decision(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """只传 ``per_doc`` 也是调用方的决定：``decided_by`` 得是 ``model``。"""
+    result = call_tool(
+        services,
+        "search",
+        {"query": "眼轴", "knowledge_base_ids": [kb], "per_doc": 1},
+        caller=admin,
+    )
+
+    assert result["decision"]["per_doc"] == 1
+    assert result["decision"]["decided_by"] == "model"
+
+
+def test_min_score_says_it_only_cuts_the_vector_channel() -> None:
+    """``min_score`` 的说明必须交代它的边界：**只对向量通道的命中生效**。
+
+    不写的话，调用方以为"阈值 = 全部命中的一道闸"，于是看到 ``similarity: null`` 的
+    命中时只能得出"这个工具坏了"这一个结论（实测就是如此）。
+    """
+    search = next(item for item in tool_definitions() if item["name"] == "search")
+    description = search["inputSchema"]["properties"]["min_score"]["description"]
+
+    assert "只对向量通道的命中生效" in description
+    assert "basis" in description
+
+
+@pytest.mark.parametrize(
+    "name", ["search", "get_document_content", "list_documents", "get_document_status"]
+)
+def test_tools_that_return_document_text_declare_it_untrusted(name: str) -> None:
+    """会回原文/文档名的工具必须声明**不可信内容**：那些字是用户文档里的，不是指令。
+
+    提示注入的防线在调用方（本服务不做 LLM 预处理），但工具描述是模型唯一读得到的
+    那份说明——不写这一句，等于让它猜"这段字是谁说的"。
+    ``get_document_status`` 也在这份名单里：它回文档名与处理错误，同样来自用户文档
+    （列出的三个是点名的那三个，这一条是同一口径的延伸）。
+    """
+    item = next(entry for entry in tool_definitions() if entry["name"] == name)
+
+    assert "不可信内容" in item["description"]
+    assert "指令" in item["description"]
+
+
+def test_allowed_but_wrong_typed_knobs_degrade_instead_of_failing(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """调节量给垃圾**只影响它自己**（退回默认），不让整次检索失败。
+
+    SDK 那层的类型校验已经让开（见 ``mcp_server/server.py`` 的 ``_permissive_signature``），
+    所以垃圾值真的会到服务层——容错必须在这一层保住。``knowledge_base_ids`` 不在此列：
+    猜错它等于查了别的库，所以那一项**报错**（见 ``_kb_ids``）。
+    """
+    result = call_tool(
+        services,
+        "search",
+        {
+            "query": "眼轴",
+            "knowledge_base_ids": [kb],
+            "top_k": "不是数",
+            "keep": [],
+            "min_score": "很严",
+            "per_doc": {"每篇": 2},
+        },
+        caller=admin,
+    )
+
+    assert isinstance(result["hits"], list)
+
+
+def test_a_wrong_typed_required_argument_names_the_parameter_in_chinese(
+    services: Services, admin: Caller
+) -> None:
+    """必填参数给错类型（数组/对象）也要说中文，并**点名是哪一个参数**。
+
+    从前这类错由 SDK 的 pydantic 报出来（英文 + 一个文档链接）；现在校验归我们，
+    所以"给错类型"必须与"没给"一样能自己改对——``str([])`` 那条路会造出一个
+    看起来像 id 的字符串，下游只会报"文档不存在：[]"，把人引向错误的方向。
+    """
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(services, "get_document_content", {"document_id": []}, caller=admin)
+
+    assert "document_id" in str(excinfo.value)
+
+
+def test_a_malformed_knowledge_base_list_says_what_it_wants(
+    services: Services, admin: Caller
+) -> None:
+    """``knowledge_base_ids`` 里塞了非字符串：**报错而不是猜**。
+
+    猜错的表现是"查了别的库"（比如把 ``{'bad': 1}`` 拼成一个不存在的 id 再报越界），
+    那比一条读得懂的中文报错难查得多。裸字符串仍然接受（模型常这么传）。
+    """
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(
+            services,
+            "search",
+            {"query": "眼轴", "knowledge_base_ids": [{"bad": 1}]},
+            caller=admin,
+        )
+
+    assert "knowledge_base_ids" in str(excinfo.value)
+
+    # 单个裸字符串 = 只查这一个库（容忍，不是报错）
+    tolerated = call_tool(
+        services, "search", {"query": "眼轴", "knowledge_base_ids": "kb_none"}, caller=admin
+    )
+    assert tolerated["hits"] == []

@@ -3488,6 +3488,24 @@ export interface components {
              *     界面要显示相似度、或要判断"到此为止"，读这一位。
              */
             similarity?: number | null;
+            /**
+             * Basis
+             * @description 这条命中**是哪条通道捞上来的**：``"vector"`` / ``"fulltext"``（就是 ``raw_scores`` 的键名）。
+             *
+             *     **为什么要单独给这一位**：`min_score` 只切向量通道的命中——词面通道没有余弦可比，
+             *     它的命中不受阈值约束（条数记在 ``decision.unscored_kept`` 里）。所以
+             *     ``similarity`` 为 ``null`` 的那些不是"相关性不明"，而是"这条是词面捞上来的"；
+             *     要更严就得自己按 ``lexical_score`` 筛。MCP 的 `search` 给的是同一批字段。
+             */
+            basis: string;
+            /**
+             * Lexical Score
+             * @description 词面（全文）通道的原始分，**与 `similarity` 不同量纲、不可互相比较**（越大越相关）。
+             *
+             *     ``None`` = 这条不是词面捞上来的。相关度下限只认余弦，词面那一路"够不够像"由实词
+             *     覆盖率判（见 `services/retrieval/coverage.py`）——这一位交出来是让调用方自己筛。
+             */
+            lexical_score?: number | null;
             /** Page */
             page?: number | null;
             /** Heading Path */
@@ -3524,7 +3542,9 @@ export interface components {
             candidates: number;
             /**
              * Kept
-             * @description 收敛之后真的返回给调用方的条数。
+             * @description 收敛之后**剩下**的条数（v0.63 起不是"某一页返回的条数"）。
+             *
+             *     翻页不该把这条曲线乘上页数：同一次检索翻三页，趋势上仍然只记一份收敛结果。
              */
             kept: number;
         };
@@ -3581,6 +3601,11 @@ export interface components {
             /** Per Doc */
             per_doc?: number | null;
             /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
              * Rerank
              * @default false
              */
@@ -3613,6 +3638,13 @@ export interface components {
              * @default 0
              */
             filtered_out: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /** Next Offset */
+            next_offset?: number | null;
             /** Stats */
             stats?: components["schemas"]["ChannelStatOut"][];
             /**
@@ -3983,6 +4015,8 @@ export interface components {
         ToolCatalogOut: {
             /** Items */
             items?: components["schemas"]["ToolOut"][];
+            /** Surface Fingerprint */
+            surface_fingerprint: string;
             /** Mcp Endpoint */
             mcp_endpoint?: string | null;
             skill: components["schemas"]["SkillOut"];

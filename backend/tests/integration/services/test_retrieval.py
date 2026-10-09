@@ -421,12 +421,33 @@ def test_filter_without_document_is_rejected() -> None:
     [
         {"mode": "unknown"},
         {"top_k": 0},
-        {"top_k": 10, "candidate_k": 3},
+        {"top_k": -1},
     ],
 )
 def test_invalid_query_parameters_are_rejected(kwargs: dict) -> None:
+    """模式不认识、条数不是正数——这些是真的没法执行，报错。
+
+    **``candidate_k < top_k`` 从前也在这份名单里，v0.63 起不在了**：``top_k`` 变成
+    "能翻到的总量"之后，一次要 50 条池子的调用可能压根没传 ``candidate_k``（默认 40），
+    报错的后果是"上限抬到 50"只有显式传了 candidate_k 的人叫得动。要 50 条却没有
+    50 个候选是自相矛盾的，补上即可——见下面那条用例。
+    """
     with pytest.raises(ValueError):
         RetrievalQuery(query="q", kb_ids=["kb_1"], **kwargs)
+
+
+def test_a_shallow_recall_depth_is_raised_to_the_pool_size() -> None:
+    """召回深度比池子浅时**抬到池子**，而不是报错：要 50 条却只捞 40 条是自相矛盾的。
+
+    它也是 v0.63 抬 ``MAX_TOP_K`` 的必要配套：``SearchRequest`` 的 ``top_k`` 上限跟着
+    抬到 50，而它的 ``candidate_k`` 默认是 40——不抬的话，"要一页 50 条"这件事照默认
+    参数根本走不通（服务层当场 ValueError，表现成一个 500）。
+    """
+    request = RetrievalQuery(query="q", kb_ids=["kb_1"], top_k=50, candidate_k=10)
+
+    assert request.candidate_k == 50
+    # 本来就比池子深的那些不动（多召回是给 RRF 留排序空间的，别顺手削掉）
+    assert RetrievalQuery(query="q", kb_ids=["kb_1"], top_k=5, candidate_k=40).candidate_k == 40
 
 
 # ------------------------------------------------- 每个库用自己的嵌入模型（v11）
@@ -514,8 +535,11 @@ def test_the_distribution_is_reported_without_anyone_asking_for_it(
     assert response.distribution is not None
     assert response.decision is not None
     assert response.decision["fit"] == response.distribution.fit
-    # 条数要对得上账：窗口里收了多少 = 返回了几条 + 收敛时切掉了几条
-    assert response.distribution.count == len(response.hits) + response.decision["dropped"]
+    # 条数要对得上账：窗口里收了多少 = 收敛后剩了多少 + 收敛时切掉了几条。
+    # **剩下多少用 `kept`**（v0.63）：`hits` 只是这一页，拿它入账只在"keep ≥ 幸存者数"
+    # 时碰巧成立；翻页那条路上它必然对不上（第二页只有两三条）。
+    assert response.distribution.count == response.kept + response.decision["dropped"]
+    assert len(response.hits) <= response.kept
 
 
 def test_a_zero_window_no_longer_turns_the_distribution_off(
@@ -900,7 +924,134 @@ def test_the_window_widens_below_the_calibrated_floor_so_the_fit_can_be_judged(
     assert response.distribution.fit == FIT_NONE
     assert response.filtered_out == 2
     assert response.hits == []
+    assert response.kept == 0, "收敛成 0 条（fit=none 的建议）时连名单都不留"
+    assert response.next_offset is None, "一条都没有时不该说「还有下一页」（那会变成死循环）"
     assert response.decision is not None and response.decision["keep"] == 0
+
+
+# ------------------------------------------------------------------ 翻页（v0.63）
+#
+# ``keep`` 从"这一轮一共几条"变成"一页几条"，``top_k`` 是"能翻到的总量"。
+# 这几条钉住三件事：一页一页拼起来等于不翻页的那一份（不漏不重）、判定不随翻页变、
+# 翻到底与翻过头都不报错。
+
+
+def test_paging_walks_the_survivors_without_gaps_or_overlaps(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """一页一页走一遍，拼起来正好是**不翻页时那一整份幸存者名单**。
+
+    这是"把这本书关于 X 的内容看全"那条路上的最小验收：``top_k`` 开大、``keep`` 当页大小，
+    按 ``next_offset`` 一路翻。两条性质一起钉住——**不漏不重**（拼起来逐条相等），
+    以及**每一页的账都对得上**（``kept`` 与 ``decision`` 不随翻页动）。
+    """
+    whole = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=10)
+    )
+    assert whole.kept == len(whole.hits), "keep ≥ 幸存者数时这一页就是全部"
+    assert whole.kept >= 2, "这份夹具里够翻两页（否则下面的循环只跑一轮，测不出拼接）"
+
+    walked: list[str] = []
+    offsets: list[int] = []
+    offset: int | None = 0
+    while offset is not None:
+        page = retrieval.search(
+            RetrievalQuery(
+                query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=2, offset=offset
+            )
+        )
+        assert page.offset == offset, "回显的是**实际生效**的那个起点"
+        assert len(page.hits) <= 2, "keep=2 就是一页两条"
+        # 判定与收敛的产物在每一页上都必须一模一样
+        assert page.kept == whole.kept
+        assert page.distribution == whole.distribution
+        assert page.filtered_out == whole.filtered_out
+        assert page.decision is not None and whole.decision is not None
+        # 与"一页给全部"那一次比**只差 `keep` 这一位**——页大小是调用方传的，不是判定；
+        # 于是翻页本身（只动 offset）改不动 `decision` 的任何一位
+        assert {**page.decision, "keep": whole.decision["keep"]} == whole.decision
+        walked.extend(hit.chunk_id for hit in page.hits)
+        offsets.append(offset)
+        offset = page.next_offset
+
+    assert offsets == list(range(0, len(offsets) * 2, 2)), "下一跳就是上一页的条数累计"
+    assert len(walked) == len(set(walked)), "两页之间不许重叠"
+    assert walked == [hit.chunk_id for hit in whole.hits], "拼起来必须等于那整份名单"
+
+
+def test_the_last_page_says_there_is_nothing_after_it(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """最后一页的 ``next_offset`` 是 ``None``——调用方不必自己算"翻完没有"。"""
+    whole = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=10)
+    )
+    last = retrieval.search(
+        RetrievalQuery(
+            query="向量检索 混合召回",
+            kb_ids=["kb_1"],
+            top_k=10,
+            keep=2,
+            offset=whole.kept - 1,
+        )
+    )
+
+    assert len(last.hits) == 1, "从倒数第二条起只剩一条"
+    assert last.next_offset is None
+
+
+def test_an_offset_past_the_end_is_an_empty_page_not_an_error(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """「翻过头了」不是错：回一页空的，判定照旧。
+
+    两件事都要在：**不抛异常**（把"翻到底了"报成一次失败，只会让调用方以为检索坏了），
+    以及**判定一字不变**（它说的是那批候选，与调用方翻到哪儿无关）。
+    """
+    whole = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=10)
+    )
+
+    beyond = retrieval.search(
+        RetrievalQuery(
+            query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=10, offset=whole.kept + 99
+        )
+    )
+
+    assert beyond.hits == []
+    assert beyond.next_offset is None
+    assert beyond.offset == whole.kept + 99, "回显传进来的起点（只是没有那一条可给）"
+    assert beyond.kept == whole.kept
+    assert beyond.distribution == whole.distribution
+    assert beyond.decision == whole.decision, "翻过头也改不动判定（同一个 keep）"
+
+
+@pytest.mark.parametrize("garbage", [-3, None, "不是数", [], {"从": 2}])
+def test_a_garbage_offset_degrades_to_the_first_page(
+    seeded: StoreBundle, retrieval: RetrievalService, garbage: object
+) -> None:
+    """负的、给不出数的、压根不是数的起点一律当 0——**不报错**。
+
+    与三个收敛旋钮同一条取舍（``tools._int_or_none`` / ``service.resolve_offset``）：
+    它是"顺手给的调节量"，给错一个数就让整次检索失败不划算。``[]`` 与 ``{"从": 2}``
+    也在这份名单里：**服务层自己不信任类型**，容错不能只写在 MCP 那一层。
+    """
+    first = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], top_k=10, keep=10)
+    )
+
+    response = retrieval.search(
+        RetrievalQuery(
+            query="向量检索 混合召回",
+            kb_ids=["kb_1"],
+            top_k=10,
+            keep=10,
+            offset=garbage,  # type: ignore[arg-type]
+        )
+    )
+
+    assert response.offset == 0, "折成 0 之后要如实回显"
+    assert [hit.chunk_id for hit in response.hits] == [hit.chunk_id for hit in first.hits]
 
 
 # ------------------------------------------------- 按库命中记录（v0.61）
@@ -953,22 +1104,60 @@ def test_search_records_each_knowledge_base_including_the_empty_one(
 def test_the_record_keeps_the_pre_cut_and_post_cut_counts_apart(
     seeded: StoreBundle, embedder: DeterministicEmbedder
 ) -> None:
-    """``candidates`` 是**收敛前**那批，``kept`` 是收敛后真返回的——被切掉的留在前者里。
+    """``candidates`` 是**收敛前**那批，``kept`` 是收敛后剩下的——被切掉的留在前者里。
 
-    这里显式要 ``keep=1``：收敛把候选切到 1 条。如果记录只留"返回了几条"，
-    这次的"捞上来一堆、只给一条"与另一次"只捞上来一条"就长得一模一样了。
+    这里显式把**池子**收到 1 条（``top_k=1``，v0.63 起它才是"能翻到的总量"）：
+    收敛之后只剩 1 条。如果记录只留"返回了几条"，这次的"捞上来一堆、只留一条"与
+    另一次"只捞上来一条"就长得一模一样了。
+
+    **``keep`` 已经不是那把刀**（它现在是一页几条）：从前这条用 ``keep=1`` 来切，
+    而那时 ``keep`` 与 ``top_k`` 是同一个数——现在切名单的是 ``top_k``。
     """
     captured: list[dict] = []
     service = _recording_service(seeded, embedder, captured)
 
-    response = service.search(
-        RetrievalQuery(query="部署 配置 环境变量", kb_ids=["kb_1"], top_k=5, keep=1)
-    )
+    response = service.search(RetrievalQuery(query="部署 配置 环境变量", kb_ids=["kb_1"], top_k=1))
 
     candidates, kept = captured[0]["hits_by_kb"]["kb_1"]
     assert len(response.hits) == 1
-    assert kept == 1
+    assert kept == 1 == response.kept
     assert candidates > kept, "收敛切掉的那些必须留在 candidates 里"
+
+
+def test_paging_does_not_inflate_the_recorded_kept(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """**翻三页不等于三次命中**：``kept`` 记的是那一次收敛留下的总数，不是这一页几条。
+
+    这是翻页最容易踩的那个坑：照"这次返回了几条"记的话，同一个主题翻三页就把那一天
+    在曲线上记成三倍——而那条曲线要回答的恰恰是"这个库的命中在涨还是在跌"，
+    被页数乘一遍之后就只剩"用户翻得多不多"。所以 ``candidates`` 与 ``kept`` 在每一页上
+    都必须一模一样（它们是**这次检索**的属性）。
+    """
+    captured: list[dict] = []
+    service = _recording_service(seeded, embedder, captured)
+    query = "向量检索 混合召回"
+
+    whole = service.search(RetrievalQuery(query=query, kb_ids=["kb_1"], top_k=10, keep=10))
+    assert whole.kept >= 2, "这份夹具里够翻两页"
+
+    offset: int | None = 0
+    pages = 0
+    while offset is not None:
+        page = service.search(
+            RetrievalQuery(query=query, kb_ids=["kb_1"], top_k=10, keep=1, offset=offset)
+        )
+        assert len(page.hits) == 1, "一页一条，翻的正是那条名单"
+        offset = page.next_offset
+        pages += 1
+
+    assert pages == whole.kept, "翻的页数 = 幸存者条数（keep=1 时正好一个一条）"
+    assert len(captured) == pages + 1, "每一次调用记一批（翻页也是调用，只是一次检索）"
+    for call in captured:
+        assert call["hits_by_kb"]["kb_1"] == (
+            whole.distribution.count,
+            whole.kept,
+        ), "每一页记下来的都是同一次检索的候选数与收敛结果"
 
 
 def test_a_search_that_finds_nothing_still_records_the_knowledge_base(
@@ -1020,3 +1209,98 @@ def test_a_broken_recorder_never_breaks_the_search(
     response = service.search(RetrievalQuery(query="向量检索", kb_ids=["kb_1"]))
 
     assert response.hits, "记录抛异常不该让这次检索变成空结果"
+
+
+# ------------------------------------------- 每条命中来自哪条通道 / min_score 的两半（v0.62）
+
+
+def test_hybrid_hits_say_they_came_from_the_vector_channel(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """``basis`` 说的是"这条是哪条通道捞上来的"，取值就是 ``raw_scores`` 的键名。
+
+    为什么要单独一位：``min_score`` **只切向量通道的命中**（词面通道没有余弦可比），
+    所以调用方要逐条看它才知道手里这条受不受阈值约束。取值不许另起一套说法
+    （"semantic" 之类）——同一件事两个名字，必然有一处先漂。
+    """
+    response = retrieval.search(RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"]))
+
+    assert response.hits
+    for hit in response.hits:
+        assert hit.basis in {"vector", "fulltext"}
+        # 有余弦的那些必然是向量通道捞上来的（两者同源，见 `_materialize`）
+        assert (hit.similarity is not None) == ("vector" in hit.raw_scores)
+        if hit.basis == "vector":
+            assert hit.lexical_score is not None or "fulltext" not in hit.raw_scores
+
+
+def test_a_keyword_only_hit_has_a_lexical_score_and_no_similarity(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """词面通道捞上来的那条：``similarity`` 为 ``None``，但 ``lexical_score`` 有值。
+
+    这一位是给调用方自己筛的：阈值管不着词面通道，它想更严只能读这个数。
+    """
+    response = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], mode=RetrievalMode.FULLTEXT)
+    )
+
+    assert response.hits
+    for hit in response.hits:
+        assert hit.basis == "fulltext"
+        assert hit.similarity is None
+        assert hit.lexical_score == hit.raw_scores["fulltext"]
+
+
+def test_a_high_min_score_keeps_the_unscored_hits_but_counts_them(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """**纯关键词那一档 + ``min_score=0.99``**：命中照旧回来，但条数被记下来了。
+
+    这是用户实测踩到的那个现象——把阈值提到 0.99，回来的每条 ``similarity`` 都是
+    ``null``。留是对的（没有余弦可比，就不该拿一个不是它的数去比），但**必须说清**：
+    ``decision.unscored_kept`` 就是那句"这几条绕过了这一刀"。
+    """
+    response = retrieval.search(
+        RetrievalQuery(
+            query="向量检索 混合召回",
+            kb_ids=["kb_1"],
+            mode=RetrievalMode.FULLTEXT,
+            min_score=0.99,
+            min_vector_score=0.0,
+            min_term_coverage=0.0,
+        )
+    )
+
+    assert response.hits, "没有余弦可比不等于该被这一刀切掉"
+    assert all(hit.similarity is None for hit in response.hits)
+    assert response.decision["min_score"] == 0.99
+    # 这一批**每条**都没有余弦，所以窗口里收了多少条就有多少条绕过这一刀
+    assert response.decision["unscored_kept"] == response.distribution.count
+
+
+def test_a_vector_search_bypasses_nothing(seeded: StoreBundle, retrieval: RetrievalService) -> None:
+    """反过来：个个都有余弦时这一位就是 0——它不是"某次检索的一个装饰数字"。"""
+    response = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], min_score=0.0)
+    )
+
+    assert response.hits
+    assert response.decision["min_score"] == 0.0
+    assert response.decision["unscored_kept"] == 0
+
+
+def test_per_doc_alone_is_a_decision_from_the_caller(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """只传 ``per_doc`` 也算调用方自己的决定：``decided_by`` 必须是 ``model``。
+
+    一边照他给的数收敛、一边在载荷里说"这是系统建议的"，是同一份载荷里的自相矛盾
+    （实测被用户抓到的就是这一条）。三个旋钮都是"调用方按分布自己算出来的收敛方式"。
+    """
+    response = retrieval.search(
+        RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"], per_doc=1)
+    )
+
+    assert response.decision["per_doc"] == 1
+    assert response.decision["decided_by"] == "model"

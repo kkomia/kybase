@@ -18,7 +18,11 @@
   ``stats_floor`` 只用来**调**窗口（正数覆盖默认，非正数回落默认）——**没有"关掉"
   这个取值**。窗口还必须放宽到统计下沿（``_relevance_floors``），因为"报出契合程度"
   的前提是那批噪声也在窗口里；这两件事是一体的，拆开就只剩"答案那一小撮"可比；
-- **rerank 失败降级为不重排**：日志告警即可，绝不因此让整次检索失败（架构 §5 把它定义为可选增强）。
+- **rerank 失败降级为不重排**：日志告警即可，绝不因此让整次检索失败（架构 §5 把它定义为可选增强）；
+- **翻页只切"返回哪一段"**（v0.63）：``keep`` 是**一页几条**、``top_k`` 是**能翻到的总量**，
+  返回的是 ``幸存者[offset : offset + 解析后的 keep]``。窗口、``summarize``、三个收敛旋钮
+  一律作用在同一批候选上，于是同一 pool 的判定在任何一页上**逐字相同**——判定若随翻页
+  浮动，调用方拿它做的"要不要接着翻"这个判断就没有依据了。
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ from app.services.retrieval.distribution import (
 from app.services.retrieval.fusion import DEFAULT_RRF_K, rrf_fuse
 from app.services.retrieval.rerank import RerankError, RerankProvider
 from app.services.retrieval.types import (
+    FULLTEXT_CHANNEL,
+    VECTOR_CHANNEL,
     ChannelStat,
     MetadataFilter,
     RetrievalHit,
@@ -57,12 +63,10 @@ __all__ = [
     "RetrievalService",
     "calibrated_vector_floor",
     "effective_stats_window",
+    "resolve_offset",
     "resolve_stats_floor",
     "similarity_from_distance",
 ]
-
-VECTOR_CHANNEL = "vector"
-FULLTEXT_CHANNEL = "fulltext"
 
 #: 向量通道（余弦）的相关度下限，**按嵌入模型标定**。
 #:
@@ -173,6 +177,21 @@ def resolve_stats_floor(stats_floor: float | None) -> float:
     if stats_floor is not None and stats_floor > 0.0:
         return float(stats_floor)
     return DEFAULT_STATS_FLOOR
+
+
+def resolve_offset(offset: int | None) -> int:
+    """这一页从第几条**幸存者**开始：负数、给不出数一律当 0。
+
+    与三个收敛旋钮同一条取舍（见 ``tools._int_or_none``）：它是"模型顺手给的调节量"，
+    给错一个数就让整次检索失败不划算——而"从第几条开始给"给错了顶多是多翻一页。
+    **越过末尾不是错**：那时回一页空的（见 ``RetrievalService.search`` 的分页那一段），
+    判定照旧——把"翻到底了"报成一次失败，只会让调用方以为检索坏了。
+    """
+    try:
+        value = int(offset)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
 
 
 def effective_stats_window(
@@ -342,25 +361,46 @@ class RetrievalService:
             hits, request, embedders, stats_floor
         )
         filtered_out += dropped
+
+        # —— 翻页（v0.63）：判定与收敛已经落定，这里只决定"交出哪一段" ——
+        # 顺序是刻意的：窗口、``summarize``、三个收敛旋钮全在 `_apply_distribution` 里跑完，
+        # 而它们**看不到 offset**——于是同一 pool 的判定在任何一页上都逐字相同
+        # （``summary`` / ``distribution`` / ``decision`` 不随翻页变）。
+        # 让 offset 参与判定（比如"这一页没命中就重裁一次"）会把判定变成随翻页浮动的东西，
+        # 而调用方正是靠它决定要不要接着翻。
+        offset = resolve_offset(request.offset)
+        # 一页几条 = 解析后的 keep（见 `_apply_distribution`：keep 现在只管窗口、不剪名单）
+        page_size = int(decision["keep"])
+        kept = len(hits)  # 收敛之后剩下多少 = 这次能翻到的总量
+        page = hits[offset : offset + page_size]
+        # **空页一律说"没有下一页"**：``page_size`` 收敛成 0（``fit=none`` 的建议就是 0）时
+        # 照公式回 ``offset + 0`` 会把调用方送进死循环——翻一百次还是同一页空结果。
+        next_offset = offset + len(page) if page and offset + len(page) < kept else None
+
         # 记在**返回之前**：返回给调用方的条数才是"命中数"，与 stats 里的分路召回数
         # 不是一回事（后者是融合前的候选量）
-        self._record_usage(request, hits=hits[: request.top_k], started=started_all)
+        self._record_usage(request, hits=page, started=started_all)
+        # **交出去的是一整份幸存者名单，不是这一页**：按库命中趋势记的是"这次收敛留下了
+        # 多少"——记这一页的话，翻三页就把那条曲线记成三倍（见 `_record_search_hits`）。
         self._record_search_hits(
             request,
-            hits=hits[: request.top_k],
+            hits=hits,
             candidates_by_kb=candidates_by_kb,
             fit=distribution.fit,
             started=started_all,
         )
 
         return RetrievalResponse(
-            hits=hits[: request.top_k],
+            hits=page,
             mode=request.mode,
             reranked=reranked,
             stats=stats,
             filtered_out=filtered_out,
             distribution=distribution,
             decision=decision,
+            offset=offset,
+            next_offset=next_offset,
+            kept=kept,
         )
 
     def _apply_distribution(
@@ -370,19 +410,28 @@ class RetrievalService:
         embedders: dict[str, EmbeddingProvider] | None = None,
         stats_floor: float | None = None,
     ) -> tuple[list[RetrievalHit], ScoreDistribution, dict[str, object], int, Counter[str]]:
-        """按分布与调用方的决定**收敛**返回集（见 ``distribution.py`` 的模块头）。
+        """按分布与调用方的决定**收敛**幸存者名单（见 ``distribution.py`` 的模块头）。
 
         三件事按顺序做，顺序不能反：
 
         1. **统计**（兜底阈值之上的全批）：条数、分位数、带宽、落在几篇文档上、拟合度；
         2. **切分数**：``min_score``（模型给的 → 否则建议值）。这一步用的是**余弦**，
-           不是融合分——融合分只反映名次，拿它当阈值是把"第几名"当成了"多相关"；
-        3. **按文档收敛**：``per_doc``（模型给的 → 否则建议值）与 ``keep`` 封顶。
+           不是融合分——融合分只反映名次，拿它当阈值是把"第几名"当成了"多相关"。
+           **只有向量通道的命中能被它切**：没有余弦的那些（词面通道捞上来的）照旧留下，
+           条数记在 ``decision.unscored_kept`` 里——留是对的（没证据就不拦），
+           不说清就是骗人；
+        3. **按文档收敛**：``per_doc``（模型给的 → 否则建议值）。
            **按文档**这一步才是治"上下文太长"的旋钮：实测的浪费是同一个问题被多本手册
            各答一遍（3–4 条来自同一本），而不是分数没切开。
 
+        返回值的第一项是**收敛之后的整份名单**（v0.63 起；从前它是"按 ``keep`` 剪过的
+        返回集"）。名单由 ``top_k`` 封顶，``keep`` 只决定一页几条——剪名单的活交给
+        ``search`` 分页那一段做（在那里剪才不会让 ``offset`` 无处可翻）。
+        名单上的条数就是"这次能翻到的总量"，与返回的那一页是两回事。
+
         ``decided_by`` 记清这次是"模型定的"还是"按建议走的"——用户问"为什么只回 3 条"
-        时，答案必须是一个数加一个来源，而不是一句"系统自动"。
+        时，答案必须是一个数加一个来源，而不是一句"系统自动"。上面三个旋钮**任意一个**
+        由调用方给出，这一位就是 ``"model"``。
 
         ``stats_floor`` 是 ``search`` 解析好的统计窗口下沿，**必须**原样传给
         ``summarize``：载荷里的 ``floor`` 是给模型看的"这批候选是按哪条线收上来的"，
@@ -391,9 +440,9 @@ class RetrievalService:
         返回值最后一项是**按库的收敛前条数**（``{kb_id: 候选数}``）：它必须在这里数，
         因为"候选"的定义就是"``summarize`` 看到的那一批"——回 ``search`` 再从头数一遍
         等于对同一件事有第二个定义，而两处迟早会对不上（v0.61 的按库命中趋势要它）。
-        收敛**之后**的条数由 ``search`` 从返回列表里数（那是 ``decision`` 的产物，不在这里）。
+        收敛**之后**的条数由 ``search`` 从这份名单的长度读（``len(hits)``，不是那一页）。
         """
-        basis = "vector" if any("vector" in hit.raw_scores for hit in hits) else "none"
+        basis = VECTOR_CHANNEL if any(VECTOR_CHANNEL in hit.raw_scores for hit in hits) else "none"
         # 收敛前的按库条数：**就是下面传给 summarize 的同一批 hits**，所以在这里数
         candidates_by_kb: Counter[str] = Counter(hit.knowledge_base_id for hit in hits)
         # 基线：显式给了正数就用（用户配的那一项），否则按嵌入模型标定——**都没标定就是
@@ -410,7 +459,7 @@ class RetrievalService:
                 hit.document_name or hit.document_id,
                 # **没有向量分就交 None**：拿融合分（RRF）当相似度算分位数会把整份分布
                 # 污染掉（实测 min 被拉到 0.007、带宽拉到 0.974）。条数与文档冗余照旧统计。
-                float(hit.raw_scores["vector"]) if "vector" in hit.raw_scores else None,
+                float(hit.raw_scores[VECTOR_CHANNEL]) if VECTOR_CHANNEL in hit.raw_scores else None,
                 hit.document_id,
             )
             for hit in hits
@@ -426,7 +475,13 @@ class RetrievalService:
             keep_cap=request.top_k,
         )
 
-        model_decided = request.keep is not None or request.min_score is not None
+        # 三个旋钮**都算调用方自己的决定**：`per_doc` 也是他按分布算出来的收敛方式。
+        # 早先只认 keep / min_score，于是传了 per_doc 的那次照样记 `decided_by="suggested"`
+        # ——一边照他的数收敛、一边说"这是系统建议的"，是同一份载荷里的自相矛盾
+        # （实测被用户抓到的就是这一条）。
+        model_decided = (
+            request.keep is not None or request.min_score is not None or request.per_doc is not None
+        )
         keep = request.keep if request.keep is not None else distribution.suggested_keep
         min_score = (
             request.min_score if request.min_score is not None else distribution.suggested_min_score
@@ -434,15 +489,22 @@ class RetrievalService:
         per_doc = request.per_doc if request.per_doc is not None else distribution.suggested_per_doc
 
         dropped = 0
+        # 没有余弦可比、因而**绕过 ``min_score`` 那一刀**的条数（见下面的分支）：
+        # 这一位就是给"我把阈值提到 0.99，回来的却是一批 `similarity: null`"那个现象的答案。
+        unscored_kept = 0
         # 兜底阈值已经是统计窗口的下沿，这里只可能再往上切：``min_score`` 低于它就等于不切
         if min_score is not None:
             kept: list[RetrievalHit] = []
             for hit in hits:
-                similarity = hit.raw_scores.get("vector")
-                # **没有相似度的（只有全文通道）照旧留下**：这一刀切的是"不够像"，
-                # 而它的证据不在相似度那一侧（词面覆盖已经判过了）——没有证据就不拦，
-                # 与 `_passes_relevance` 同一条纪律。
-                if similarity is None or float(similarity) >= min_score:
+                similarity = hit.raw_scores.get(VECTOR_CHANNEL)
+                # **没有余弦的（只有词面通道）照旧留下**：这一刀切的是"不够像"，
+                # 而它的证据不在余弦那一侧（词面覆盖已经判过了）——没有证据就不拦，
+                # 与 `_passes_relevance` 同一条纪律。留下归留下，**数出来**：
+                # 不然调用方以为阈值生效了。
+                if similarity is None:
+                    unscored_kept += 1
+                    kept.append(hit)
+                elif float(similarity) >= min_score:
                     kept.append(hit)
                 else:
                     dropped += 1
@@ -461,17 +523,30 @@ class RetrievalService:
             hits = kept
 
         limit = max(0, min(int(keep), request.top_k))
-        if len(hits) > limit:
-            dropped += len(hits) - limit
-            hits = hits[:limit]
+        if limit == 0 and hits:
+            # ``keep == 0`` 是 ``fit=none`` 的建议值：**这一轮一条都不要**。这时连名单都
+            # 不留——没有"第几页"可言，那几条也不该被记成"收敛后留下的"。
+            dropped += len(hits)
+            hits = []
+        elif len(hits) > request.top_k:
+            # **封顶的是 ``top_k``，不再是 ``keep``**（v0.63）：``keep`` 改成页大小之后，
+            # 再用它剪名单的话 ``offset`` 就无处可翻——名单被剪到 ≤ keep，第二页必然为空。
+            # ``top_k`` 才是"这次能翻到的总量"（所以它从 20 抬到了 50）。
+            dropped += len(hits) - request.top_k
+            hits = hits[: request.top_k]
 
         decision = {
+            # 这一位是**一页几条**（v0.63）：判定与它无关，翻页也不改它
             "keep": limit,
             "min_score": min_score,
             "per_doc": per_doc,
             "decided_by": "model" if model_decided else "suggested",
             "fit": distribution.fit,
             "dropped": dropped,
+            # 这一位与 `dropped` 是一对：`dropped` 说"切掉了几条"，它说"有几条**没被切**，
+            # 因为手里根本没有可比的那个数"。缺了它，"阈值提到 0.99 却还有命中"就只剩
+            # "看不懂"这一种解释。为 0 = 这次要么没有这一刀，要么每个候选都有余弦。
+            "unscored_kept": unscored_kept,
         }
         return hits, distribution, decision, dropped, candidates_by_kb
 
@@ -534,7 +609,10 @@ class RetrievalService:
         交给回调的是并集 ``{kb_id: (候选数, 留存数)}``：
 
         - ``candidates_by_kb`` 是收敛**之前**各库贡献的条数（``_apply_distribution`` 里数的）；
-        - 留存数是**返回给调用方的那一批**里各库的条数（收敛之后的）；
+        - 留存数是**收敛之后留下的那一批**（= 这一批幸存者）里各库的条数。**它不是某一页**：
+          v0.63 起一次检索可以翻页，而"这次收敛留下了多少"是这次检索的属性，与调用方翻到
+          第几页无关——照那一页记的话，翻三页就把同一次检索在曲线上记成三倍，趋势就不再是
+          趋势了。所以翻到第二页时它**可以**与这次返回的 ``hits`` 不等，而且必须不等才对；
         - 再并上 ``request.kb_ids``——**"这个库被检索了但一条没命中"也要记一行**
           （候选 0）。少了它，"这个库最近没人查"与"查了但查不到"在曲线上长得一样，
           而那正是这条曲线要回答的一半问题。

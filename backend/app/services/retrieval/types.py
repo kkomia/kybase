@@ -14,6 +14,8 @@ from app.models.enums import DataSourceKind
 from app.services.retrieval.distribution import ScoreDistribution
 
 __all__ = [
+    "FULLTEXT_CHANNEL",
+    "VECTOR_CHANNEL",
     "ChannelStat",
     "MetadataFilter",
     "RetrievalHit",
@@ -31,6 +33,13 @@ class RetrievalMode:
     FULLTEXT = "fulltext"
 
     ALL = (HYBRID, VECTOR, FULLTEXT)
+
+
+#: 通道名**就是** ``RetrievalHit.raw_scores`` 里的键名。放在这里（而不是 ``service.py``）
+#: 是因为命中自己要用它回答"我是哪条通道捞上来的"（见 ``RetrievalHit.basis``）——
+#: 定义在服务实现里的话，类型那一侧只能另抄一份字面量，而两套名字迟早对不上。
+VECTOR_CHANNEL = "vector"
+FULLTEXT_CHANNEL = "fulltext"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,9 +64,20 @@ class RetrievalQuery:
     query: str
     kb_ids: Sequence[str]
     top_k: int = 8
+    """**这次能翻到的总量**（v0.63 起它才单独有意义）。
+
+    从前它与 ``keep`` 是同一个数（都是"返回几条"），两处上限重合。v0.63 起 ``keep``
+    是**一页几条**，收敛之后留下的那一批由 ``top_k`` 封顶——名单再拿 ``keep`` 剪，
+    ``offset`` 就无处可翻（剪到 ≤ keep，第二页必然是空的）。所以要"把某本书关于 X 的
+    内容看全"时开大的就是这个数（对外的上限见 ``services.tools.MAX_TOP_K``）。
+    """
     mode: str = RetrievalMode.HYBRID
     candidate_k: int = 40
-    """每一路的候选数。融合前多召回一些，给 RRF 留出排序空间。"""
+    """每一路的候选数。融合前多召回一些，给 RRF 留出排序空间。
+
+    **小于 ``top_k`` 时被抬到 ``top_k``**（见 ``__post_init__``）：翻页翻的是候选池，
+    召回来得比池子还浅，后面几页只会是空的。
+    """
     score_threshold: float | None = None
     """**相对**融合分的下限（该条分 / 最高分）：1.0 = 只保留并列第一。"""
     min_vector_score: float | None = None
@@ -92,11 +112,26 @@ class RetrievalQuery:
     基线是**参照线**，一条 0 的基线会把整批候选都判成"过线"，那不是"关掉判定"而是"全放行"。
     """
     keep: int | None = None
-    """**调用方（模型）决定**的返回条数；``None`` = 用分布给出的建议。"""
+    """**调用方（模型）决定**的一页几条；``None`` = 用分布给出的建议。
+
+    **v0.63 起它是"一页几条"，不再是"这一轮一共几条"**：一共能翻到多少由 ``top_k``
+    封顶（见 :attr:`offset`）。``offset=0`` 时两者恰好一致——原来那些调用一个字都不用改。
+    """
     min_score: float | None = None
     """**调用方（模型）决定**的分数下限（绝对余弦）；``None`` = 用建议。"""
     per_doc: int | None = None
     """**调用方（模型）决定**的"每篇文档最多留几条"；``None`` = 用建议。"""
+    offset: int = 0
+    """**翻页的起点**（v0.63）：跳过前 N 条**幸存者**（收敛之后留下的那一批）。
+
+    返回的是 ``幸存者[offset : offset + 解析后的 keep]``。**判定与收敛不跟着它走**：
+    统计窗口、``summarize``、三个收敛旋钮一律作用在同一批候选上——于是同一批候选的
+    ``summary`` / ``distribution`` / ``decision`` 在任何一页上**逐字相同**。判定随翻页
+    变动是没用的：调用方正是靠它决定"要不要继续翻"。
+
+    负数/给不出数当 0，越过末尾当空页，都不报错（见 ``service.resolve_offset``）——
+    它是"模型顺手给的调节量"，给错一个数就让整次检索失败不划算。
+    """
     rerank: bool = False
     filters: MetadataFilter | None = None
 
@@ -106,7 +141,13 @@ class RetrievalQuery:
         if self.top_k <= 0:
             raise ValueError("top_k 必须为正整数")
         if self.candidate_k < self.top_k:
-            raise ValueError("candidate_k 不能小于 top_k")
+            # **召回深度跟着池子走**（v0.63 起是"抬上来"而不是报错）：``top_k`` 从
+            # "返回条数"变成"能翻到的总量"之后，一次要 50 条池子的调用很可能压根没传
+            # ``candidate_k``（默认 40）——报错就等于"把上限抬到 50"这件事只有显式传了
+            # candidate_k 的人叫得动，而多出来的那一档恰恰是这次要开的能力。
+            # 要 50 条却没有 50 个候选是自相矛盾的，替它补上就是；少召回的后果
+            # （翻到一半就空了）不报错，只会让人以为"库里就这么多内容"。
+            object.__setattr__(self, "candidate_k", self.top_k)
 
 
 @dataclass(slots=True)
@@ -139,10 +180,44 @@ class RetrievalHit:
     channels: Sequence[str] = field(default_factory=tuple)
     ranks: dict[str, int] = field(default_factory=dict)
     raw_scores: dict[str, float] = field(default_factory=dict)
-    """各路原始分：向量侧是**余弦相似度**（已由距离换算），全文侧是 -bm25。
+    """各路原始分：向量侧是**余弦相似度**（已由距离换算），全文侧是全文排序分（越大越相关）。
     调试台要显示"相似度"，靠的就是它——融合分只反映名次，不是相似度。
-    逐条读它容易拿错路（全文那一路的量纲完全不同），所以命中上另给了 ``similarity``。"""
+    逐条读它容易拿错路（全文那一路的量纲完全不同），所以命中上另给了 ``similarity``
+    与 ``lexical_score``，以及"这条是哪一路捞上来的" ``basis``。"""
     rerank_score: float | None = None
+
+    @property
+    def basis(self) -> str:
+        """这条命中**是哪条通道捞上来的**：``"vector"`` / ``"fulltext"``。
+
+        取的就是 :attr:`raw_scores` 的键名（:data:`VECTOR_CHANNEL` / :data:`FULLTEXT_CHANNEL`），
+        不另起一套说法：同一件事两个名字，必然有一处先漂。两条通道都命中时算
+        ``"vector"``（余弦那一侧的信息更多）。兜底的 ``"none"`` 理论上到不了
+        （融合出来的候选至少来自一条通道），写它只是因为"说不出是哪一路"时**不该编一个**。
+
+        **产品上的用处**：``min_score`` 只切向量通道的命中（词面通道没有余弦可比，
+        见 ``service._apply_distribution``），所以调用方要逐条看这一位才知道手里这条
+        受不受阈值约束——``similarity`` 为 ``null`` 时它必然是 ``"fulltext"``。
+        """
+        if VECTOR_CHANNEL in self.raw_scores:
+            return VECTOR_CHANNEL
+        if FULLTEXT_CHANNEL in self.raw_scores:
+            return FULLTEXT_CHANNEL
+        return "none"
+
+    @property
+    def lexical_score(self) -> float | None:
+        """词面（全文）通道的原始分：全文检索的排序分，**越大越相关**。
+
+        ``None`` = 这条不是词面捞上来的。**量纲与 :attr:`similarity` 无关，两个数不能
+        互相比较**：相关度下限只认余弦，词面那一路"够不够像"由实词覆盖率判
+        （见 ``coverage.py`` 与 ``service._passes_relevance``）。
+
+        为什么要单独给这一位：``min_score`` 管不着词面通道的命中，调用方要自己筛
+        就只能读原始分——而逐条去翻 :attr:`raw_scores` 容易拿错路（文案与 REST
+        的响应里也是这么说的）。
+        """
+        return self.raw_scores.get(FULLTEXT_CHANNEL)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,4 +246,26 @@ class RetrievalResponse:
     """这次**实际**按什么切的：``{"keep": n, "min_score": x, "per_doc": y, "decided_by": ...}``。
 
     调试台与工具结果都读它——用户问"为什么只回了 3 条"时，答案必须是一个数而不是猜测。
+
+    ``keep`` 是**一页几条**（v0.63）：它不随 ``offset`` 变，翻页也不改它。
+    """
+    offset: int = 0
+    """这一页是从第几条幸存者开始的（**回显实际生效的那个数**：请求负数时折成 0）。
+
+    回显而不是回传请求值：调用方据此知道自己那一页到底从哪儿开始——"我传了 -3"与
+    "系统按 0 走的"必须是同一份载荷里的同一句话。
+    """
+    next_offset: int | None = None
+    """下一页的起点；**没有更多了就是 ``None``**（空页也是 ``None``）。
+
+    有了它，调用方不必猜"翻完没有"：把 ``next_offset`` 填回 ``offset`` 接着翻即可。
+    空页必须是 ``None`` 而不是 ``offset + 0``——``keep`` 收敛成 0（``fit=none`` 那一档）
+    时照公式回一个数会把调用方送进死循环。
+    """
+    kept: int = 0
+    """**收敛后剩下多少条**（= 这次能翻到的总量 = :attr:`hits` 那一份名单的长度）。
+
+    与 ``len(hits)`` 不是一回事：``hits`` 只是这一页。翻页**不许**改变"收敛留下了多少"
+    ——否则翻三页就把按库命中趋势记成三倍（见 ``service._record_search_hits``），
+    而 ``summary`` 那句"收敛后留 N 条"也会一页一个样。这个字段与那句话同源。
     """

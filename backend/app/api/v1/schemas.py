@@ -34,6 +34,7 @@ from app.services.suggested_questions import (
 from app.services.suggested_questions import (
     PROMPT_MAX_CHARS as SUGGESTED_PROMPT_MAX_CHARS,
 )
+from app.services.tools import MAX_TOP_K
 
 _RECORD_CONFIG = ConfigDict(from_attributes=True, use_attribute_docstrings=True)
 """记录类响应模型直接由服务/存储的记录对象构建。
@@ -554,7 +555,14 @@ class MetadataFilterIn(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     kb_ids: list[str] = Field(min_length=1)
-    top_k: int = Field(default=8, gt=0, le=100)
+    top_k: int = Field(default=8, gt=0, le=MAX_TOP_K)
+    """**这次能翻到的总量**（v0.63 起它才单独有意义）。
+
+    从前它与 ``keep`` 是同一个数（都管"返回几条"）。现在 ``keep`` 是**一页几条**，
+    收敛之后留下的那一批由它封顶——翻页翻的就是这个池子。上限与 MCP ``search``
+    工具广告的是**同一个常量**（``services.tools.MAX_TOP_K``）：一边能翻 50 条、
+    一边只能翻 20 条，就成了两种能力（同 ``keep`` 的理由）。
+    """
     mode: str = "hybrid"
     candidate_k: int = Field(default=40, gt=0, le=500)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -574,10 +582,13 @@ class SearchRequest(BaseModel):
     ``services/retrieval`` 的 ``DEFAULT_MIN_TERM_COVERAGE``），0 = 关闭。
     两条证据是"或"的关系，见 ``services/retrieval/coverage.py``。
     """
-    keep: int | None = Field(default=None, ge=1, le=20)
+    keep: int | None = Field(default=None, ge=1, le=MAX_TOP_K)
     """**按分布收敛**：这一轮最多要几段（不传 = 用分布给出的建议）。
 
-    上限与 MCP ``search`` 工具广告的是同一组数（``keep`` 1–20、``per_doc`` 1–10），
+    **v0.63 起它是"一页几条"**：一共能翻到多少由 ``top_k`` 封顶，``next_offset`` 指下一页。
+    ``offset=0`` 时与从前完全一致（返回的就是前 ``keep`` 条）。
+
+    上限与 MCP ``search`` 工具广告的是同一组数（``keep`` 1–``MAX_TOP_K``、``per_doc`` 1–10），
     两者是同一个旋钮的两个入口——一边能传 50、一边只能传 20，用起来就成了两种能力。
     """
     min_score: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -585,6 +596,19 @@ class SearchRequest(BaseModel):
     per_doc: int | None = Field(default=None, ge=1, le=10)
     """**按分布收敛**：每篇文档最多留几段（不传 = 用建议）。同一件事被好几本书
     各答一遍时，这个旋钮才是治"上下文太长"的那个。"""
+    offset: int = Field(default=0)
+    """**翻页的起点**（v0.63）：跳过前 N 条**幸存者**（收敛之后留下的那一批）。
+
+    返回的是 ``幸存者[offset : offset + keep]``；``next_offset`` 说下一页从哪开始
+    （``null`` = 翻到底了）。**判定与它无关**：``summary`` / ``distribution`` /
+    ``decision`` 在同一批候选的每一页上都逐字相同——调用方正是靠它决定要不要接着翻，
+    一个随翻页变动的判定是没法用的。
+
+    **刻意不加 ``ge=0``**：负数退回 0 而不是 422——它是"顺手给的调节量"，
+    与 MCP 那条路同一条容错取舍（见 ``services.retrieval.service.resolve_offset``
+    与 ``services.tools._int_or_none``）。越过末尾同样不是错：回空 ``hits``
+    加 ``next_offset: null``，判定照旧。
+    """
     rerank: bool = False
     filters: MetadataFilterIn | None = None
 
@@ -610,6 +634,18 @@ class SearchHitOut(BaseModel):
     **这个才是"相似度"**：相关度地板比的是它（bge-m3 0.531 / WeMM 0.35，按模型标定，
     见 `services/retrieval/service.py` 的 `MIN_VECTOR_SCORE_BY_MODEL`）。
     界面要显示相似度、或要判断"到此为止"，读这一位。"""
+    basis: str
+    """这条命中**是哪条通道捞上来的**：``"vector"`` / ``"fulltext"``（就是 ``raw_scores`` 的键名）。
+
+    **为什么要单独给这一位**：`min_score` 只切向量通道的命中——词面通道没有余弦可比，
+    它的命中不受阈值约束（条数记在 ``decision.unscored_kept`` 里）。所以
+    ``similarity`` 为 ``null`` 的那些不是"相关性不明"，而是"这条是词面捞上来的"；
+    要更严就得自己按 ``lexical_score`` 筛。MCP 的 `search` 给的是同一批字段。"""
+    lexical_score: float | None = None
+    """词面（全文）通道的原始分，**与 `similarity` 不同量纲、不可互相比较**（越大越相关）。
+
+    ``None`` = 这条不是词面捞上来的。相关度下限只认余弦，词面那一路"够不够像"由实词
+    覆盖率判（见 `services/retrieval/coverage.py`）——这一位交出来是让调用方自己筛。"""
     page: int | None = None
     heading_path: str | None = None
     image_ids: list[str] = Field(default_factory=list)
@@ -640,11 +676,27 @@ class SearchResponse(BaseModel):
     没有库"那种提前返回是 `null`。"""
     decision: dict[str, Any] | None = None
     """这次**实际**按什么收敛的：``{"keep", "min_score", "per_doc", "decided_by",
-    "fit", "dropped"}``——用户问"为什么只回了 3 条"时，答案必须是一个数加一个来源。"""
+    "fit", "dropped", "unscored_kept"}``——用户问"为什么只回了 3 条"时，答案必须是一个数
+    加一个来源。
+
+    ``decided_by`` 为 ``"model"`` = 这三个旋钮里**任意一个**是调用方给的（``per_doc``
+    也算：一边照它收敛、一边说是系统建议的，是同一份载荷里的自相矛盾）。
+    ``unscored_kept`` = 没有余弦可比、因而绕过 ``min_score`` 那一刀的词面命中条数
+    （``min_score=0.99`` 却还有命中时，看它；没有这一刀或个个都有余弦时为 0）。"""
     hits: list[SearchHitOut]
     mode: str
     reranked: bool
     filtered_out: int = 0
+    offset: int = 0
+    """这一页是从第几条幸存者开始的（**回显实际生效的那个数**：请求负数时折成 0）。
+
+    回显而不是回传请求值：调用方据此知道自己这一页到底从哪儿开始——"我传了 -3"与
+    "系统按 0 走的"必须是同一份载荷里的同一句话。"""
+    next_offset: int | None = None
+    """下一页的起点；``null`` = 没有更多了（空页也是 ``null``）。
+
+    **照它翻页就行，不必自己算**：把 ``next_offset`` 填回 ``offset`` 继续。空页为 ``null``
+    是刻意的——``keep`` 收敛成 0 时照公式回 ``offset + 0`` 会让调用方原地打转。"""
     stats: list[ChannelStatOut] = Field(default_factory=list)
     embedding_configured: bool = True
     """是否配了嵌入模型。为假时本次只做了全文通道，界面要如实说明。"""
@@ -713,7 +765,9 @@ class SearchHitPointOut(BaseModel):
     candidates: int
     """分布收敛**之前**这个库贡献的条数。"""
     kept: int
-    """收敛之后真的返回给调用方的条数。"""
+    """收敛之后**剩下**的条数（v0.63 起不是"某一页返回的条数"）。
+
+    翻页不该把这条曲线乘上页数：同一次检索翻三页，趋势上仍然只记一份收敛结果。"""
 
 
 class KbSearchHitsOut(BaseModel):
@@ -1628,6 +1682,11 @@ class ToolCatalogOut(BaseModel):
     """工具目录。管理界面据此渲染那一列工具、以及钩选 API Key 的范围。"""
 
     items: list[ToolOut] = Field(default_factory=list)
+    surface_fingerprint: str
+    """对外工具面的指纹（``services.tools.surface_fingerprint()``）：**这张表变了它就变**。
+
+    界面上把它显示出来，用户对着两次部署的值一比就知道契约有没有变过。版本号做不到
+    这件事——那是发版号，同一次发版里改工具面它一动不动（详见那个函数的说明）。"""
     mcp_endpoint: str | None = None
     """MCP 的接入地址（整条，来自 ``KYLAB_MCP_PUBLIC_URL``）。**没配时为 ``None``**——
     拼一个相对地址、或者拿 REST 的基址接个 ``/mcp``，摆出来的都是**连不上**的地址。"""

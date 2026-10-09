@@ -46,6 +46,7 @@ from app.core.services import get_services
 from app.main import create_app
 from app.models.enums import ApiKeyPermission, UserRole
 from app.services.api_key import Caller
+from app.services.tools import MAX_TOP_K
 from app.storage.base import ApiKeyRecord, KnowledgeBaseRecord, UserRecord
 
 pytestmark = pytest.mark.local
@@ -235,8 +236,11 @@ def test_capabilities_take_their_numbers_from_the_real_contract() -> None:
     assert caps["ingest"]["max_bytes"] == MAX_UPLOAD_BYTES
     assert caps["retrieval"]["top_k_max"] == _le(SearchRequest, "top_k")
     assert caps["retrieval"]["candidate_k_max"] == _le(SearchRequest, "candidate_k")
-    # 顺带钉住当前值：两个上界换了数字是**契约变更**，不该悄悄发生
-    assert caps["retrieval"]["top_k_max"] == 100
+    # 顺带钉住当前值：两个上界换了数字是**契约变更**，不该悄悄发生。
+    # ``top_k_max`` 从 100 改到 ``MAX_TOP_K``（50，v0.63）：它不是"REST 随手放宽的那个数"，
+    # 而是**MCP 工具广告的同一个上限**——一边能翻 50 条、一边能翻 100 条，
+    # 这条对外能力位就是在说谎（客户端照它做校验也会得到两种答案）。
+    assert caps["retrieval"]["top_k_max"] == MAX_TOP_K
     assert caps["retrieval"]["candidate_k_max"] == 500
 
 

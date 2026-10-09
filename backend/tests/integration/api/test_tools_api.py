@@ -151,3 +151,22 @@ def test_catalogue_is_not_narrowed_by_a_keys_tool_scope(locked: TestClient) -> N
     ).json()
 
     assert [item["name"] for item in body["items"]] == list(TOOL_NAMES)
+
+
+def test_catalogue_carries_the_same_fingerprint_as_the_mcp_server(locked: TestClient) -> None:
+    """目录里的 ``surface_fingerprint`` 与 MCP 那侧**必须是同一个数**（v0.62）。
+
+    这个数的用处就是"两边一比"：控制台显示它、客户端从 ``serverInfo.version`` 里
+    读到它，用户据此判断这次部署的契约有没有变过。两处各算一遍迟早对不上——
+    所以这里直接钉"就是 ``services.tools.surface_fingerprint()`` 的输出"，
+    并顺手验它确实出现在 MCP 的版本串里。
+    """
+    from app.core.config import get_settings
+    from app.mcp_server.server import build_server
+    from app.services.tools import surface_fingerprint
+
+    fingerprint = surface_fingerprint()
+    body = locked.get("/api/v1/tools").json()
+
+    assert body["surface_fingerprint"] == fingerprint
+    assert build_server().version == f"{get_settings().app_version}+mcp.{fingerprint}"

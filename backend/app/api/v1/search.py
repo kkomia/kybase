@@ -64,6 +64,7 @@ def search(
             keep=payload.keep,
             min_score=payload.min_score,
             per_doc=payload.per_doc,
+            offset=payload.offset,
             rerank=payload.rerank,
             filters=filters,
         )
@@ -74,8 +75,11 @@ def search(
     decided_by = "" if decision is None else str(decision.get("decided_by") or "")
     return SearchResponse(
         # 判定在前：界面上该显示的是"这批命中是什么状态"，原文是它的下文
+        # `kept` 传的是**收敛后剩下的总数**（``response.kept``）而不是这一页给了几条
+        # （v0.63）：翻页时这一句必须**逐字不变**——调用方正是靠它决定要不要接着翻；
+        # "这一页给了几条"由 ``hits`` 与 ``next_offset`` 说。
         summary=(
-            distribution.headline(kept=len(response.hits), decided_by=decided_by)
+            distribution.headline(kept=response.kept, decided_by=decided_by)
             if distribution is not None
             else ""
         ),
@@ -85,6 +89,10 @@ def search(
         mode=response.mode,
         reranked=response.reranked,
         filtered_out=response.filtered_out,
+        # 翻页的两项紧跟计数：与 MCP 那条路同源（同一个 ``RetrievalResponse``），
+        # 免得"工具里能翻、界面上翻不了"这种同一份数据两种能力
+        offset=response.offset,
+        next_offset=response.next_offset,
         stats=[ChannelStatOut.model_validate(stat) for stat in response.stats],
         embedding_configured=services.runtime.embedding().is_configured,
         embedding_is_development=services.embedder.is_development,

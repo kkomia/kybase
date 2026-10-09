@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.services import get_services
 from app.models.enums import DocumentStage, TaskState
+from app.services.tools import MAX_TOP_K
 from tests.conftest import admin_client as admin_session
 
 MARKDOWN = (
@@ -422,6 +423,32 @@ def test_search_reports_development_embedding(client: TestClient, kb_id: str) ->
     assert body["embedding_is_development"] is True
 
 
+def test_a_hit_says_which_channel_found_it_and_what_bypassed_the_threshold(
+    client: TestClient, kb_id: str
+) -> None:
+    """REST 的命中与 MCP 的命中要给**同一批字段**（v0.62）：
+
+    ``basis`` 说这条是哪条通道捞上来的、``lexical_score`` 是词面那一路的原始分，
+    而 ``decision.unscored_kept`` 说有几条**没有余弦可比**、因而绕过了 ``min_score``。
+    两个入口形状不一致是最难查的一类不一致——同一批数据，两种说法。
+    """
+    _upload(client, kb_id)
+    _drain_worker()
+
+    body = client.post(
+        "/api/v1/search",
+        json={"query": "混合召回", "kb_ids": [kb_id], "min_score": 0.0},
+    ).json()
+
+    assert body["hits"], "摄入完成后应当能检索到内容"
+    for hit in body["hits"]:
+        assert hit["basis"] in {"vector", "fulltext"}
+        # 有余弦的必然是向量通道捞上来的（两者同源）
+        assert (hit["similarity"] is not None) == (hit["basis"] == "vector")
+        assert "lexical_score" in hit
+    assert body["decision"]["unscored_kept"] == 0, "阈值 0 谁都能过，没有绕过去的那一说"
+
+
 def test_search_modes_and_filters(client: TestClient, kb_id: str) -> None:
     _upload(client, kb_id)
     _drain_worker()
@@ -490,14 +517,19 @@ def test_search_converges_with_the_knobs_it_advertises(client: TestClient, kb_id
 
 
 def test_search_rejects_out_of_range_convergence_knobs(client: TestClient, kb_id: str) -> None:
-    """上下限与 MCP 工具广告的同一组（keep 1–20、per_doc 1–10、min_score 0–1）。
+    """上下限与 MCP 工具广告的同一组（``keep`` 1–``MAX_TOP_K``、``per_doc`` 1–10、
+    ``min_score`` 0–1）。
 
     越界直接 422：这三个数是模型/界面按分布算出来的，超出范围说明调用方算错了，
     悄悄夹到边界反而让它以为自己那套算法是对的。
+
+    ``keep`` 的上限跟着 ``MAX_TOP_K`` 一起从 20 抬到 50（v0.63）：``keep`` 现在是一页几条，
+    而一页能开多大与池子一样宽才算同一个旋钮——一边能传 50、一边只能传 20，
+    用起来就成了两种能力（MCP 那边广告的就是这个常量）。
     """
     for payload in (
         {"keep": 0},
-        {"keep": 21},
+        {"keep": MAX_TOP_K + 1},
         {"per_doc": 0},
         {"per_doc": 11},
         {"min_score": 1.5},
@@ -507,6 +539,97 @@ def test_search_rejects_out_of_range_convergence_knobs(client: TestClient, kb_id
             "/api/v1/search", json={"query": "部署", "kb_ids": [kb_id], **payload}
         )
         assert response.status_code == 422, payload
+
+
+# --------------------------------------------------------------- 翻页（v0.63）
+
+
+def _paging_library(client: TestClient, kb_id: str) -> None:
+    """灌三份都提到「混合召回」的文档，再跑完摄入——翻页至少要翻得动两页。
+
+    三份内容各不相同是刻意的：内容一样会被按内容去重，库里就只有一份可翻。
+    """
+    for index in range(3):
+        created = _upload(
+            client,
+            kb_id,
+            name=f"第{index}节.md",
+            content=(
+                f"# 第{index}节 混合召回\n\n"
+                f"混合召回的第 {index} 种用法：向量检索管语义、全文检索管词面，"
+                f"两路融合后按第 {index} 份资料的口径收敛。\n"
+                f"第 {index} 节只回答一件事——混合召回在这份资料里是怎么用的。\n"
+            ),
+        )
+        assert created.status_code == 202, created.text
+    _drain_worker()
+
+
+def test_search_pages_the_survivors_with_the_same_verdict_on_every_page(
+    client: TestClient, kb_id: str
+) -> None:
+    """REST 也能翻页，且与 MCP 那条路**同一套语义**：``keep`` 一页几条、``top_k`` 能翻到的总量。
+
+    "工具里能翻、界面上翻不了"就是同一份数据两种能力，所以这条与 MCP 那边的用例
+    是同一批断言——拼起来等于不翻页那一份，判定每一页逐字相同。
+    """
+    _paging_library(client, kb_id)
+    body = {"query": "混合召回", "kb_ids": [kb_id], "top_k": 10}
+
+    whole = client.post("/api/v1/search", json={**body, "keep": 10}).json()
+    assert len(whole["hits"]) >= 2, "这份夹具要够翻两页"
+    assert whole["offset"] == 0
+    assert whole["next_offset"] is None, "keep ≥ 幸存者数时这一页就是全部"
+
+    pages: list[dict] = []
+    payload = client.post("/api/v1/search", json={**body, "keep": 1}).json()
+    while True:
+        pages.append(payload)
+        assert len(pages) < 50, "next_offset 把调用方送进了死循环"
+        if payload["next_offset"] is None:
+            break
+        payload = client.post(
+            "/api/v1/search", json={**body, "keep": 1, "offset": payload["next_offset"]}
+        ).json()
+
+    walked = [hit["chunk_id"] for page in pages for hit in page["hits"]]
+    assert len(walked) == len(set(walked)), "两页之间不许重叠"
+    assert walked == [hit["chunk_id"] for hit in whole["hits"]], "拼起来必须等于那整份名单"
+
+    for index, page in enumerate(pages):
+        assert len(page["hits"]) == 1, "keep=1 就是一页一条"
+        assert page["offset"] == index, "起点就是上一页的 next_offset"
+        # 判定每一页逐字相同；与"一页给全部"那次比只差 `decision.keep`（页大小是调用方传的）
+        assert page["summary"] == whole["summary"]
+        assert page["distribution"] == whole["distribution"]
+        assert {**page["decision"], "keep": whole["decision"]["keep"]} == whole["decision"]
+
+
+def test_a_negative_offset_folds_to_zero_and_a_past_the_end_one_is_empty(
+    client: TestClient, kb_id: str
+) -> None:
+    """负数退回 0（不是 422）、翻过头回空页（不是错）——与 MCP 那条路**同一条取舍**。
+
+    ``offset`` 刻意没加 ``ge=0``：它是"顺手给的调节量"，与三个收敛旋钮同一档
+    （见 ``SearchRequest.offset`` 的说明）。翻过头更不是错——那是"已经拿到全部了"。
+    """
+    _paging_library(client, kb_id)
+    body = {"query": "混合召回", "kb_ids": [kb_id], "top_k": 10, "keep": 1}
+    first = client.post("/api/v1/search", json=body).json()
+    assert first["offset"] == 0
+
+    negative = client.post("/api/v1/search", json={**body, "offset": -3})
+    assert negative.status_code == 200, "负数该退回默认，而不是 422"
+    assert negative.json()["offset"] == 0
+    assert negative.json()["hits"] == first["hits"]
+
+    beyond = client.post("/api/v1/search", json={**body, "offset": 9999})
+    assert beyond.status_code == 200
+    assert beyond.json()["hits"] == []
+    assert beyond.json()["next_offset"] is None
+    assert beyond.json()["offset"] == 9999, "回显传进来的起点（只是没有那一条可给）"
+    assert beyond.json()["decision"] == first["decision"]
+    assert beyond.json()["summary"] == first["summary"]
 
 
 def test_create_kb_without_an_embedding_model_is_rejected(monkeypatch) -> None:
