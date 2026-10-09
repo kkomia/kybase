@@ -53,6 +53,9 @@ const METRIC_LABELS = {
   documents: '入库文档',
   chunks: '新增切块',
   tasks: '流水线任务',
+  // v0.61：`/stats/dashboard` 的活跃度点里多了 `hits`（当天的检索命中候选数），
+  // 于是这一行多一档；聚合与抽稀那两段都是按 `point[metric]` 泛化的，不需要别的接线
+  hits: '检索命中',
 } as const
 
 type Metric = keyof typeof METRIC_LABELS

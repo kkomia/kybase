@@ -12,6 +12,13 @@ export interface ActivityPoint {
   documents: number
   chunks: number
   tasks: number
+  /**
+   * 这一天的检索命中**候选数**（各库之和，v0.61）。
+   *
+   * 「候选」= 分布收敛**之前**那批：拿收敛后的条数当活跃度会量到"调用方要了几条"，
+   * 而不是"这个库被问出了多少东西"。概览趋势图上的「检索命中」一档读的就是它。
+   */
+  hits: number
 }
 
 export interface KbStat {
@@ -103,4 +110,50 @@ export interface Usage {
  */
 export function getUsage(days = 30): Promise<Usage> {
   return request(`/stats/usage?days=${days}`)
+}
+
+// --------------------------------------------------------------- 检索命中趋势（v0.61）
+
+/** 某一天、某个库的命中量。后端给的是**稀疏**曲线（只有真有记录的那些天）。 */
+export interface SearchHitPoint {
+  day: string
+  /** 分布收敛**之前**这个库贡献的条数。 */
+  candidates: number
+  /** 收敛之后真的返回给调用方的条数。 */
+  kept: number
+}
+
+/** 单个知识库在窗口内的命中情况 + 它那条稀疏曲线。 */
+export interface KbSearchHits {
+  kb_id: string
+  name: string
+  candidates: number
+  kept: number
+  /** 这个库在窗口内被检索了几次（一次跨两库的检索算两次）。 */
+  searches: number
+  series: SearchHitPoint[]
+}
+
+export interface SearchHits {
+  days: number
+  candidates: number
+  kept: number
+  searches: number
+  /**
+   * **只含窗口内真有记录**的库：一次都没被查过的库没有曲线可画。
+   *
+   * "被查了但一条没命中"的库**会**在里面（candidates=0）——"没人查过"与
+   * "查了但答不上来"是两件事，那正是这份数据的一半价值。
+   */
+  by_kb: KbSearchHits[]
+}
+
+/**
+ * 按知识库的检索命中趋势。
+ *
+ * **一次请求覆盖全部库**（与逐库取文档的入库趋势不同），所以它值得单独一条；
+ * 卡片上第二根趋势线读的就是它，见 `features/knowledge/searchTrend.ts` 的头注。
+ */
+export function getSearchHits(days = 90): Promise<SearchHits> {
+  return request(`/stats/search-hits?days=${days}`)
 }

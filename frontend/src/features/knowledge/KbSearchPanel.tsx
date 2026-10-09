@@ -8,11 +8,15 @@
  * 面板里刻意把**通道与分数摊开**（向量 / BM25、各自排名与原始分）：它同时承担
  * "这个库检索质量如何"的验证责任。服务端没配嵌入模型时向量通道会被跳过或退化成
  * 开发用哈希兜底（只有词面重叠、没有语义），此时必须明说"向量召回不可信"。
+ *
+ * **判定排在命中上面**（v0.55 起后端给了 `summary` 与 `fit`）：这个服务的产品口径是
+ * "判定在前、原文在后"，控制台里也得是这个顺序——`fit="none"` 表示"这个库答不了
+ * 这个问题"，它不是检索失败。
  */
 import { useEffect, useState } from 'react'
 import { RefreshCw, Search } from 'lucide-react'
 
-import { search, type SearchResponse } from '@/api/search'
+import { search, type SearchFit, type SearchResponse } from '@/api/search'
 import { EmptyState, SkeletonRows } from '@/features/knowledge/composites'
 import { notify } from '@/features/knowledge/store'
 import { failureText } from '@/features/preview'
@@ -40,6 +44,20 @@ function modeLabel(value: string): string {
 
 function channelLabel(channel: string): string {
   return channel === 'vector' ? '向量' : channel === 'fulltext' ? 'BM25' : channel
+}
+
+/**
+ * `fit` 的中文读数（后端的四种判定，见 `services/retrieval/distribution.py`）。
+ *
+ * `none` = 整批压在基线之下、或窗口里一条都没有：**这份资料答不了这个问题**
+ * ——它与"检索出错"是两件事，用户不该把它读成故障（判定条那一档警示底就为它）。
+ */
+function fitLabel(fit: SearchFit | undefined): string {
+  if (fit === 'strong') return '很对得上'
+  if (fit === 'weak') return '只对上一部分'
+  if (fit === 'none') return '资料里没有'
+  if (fit === 'unknown') return '契合判不了'
+  return ''
 }
 
 interface Turn {
@@ -85,6 +103,10 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
   const showFullText = (latest?.response?.hits.length ?? 0) <= 8
   const embeddingIsDevelopment = latest?.response?.embedding_is_development === true
   const embeddingMissing = latest?.response?.embedding_configured === false
+  /** 这一批命中的判定：`distribution.fit` 说的是"资料对不对得上"，不是"检索成没成"。 */
+  const fit = latest?.response?.distribution?.fit
+  /** 收敛砍掉的条数（与"元数据过滤掉"不是同一件事：那一刀切在检索之前）。 */
+  const dropped = latest?.response?.decision?.dropped ?? 0
 
   async function runSearch(raw?: string): Promise<void> {
     const text = (raw ?? query).trim()
@@ -262,6 +284,16 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
 
               {!searching && latest?.response ? (
                 <>
+                  {/* 判定在前（v0.55）：后端那一行 `summary` 照原样放在命中列表**上面**，
+                      连同 `fit` 的标。`fit="none"` 时整条换一档底色——那是"这个库答不了
+                      这个问题"的信号，不是"检索失败"（失败态在上面那一段里）。 */}
+                  {latest.response.summary ? (
+                    <p className={fit === 'none' ? 'kb-verdict kb-verdict-none' : 'kb-verdict'}>
+                      {fit ? <span className="kb-verdict-mark">{fitLabel(fit)}</span> : null}
+                      {latest.response.summary}
+                    </p>
+                  ) : null}
+
                   <div className="kb-hit-summary">
                     <span style={{ color: 'var(--text-primary)' }}>
                       {formatCount(latest.response.hits.length)} 条命中
@@ -269,6 +301,7 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                       {modeLabel(latest.response.mode)}
                     </span>
                     {latest.response.reranked ? <span>已 rerank</span> : null}
+                    {dropped > 0 ? <span>收敛掉 {formatCount(dropped)} 条</span> : null}
                     {latest.response.filtered_out > 0 ? (
                       <span>元数据过滤掉 {latest.response.filtered_out} 条</span>
                     ) : null}

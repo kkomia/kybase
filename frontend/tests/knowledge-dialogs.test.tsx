@@ -396,6 +396,29 @@ describe('数据源面板', () => {
 describe('库内检索面板', () => {
   it('检索参数按面板上的选择送出，并把命中按"来自哪条通道"摊开', async () => {
     searchMock.mockResolvedValue({
+      summary:
+        '候选 40 条、其中 5 条高于基线 0.531，收敛后留 1 条，收敛参数按程序建议：资料很对得上。',
+      distribution: {
+        floor: 0.15,
+        baseline: 0.531,
+        basis: 'vector',
+        count: 40,
+        above_baseline: 5,
+        fit: 'strong',
+        suggested: { keep: 4, min_score: 0.5, per_doc: 1 },
+        note: '资料很对得上',
+        scores: { max: 0.82, p90: 0.8, p75: 0.7, median: 0.66, p25: 0.6, min: 0.55, band: 0.27 },
+        documents: 1,
+        per_document: [['说明书.pdf', 1]],
+      },
+      decision: {
+        keep: 4,
+        min_score: 0.5,
+        per_doc: 1,
+        decided_by: 'suggested',
+        fit: 'strong',
+        dropped: 3,
+      },
       hits: [
         {
           chunk_id: 'c-1',
@@ -442,8 +465,60 @@ describe('库内检索面板', () => {
     expect(screen.getByText('说明书.pdf')).toBeInTheDocument()
     expect(screen.getByText('0.812')).toBeInTheDocument()
     expect(screen.getByText(/元数据过滤掉 2 条/)).toBeInTheDocument()
+    // 收敛砍掉的条数与"元数据过滤掉"不是同一件事，各说各的
+    expect(screen.getByText('收敛掉 3 条')).toBeInTheDocument()
+    // 判定排在命中上面：`summary` 原文 + `fit` 的标都在
+    const verdict = document.querySelector('.kb-verdict') as HTMLElement
+    expect(verdict.textContent).toContain('资料很对得上')
+    expect(verdict.textContent).toContain('候选 40 条')
     // 没配嵌入模型：必须明说"向量召回不可信"，否则用户会把兜底结果当成真实效果
     expect(screen.getByText(/本次只做了关键词检索/)).toBeInTheDocument()
+  })
+
+  it('判定说"资料里没有"：那不是检索失败，命中为空也要把这句话摆在最上面', async () => {
+    searchMock.mockResolvedValue({
+      summary:
+        '候选 0 条（兜底阈值 0.150 之上为空），收敛后留 0 条，收敛参数按程序建议：库里没有命中。',
+      distribution: {
+        floor: 0.15,
+        baseline: 0.531,
+        basis: 'vector',
+        count: 0,
+        above_baseline: 0,
+        fit: 'none',
+        suggested: { keep: 0, min_score: null, per_doc: null },
+        note: '兜底阈值之上一条都没有',
+      },
+      decision: {
+        keep: 0,
+        min_score: null,
+        per_doc: null,
+        decided_by: 'suggested',
+        fit: 'none',
+        dropped: 0,
+      },
+      hits: [],
+      mode: 'hybrid',
+      reranked: false,
+      filtered_out: 0,
+      stats: [],
+      embedding_configured: true,
+      embedding_is_development: false,
+    })
+    const user = userEvent.setup()
+    renderDialog(<KbSearchPanel open kbId="kb-1" kbName="产品手册" onClose={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('检索内容'), '库里没有的东西')
+    await user.click(screen.getByRole('button', { name: '检索' }))
+
+    // 判定条：`fit=none` 换一档底色 + 一枚标，说的都是"这个库答不了这个问题"
+    const verdict = (await screen.findByText(/库里没有命中/)).closest('.kb-verdict') as HTMLElement
+    expect(verdict.className).toContain('kb-verdict-none')
+    expect(verdict.textContent).toContain('资料里没有')
+    // 空结果那一块照旧在（判定条不是它的替代品）
+    expect(screen.getByText('没有命中')).toBeInTheDocument()
+    // **不是**失败态：重试按钮不该出现
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
 
   it('检索失败：一行人话 + 一个重试按钮；重试按那一轮的原词再发一次', async () => {
@@ -463,6 +538,9 @@ describe('库内检索面板', () => {
     await user.clear(box)
     await user.type(box, '换个词')
     searchMock.mockResolvedValue({
+      summary: '',
+      distribution: null,
+      decision: null,
       hits: [],
       mode: 'hybrid',
       reranked: false,

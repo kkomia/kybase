@@ -599,8 +599,8 @@
     bottom: var(--space-3);
   }
 
-  /* 卡片上的「近 90 天入库」迷你趋势图。
-     整块（读数一行 + 图形）的高度是**死**的：一条入库都没有的库也占同样的高度，
+  /* 卡片上的迷你趋势图，两根各占一行：上「近 90 天入库」、下「近 90 天检索命中」。
+     每根整块（读数一行 + 图形）的高度都是**死**的：一条记录都没有的库也占同样的高度，
      所以卡片不会被趋势图撑得忽高忽低。见 `Sparkline.tsx` 头注那三条。 */
   .kb-trend {
     display: flex;
@@ -656,13 +656,33 @@
     stroke: none;
   }
 
-  /* 一条入库都没有：平线退成中性色、底下的面积收掉——
+  /* 一条记录都没有：平线退成中性色、底下的面积收掉——
      一根亮蓝色的实线会让人以为"这里有点什么"（其实正是"什么都没有"） */
   .kb-spark-empty .kb-spark-line {
     stroke: var(--border-strong);
   }
 
   .kb-spark-empty .kb-spark-area {
+    fill: none;
+  }
+
+  /* 卡片上第二根线（检索命中）换一档副色：与入库那根的 `--accent` 分开，
+     一眼看出两行量的是两件事。副色就是概览文件类型图用的那一枚（`--accent-2`），
+     不另立图表配色。**空线仍然退成中性色**——那两条选择器比上面多一段，
+     是为了不受"谁写在后面"影响（同优先级时后写者胜，靠顺序就成了一条暗规则）。 */
+  .kb-trend-hits .kb-spark-line {
+    stroke: var(--accent-2);
+  }
+
+  .kb-trend-hits .kb-spark-area {
+    fill: color-mix(in srgb, var(--accent-2) 16%, transparent);
+  }
+
+  .kb-trend-hits .kb-spark-empty .kb-spark-line {
+    stroke: var(--border-strong);
+  }
+
+  .kb-trend-hits .kb-spark-empty .kb-spark-area {
     fill: none;
   }
 
@@ -2441,6 +2461,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* 判定条：后端 `summary` 那一行放在命中列表**上面**（判定在前、原文在后）。
+     `fit` 自己也挂一枚小标——`none`（"资料里没有"）整条换一档警示底：
+     那是"这个库答不了这个问题"，与"检索出错"是两件事，红色会把它读成故障。 */
+  .kb-verdict {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-verdict-none {
+    background: var(--status-warning-soft);
+  }
+
+  .kb-verdict-mark {
+    display: inline-block;
+    margin-right: var(--space-2);
+    padding: 0 var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-primary);
+    background: var(--bg-canvas);
+    border-radius: var(--radius-control);
   }
 
   .kb-hit-summary {

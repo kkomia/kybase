@@ -3,8 +3,8 @@
  *
  * 为什么这里用卡片、而文档清单用行：知识库是**容器型对象且数量少**，用户的动作是
  * "挑一个进去"（扫视比较），不是"在长列表里找某一条"。卡片给每个库一个独立边界，
- * 正好承载"名称 + 规模 + 概述 + 近 90 天入库节奏 + 入口"这一小簇信息。条目多起来时
- * （>12）切回行——这条判定规则原本就写在规范 §5.1。
+ * 正好承载"名称 + 规模 + 概述 + 近 90 天两条节奏（入库 / 检索命中）+ 入口"这一小簇
+ * 信息。条目多起来时（>12）切回行——这条判定规则原本就写在规范 §5.1。
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
@@ -30,6 +30,12 @@ import {
 } from '@/features/knowledge/ingestTrend'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { RangeField } from '@/features/knowledge/RangeField'
+import {
+  SEARCH_TREND_DAYS,
+  searchTrendTextOf,
+  searchTrendTitleOf,
+  useSearchTrends,
+} from '@/features/knowledge/searchTrend'
 import { Sparkline } from '@/features/knowledge/Sparkline'
 import {
   SuggestedQuestionsFields,
@@ -69,10 +75,10 @@ const SQ_DEFAULTS: SuggestedQuestionsValue = {
 const EMBEDDING_DEFAULT = '__default__'
 
 /**
- * 趋势图那一行的读数。
+ * 趋势图那一行（两根，同一个口径）的读数。
  *
  * 读不到（还在路上 / 这一读失败）写「—」——与别处"没有结论"用的是同一个记号，
- * 而不是 0：`0` 是一句**结论**（"确实一条都没进"），没读到不是。
+ * 而不是 0：`0` 是一句**结论**（"确实一条都没进 / 没命中"），没读到不是。
  */
 function trendTextOf(trend: IngestTrend | undefined): string {
   if (trend?.status !== 'ready') return '—'
@@ -141,11 +147,14 @@ export function KnowledgeBasesView() {
   const useCards = store.items.length <= CARD_LIMIT
 
   /**
-   * 卡片上那根趋势图的数据（**入库节奏**，见 `ingestTrend.ts` 头注为什么不是检索命中）。
+   * 卡片上那两根趋势图的数据：**入库节奏**（`ingestTrend.ts`，逐库取文档时间）
+   * 与**检索命中**（`searchTrend.ts`，一趟请求覆盖全部库，v0.61 起才有真数据）。
    *
-   * 行形态（> 12 个库）传空数组：那时趋势图不画，也就不该白拉十几个文档列表。
+   * 行形态（> 12 个库）两个都传空数组：那时趋势图不画，也就不该白拉十几次文档列表，
+   * 更不该多打一趟命中趋势。
    */
   const trends = useIngestTrends(useCards ? store.items.map((kb) => kb.id) : EMPTY_KB_IDS)
+  const searchTrends = useSearchTrends(useCards ? store.items.map((kb) => kb.id) : EMPTY_KB_IDS)
 
   function openCreate(): void {
     setCreateOpen(true)
@@ -251,7 +260,7 @@ export function KnowledgeBasesView() {
                   </span>
                 </span>
 
-                {/* 卡片主体用三样东西说清一个库：**一个数字 + 一段概述 + 一条节奏** */}
+                {/* 卡片主体用三样东西说清一个库：**一个数字 + 一段概述 + 近 90 天两条节奏** */}
                 <span className="kb-card-body">
                   <span className="kb-doc-count">
                     <span className="kb-doc-value tabular">
@@ -261,10 +270,10 @@ export function KnowledgeBasesView() {
                   </span>
                   {/* 没写简介就整行不渲染：「暂无简介」是替一个空字段占的一行字 */}
                   {kb.description ? <span className="kb-description">{kb.description}</span> : null}
-                  {/* 迷你趋势图：画的是**近 90 天入库节奏**（按天的新增文档数），
-                      不是检索命中——后端没有按库记检索事件，那个名字今天兑现不了
-                      （见 `ingestTrend.ts` 头注）。文案怎么写、图就画什么。
-                      一条都没进时图是一根平线、读数是「无入库」，不补占位数据。 */}
+                  {/* 两根迷你趋势图，各占一行、高度都由 CSS 定死：上面那根量"这个库在长"
+                      （近 90 天按天入库篇数），下面那根量"这个库在被用"（近 90 天按天检索
+                      命中候选数）。两条都只画真数据：一条都没有时是压在底部的平线 +
+                      「无入库」/「无命中」，不补占位。取数见 `ingestTrend.ts` / `searchTrend.ts`。 */}
                   <span className="kb-trend">
                     <span className="kb-trend-head">
                       <span className="kb-trend-label">近 {INGEST_TREND_DAYS} 天入库</span>
@@ -273,6 +282,18 @@ export function KnowledgeBasesView() {
                       </span>
                     </span>
                     <Sparkline series={trends[kb.id]?.series ?? []} />
+                  </span>
+                  <span className="kb-trend kb-trend-hits">
+                    <span className="kb-trend-head">
+                      <span className="kb-trend-label">近 {SEARCH_TREND_DAYS} 天检索命中</span>
+                      <span
+                        className="kb-trend-value tabular"
+                        title={searchTrendTitleOf(searchTrends[kb.id])}
+                      >
+                        {searchTrendTextOf(searchTrends[kb.id])}
+                      </span>
+                    </span>
+                    <Sparkline series={searchTrends[kb.id]?.series ?? []} />
                   </span>
                 </span>
 

@@ -61,8 +61,8 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
     storage_bytes: 2048,
     recent_documents: 4,
     activity: [
-      { day: '2026-09-21', documents: 1, chunks: 10, tasks: 2 },
-      { day: '2026-09-22', documents: 3, chunks: 30, tasks: 4 },
+      { day: '2026-09-21', documents: 1, chunks: 10, tasks: 2, hits: 5 },
+      { day: '2026-09-22', documents: 3, chunks: 30, tasks: 4, hits: 7 },
     ],
     by_stage: { indexed: 9, failed: 1 },
     by_suffix: { pdf: 7, docx: 3 },
@@ -226,7 +226,7 @@ describe('驾驶舱', () => {
     expect(screen.queryByText(/向量化部分按字符数估算/)).toBeNull()
   })
 
-  it('趋势能在三个维度之间切换，切换只改取值口径', async () => {
+  it('趋势能在四个维度之间切换，切换只改取值口径', async () => {
     renderMisc(<DashboardPage />)
     await screen.findByText('产品手册')
 
@@ -238,6 +238,14 @@ describe('驾驶舱', () => {
     )
     // 切到"新增切块"之后趋势读的是 chunks（两天各 10 / 30）
     expect(screen.getByTestId('chart-line').getAttribute('data-series')).toContain('[10,30]')
+
+    // 第四档「检索命中」读的是活跃度点上的 `hits`（两天各 5 / 7）——
+    // 后端在同一次 `/stats/dashboard` 里给，不需要另发请求
+    await userEvent.click(screen.getByRole('button', { name: '检索命中' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('chart-line').getAttribute('data-series')).toContain('[5,7]'),
+    )
+    expect(getDashboardMock).toHaveBeenCalledTimes(1)
   })
 
   it('没有文档时给"去知识库"的出口，而不是一张空表', async () => {
@@ -274,12 +282,13 @@ describe('驾驶舱', () => {
     expect(trendLabelInterval(7)).toBe(0)
   })
 
-  it('窗口超过 60 天时按周聚合（折线不该全是锯齿）', () => {
+  it('窗口超过 60 天时按周聚合（折线不该全是锯齿），第四档也一样', () => {
     const points = Array.from({ length: 70 }, (_, index) => ({
       day: `2026-07-${String((index % 28) + 1).padStart(2, '0')}`,
       documents: 1,
       chunks: 2,
       tasks: 0,
+      hits: 3,
     }))
 
     // 70 天 → 按周聚合：10 周，每周 7 篇
@@ -291,6 +300,9 @@ describe('驾驶舱', () => {
     const daily = checkableTrend(points.slice(0, 10), 'chunks')
     expect(daily.labels).toHaveLength(10)
     expect(daily.values).toEqual(Array.from({ length: 10 }, () => 2))
+
+    // 检索命中那一档走的是同一段聚合（每周 21 条）——加一档没有第二套接线
+    expect(checkableTrend(points, 'hits').values).toEqual(Array.from({ length: 10 }, () => 21))
   })
   it('五个大数与三块图一次画齐（dashboard 那条一直会发）', async () => {
     renderMisc(<DashboardPage />)
@@ -303,5 +315,9 @@ describe('驾驶舱', () => {
     expect(screen.getByText('构成')).toBeInTheDocument()
     expect(screen.getByText('知识库规模')).toBeInTheDocument()
     expect(await screen.findByTestId('chart-line')).toBeInTheDocument()
+    // 趋势那一行是四档（v0.61 多了「检索命中」，与活跃度同源，不另发请求）
+    expect([...document.querySelectorAll('.m-metric-tab')].map((node) => node.textContent)).toEqual(
+      ['入库文档', '新增切块', '流水线任务', '检索命中'],
+    )
   })
 })
