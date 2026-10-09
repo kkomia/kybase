@@ -409,3 +409,40 @@ def test_without_a_keychain_everything_stays_as_before(runtime: RuntimeConfigSer
     runtime.set({"retrieval.floor_score": "0.5"})
 
     assert runtime.get("retrieval.floor_score") == "0.5"
+
+
+def test_retrieval_thresholds_are_one_read_for_the_three_call_paths(
+    runtime: RuntimeConfigService,
+) -> None:
+    """MCP / REST / Wiki 三条路都走这一个入口：键名与回落口径只有一处。
+
+    反过来的代价谁都见过：同一份设置在网页上生效、在工具里不生效。
+    """
+    from app.services.retrieval.distribution import DEFAULT_STATS_FLOOR
+
+    # 没设过 → 默认窗口 + "基线按嵌入模型自动标定"（None，服务侧查标定表）
+    assert runtime.retrieval_thresholds() == (DEFAULT_STATS_FLOOR, None)
+
+    runtime.set({"retrieval.floor_score": "0.5", "retrieval.baseline_score": "0.4"})
+    assert runtime.retrieval_thresholds() == (0.5, 0.4)
+
+
+def test_a_zero_floor_falls_back_to_the_default_instead_of_switching_the_feature_off(
+    runtime: RuntimeConfigService,
+) -> None:
+    """``floor_score = "0"`` 曾经等于"不要分布"（v0.55 起不再有这个用法）。
+
+    这一位是**调窗口**的：非正数、空值、解析不了的都回落到默认窗口——分布与收敛
+    是这套服务的产品特征，不该有一个数能把它关掉（见 ``distribution.py`` 的模块头）。
+    """
+    from app.services.retrieval.distribution import DEFAULT_STATS_FLOOR
+
+    for raw in ("0", "-1", "", "不是数"):
+        runtime.set({"retrieval.floor_score": raw})
+        floor, baseline = runtime.retrieval_thresholds()
+        assert floor == DEFAULT_STATS_FLOOR, raw
+        # 基线那一位的 0 是**另一个意思**：不写死，交还标定表
+        assert baseline is None
+
+    runtime.set({"retrieval.baseline_score": "0.531"})
+    assert runtime.retrieval_thresholds()[1] == 0.531

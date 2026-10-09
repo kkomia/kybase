@@ -17,12 +17,14 @@ from app.services.ingest import IngestService
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.parser_router import ParserRouter
 from app.services.retrieval import (
+    DEFAULT_STATS_FLOOR,
     MetadataFilter,
     NoopReranker,
     RetrievalMode,
     RetrievalQuery,
     RetrievalService,
 )
+from app.services.retrieval.distribution import FIT_NONE
 from app.services.retrieval.rerank import RerankError, RerankProvider
 from app.storage.base import StoreBundle
 
@@ -498,6 +500,56 @@ def test_unconfigured_embedding_skips_the_vector_channel(seeded: StoreBundle) ->
 # --------------------------------------------------------------------- 相关度下限（v0.53）
 
 
+def test_the_distribution_is_reported_without_anyone_asking_for_it(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """**无条件**：不传 ``stats_floor`` 也有分布与决定（v0.55 之前这两个都是 ``None``）。
+
+    这条性质就是这次改动的全部要点：命中分布是这个服务的特色，它不该取决于调用方
+    记不记得传一个开关键——那正是它当年只在 MCP 那条路上生效的原因
+    （``retrieval.floor_score = "0"`` 曾经等于"关掉特色"）。
+    """
+    response = retrieval.search(RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1"]))
+
+    assert response.distribution is not None
+    assert response.decision is not None
+    assert response.decision["fit"] == response.distribution.fit
+    # 条数要对得上账：窗口里收了多少 = 返回了几条 + 收敛时切掉了几条
+    assert response.distribution.count == len(response.hits) + response.decision["dropped"]
+
+
+def test_a_zero_window_no_longer_turns_the_distribution_off(
+    seeded: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """``stats_floor=0``（也就是设置里的 ``floor_score = "0"``）只是"用默认窗口"。
+
+    这是那个坑的正面用例：曾经 0 = 关闭、``None`` = 不统计，于是"要不要这个特色"
+    变成了一个可以被一个数字悄悄关掉的开关。现在填 0 与不填**完全等价**：窗口是默认窗口，
+    分布、判定、收敛一件都不少。
+    """
+    off = retrieval.search(RetrievalQuery(query="向量检索", kb_ids=["kb_1"], stats_floor=0.0))
+    default = retrieval.search(RetrievalQuery(query="向量检索", kb_ids=["kb_1"]))
+
+    assert off.distribution is not None
+    assert off.distribution.floor == DEFAULT_STATS_FLOOR
+    assert off.distribution.floor == default.distribution.floor
+    assert [hit.chunk_id for hit in off.hits] == [hit.chunk_id for hit in default.hits]
+    assert off.decision == default.decision
+
+
+def test_an_empty_window_still_reports_a_distribution(retrieval: RetrievalService) -> None:
+    """没有命中时分布照样在（``count=0`` → 建议 0 条），**不是 ``None``**。
+
+    "这个库里没有答案"与"没有算过"是两件事：前者要给模型一句话，后者只会让它乱猜。
+    """
+    response = retrieval.search(RetrievalQuery(query="检索", kb_ids=["kb_none"]))
+
+    assert response.distribution is not None
+    assert response.distribution.count == 0
+    assert response.hits == []
+    assert "库里没有命中" in response.distribution.headline(kept=0)
+
+
 def test_floors_are_off_for_the_development_embedder(
     seeded: StoreBundle, retrieval: RetrievalService
 ) -> None:
@@ -763,9 +815,18 @@ def test_the_floor_compares_the_real_cosine_not_the_rank_score(
     assert hit.score < 0.05  # 融合/名次分：一个很小的常数，**不能**当相似度用
     assert hit.raw_scores["vector"] == pytest.approx(0.60, abs=1e-6)
 
-    # 显式关掉地板 → 两条都回来。证明"少了一条"是地板干的，不是别的过滤
+    # 关掉判定下限 → 0.20 那条不再被判"不相关"。但**分布那一刀还在**：它低于基线 0.33，
+    # 于是被收敛切掉（min_score 用分布的建议值）——判定在前、按分布收敛，这就是新的常态。
     off = _search_vector_only(service, query_vector, min_vector_score=0.0)
-    assert {hit.chunk_id for hit in off.hits} == {near_id, far_id}
+    assert [hit.chunk_id for hit in off.hits] == [near_id]
+    assert off.filtered_out == 1, "少了的那条仍要说得出为什么少"
+    assert off.decision is not None
+    assert off.decision["min_score"] == pytest.approx(0.33)
+
+    # 连分布那一刀也让开（min_score=0）才真的两条都回来：证明"少了一条"是地板干的，
+    # 不是别的过滤（检索路径本身没吃掉它）
+    unconstrained = _search_vector_only(service, query_vector, min_vector_score=0.0, min_score=0.0)
+    assert {hit.chunk_id for hit in unconstrained.hits} == {near_id, far_id}
 
 
 def test_the_floor_does_not_kill_real_hits(
@@ -806,3 +867,156 @@ def test_uncalibrated_models_are_not_filtered(
 
     assert {hit.chunk_id for hit in response.hits} == {near_id, far_id}
     assert response.filtered_out == 0
+
+
+def test_the_window_widens_below_the_calibrated_floor_so_the_fit_can_be_judged(
+    bundle: StoreBundle, ingest_service: IngestService, embedder: DeterministicEmbedder
+) -> None:
+    """统计窗口比标定下限（bge-m3 **0.531**）低 → "可能相关"那一段先进分布，再由收敛切掉。
+
+    这就是"放宽相关度下限"存在的理由：只看 0.531 之上时，噪声那一整段根本不进分布，
+    ``max`` 与 ``baseline`` 没得比，``fit`` 永远是 strong/weak——"资料里没有"这句
+    最要紧的话就再也说不出来。摆好的两条分别是：
+
+    - **0.40**：窗口（0.37）之上、标定下限（0.531）之下 → 收进分布，判 ``none``；
+    - **0.25**：窗口之下 → 连进来都不该进来。
+
+    最后收敛回 0 条（``fit=none`` 的建议就是 0）：``filtered_out`` 因此是 2——
+    一条在窗口外、一条被收敛切掉，计数要把两件事都算上。
+    """
+    near_id, far_id = _seed_two_documents(bundle, ingest_service, embedder)
+    query_vector = _unit_vector(1.0)
+    bundle.vectors.upsert_vectors(
+        "kb_floor",
+        items=[(near_id, _unit_vector(0.40)), (far_id, _unit_vector(0.25))],
+    )
+    service = _floor_service(bundle, "BAAI/bge-m3", query_vector)
+
+    response = _search_vector_only(service, query_vector)
+
+    assert response.distribution is not None
+    assert response.distribution.floor == DEFAULT_STATS_FLOOR
+    assert response.distribution.count == 1, "0.40 那一段必须先进分布，否则判不出契合程度"
+    assert response.distribution.fit == FIT_NONE
+    assert response.filtered_out == 2
+    assert response.hits == []
+    assert response.decision is not None and response.decision["keep"] == 0
+
+
+# ------------------------------------------------- 按库命中记录（v0.61）
+
+
+def _recording_service(
+    bundle: StoreBundle,
+    embedder: DeterministicEmbedder,
+    captured: list[dict],
+) -> RetrievalService:
+    """带一个"把回调参数接住"的 ``search_recorder`` 的检索服务。
+
+    **接住而不是落库**：这一批用例要钉的是"检索层交出了什么"，
+    落库与聚合由 ``tests/unit/services/test_search_stats.py`` 管。
+    """
+    return RetrievalService(
+        bundle,
+        embedder=embedder,
+        reranker=NoopReranker(),
+        search_recorder=lambda **kwargs: captured.append(kwargs),
+    )
+
+
+def test_search_records_each_knowledge_base_including_the_empty_one(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """一次检索按库交出 ``(候选, 留存)``，**检索了但一条没命中的库也在里面**。
+
+    ``kb_3`` 是个空库：向量分区都没有，一路回来什么都没有。它必须留下 ``(0, 0)``
+    的一行——"这个库最近没人查"与"查了但答不上来"是两件事，
+    而后者正是 KB 卡片上那条曲线要替用户看出来的。
+    """
+    captured: list[dict] = []
+    service = _recording_service(seeded, embedder, captured)
+    KnowledgeBaseService(seeded, embedder=embedder).create(kb_id="kb_3", name="空库")
+
+    service.search(RetrievalQuery(query="向量检索 混合召回", kb_ids=["kb_1", "kb_3"]))
+
+    assert len(captured) == 1, "一次检索只交一批，不是一个库一次"
+    call = captured[0]
+    assert set(call["hits_by_kb"]) == {"kb_1", "kb_3"}
+    assert call["hits_by_kb"]["kb_3"] == (0, 0), "检索过但没命中也要记账"
+    candidates, kept = call["hits_by_kb"]["kb_1"]
+    assert candidates > 0
+    assert 0 < kept <= candidates
+    assert call["fit"], "契合度是整批的判定，不能空着"
+    assert call["duration_ms"] >= 0
+
+
+def test_the_record_keeps_the_pre_cut_and_post_cut_counts_apart(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """``candidates`` 是**收敛前**那批，``kept`` 是收敛后真返回的——被切掉的留在前者里。
+
+    这里显式要 ``keep=1``：收敛把候选切到 1 条。如果记录只留"返回了几条"，
+    这次的"捞上来一堆、只给一条"与另一次"只捞上来一条"就长得一模一样了。
+    """
+    captured: list[dict] = []
+    service = _recording_service(seeded, embedder, captured)
+
+    response = service.search(
+        RetrievalQuery(query="部署 配置 环境变量", kb_ids=["kb_1"], top_k=5, keep=1)
+    )
+
+    candidates, kept = captured[0]["hits_by_kb"]["kb_1"]
+    assert len(response.hits) == 1
+    assert kept == 1
+    assert candidates > kept, "收敛切掉的那些必须留在 candidates 里"
+
+
+def test_a_search_that_finds_nothing_still_records_the_knowledge_base(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """一个都没命中：``fit=none`` + 候选 0 的一行，而不是不写。
+
+    "库里没有"是这条数据的一半价值（"这几天有多少次是答不上来"）。
+    """
+    captured: list[dict] = []
+    service = _recording_service(seeded, embedder, captured)
+    KnowledgeBaseService(seeded, embedder=embedder).create(kb_id="kb_3", name="空库")
+
+    service.search(RetrievalQuery(query="随便问问", kb_ids=["kb_3"]))
+
+    assert captured[0]["hits_by_kb"] == {"kb_3": (0, 0)}
+    assert captured[0]["fit"] == FIT_NONE
+
+
+def test_a_search_with_no_knowledge_base_records_nothing(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """``kb_ids`` 为空的"全库检索"在入口就返回了（连分布都不算）。
+
+    真走到记录那一步又一条都没命中时，**没有任何库可以被归因**——
+    写一行 ``kb_id=''`` 只会让趋势图上多一条点不进去的曲线，所以宁可不写。
+    """
+    captured: list[dict] = []
+    service = _recording_service(seeded, embedder, captured)
+
+    response = service.search(RetrievalQuery(query="向量检索", kb_ids=[]))
+
+    assert response.hits == []
+    assert captured == []
+
+
+def test_a_broken_recorder_never_breaks_the_search(
+    seeded: StoreBundle, embedder: DeterministicEmbedder
+) -> None:
+    """记录失败**绝不能**反过来影响检索：用户要的是结果，不是一行统计。"""
+
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("统计库挂了")
+
+    service = RetrievalService(
+        seeded, embedder=embedder, reranker=NoopReranker(), search_recorder=_boom
+    )
+
+    response = service.search(RetrievalQuery(query="向量检索", kb_ids=["kb_1"]))
+
+    assert response.hits, "记录抛异常不该让这次检索变成空结果"

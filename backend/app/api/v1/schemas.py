@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -574,6 +574,17 @@ class SearchRequest(BaseModel):
     ``services/retrieval`` 的 ``DEFAULT_MIN_TERM_COVERAGE``），0 = 关闭。
     两条证据是"或"的关系，见 ``services/retrieval/coverage.py``。
     """
+    keep: int | None = Field(default=None, ge=1, le=20)
+    """**按分布收敛**：这一轮最多要几段（不传 = 用分布给出的建议）。
+
+    上限与 MCP ``search`` 工具广告的是同一组数（``keep`` 1–20、``per_doc`` 1–10），
+    两者是同一个旋钮的两个入口——一边能传 50、一边只能传 20，用起来就成了两种能力。
+    """
+    min_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    """**按分布收敛**：相似度下限（绝对余弦，不传 = 用建议）。"""
+    per_doc: int | None = Field(default=None, ge=1, le=10)
+    """**按分布收敛**：每篇文档最多留几段（不传 = 用建议）。同一件事被好几本书
+    各答一遍时，这个旋钮才是治"上下文太长"的那个。"""
     rerank: bool = False
     filters: MetadataFilterIn | None = None
 
@@ -617,6 +628,19 @@ class ChannelStatOut(BaseModel):
 
 
 class SearchResponse(BaseModel):
+    summary: str = ""
+    """**判定在前，原文在后**（v0.55）：一句话说清候选多少、收敛后留了几条、契合程度如何。
+
+    与 MCP `search` 工具的 `summary` 是同一句（``ScoreDistribution.headline``）——
+    同一个服务在两个入口对同一批命中给出两种说法，是最难查的一类不一致。
+    """
+    distribution: dict[str, Any] | None = None
+    """兜底阈值之上的命中分布：形状与 MCP `search` 工具的 `distribution` **完全一致**
+    （同一个 ``ScoreDistribution.as_payload``）。v0.55 起无条件有值，只有"空查询 /
+    没有库"那种提前返回是 `null`。"""
+    decision: dict[str, Any] | None = None
+    """这次**实际**按什么收敛的：``{"keep", "min_score", "per_doc", "decided_by",
+    "fit", "dropped"}``——用户问"为什么只回了 3 条"时，答案必须是一个数加一个来源。"""
     hits: list[SearchHitOut]
     mode: str
     reranked: bool
@@ -640,6 +664,8 @@ class ActivityPointOut(BaseModel):
     documents: int
     chunks: int
     tasks: int
+    hits: int = 0
+    """这天的检索命中**候选数**（v0.61，各库之和）。概览页趋势图上的「检索命中」一档。"""
 
 
 class KbStatOut(BaseModel):
@@ -676,6 +702,49 @@ class DashboardOut(BaseModel):
     by_suffix: dict[str, int] = Field(default_factory=dict)
     by_source_kind: dict[str, int] = Field(default_factory=dict)
     knowledge_bases: list[KbStatOut] = Field(default_factory=list)
+
+
+class SearchHitPointOut(BaseModel):
+    """某一天、某个知识库的命中量（检索命中趋势上的一个点）。"""
+
+    model_config = _RECORD_CONFIG
+
+    day: date
+    candidates: int
+    """分布收敛**之前**这个库贡献的条数。"""
+    kept: int
+    """收敛之后真的返回给调用方的条数。"""
+
+
+class KbSearchHitsOut(BaseModel):
+    """单个知识库在窗口内的命中情况 + 它的稀疏曲线。"""
+
+    model_config = _RECORD_CONFIG
+
+    kb_id: str
+    name: str
+    candidates: int
+    kept: int
+    searches: int
+    """这个库在窗口内被检索了几次（= 它的行数，一次跨两库的检索算两行）。"""
+    series: list[SearchHitPointOut] = Field(default_factory=list)
+    """**稀疏**：只有真有记录的那些天，前端自己补零成连续曲线。"""
+
+
+class SearchHitsOut(BaseModel):
+    """检索命中趋势（``GET /stats/search-hits``，v0.61）。
+
+    ``by_kb`` **只含窗口内真有记录的库**：一次都没被检索过的库没有曲线可画，
+    出现在这里只会让图例多出一堆平线。
+    """
+
+    model_config = _RECORD_CONFIG
+
+    days: int
+    candidates: int
+    kept: int
+    searches: int
+    by_kb: list[KbSearchHitsOut] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------- API Key

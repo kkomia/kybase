@@ -2,6 +2,11 @@
 
 **产品边界**：这里只返回检索结果原文与元信息，**不做任何 LLM 预处理**
 （架构 §5）——提示注入防护的责任在调用方。
+
+**但判定要排在原文前面**（v0.55）：响应里第一组字段是 `summary` / `distribution` /
+`decision`（命中分布是这套服务的特色，详见 ``services/retrieval/distribution.py``
+的模块头），`hits` 在它们之后。"先给分布、再给原文"是产品口径而不是排版偏好：
+把分布排在原文后面，读的人（模型或界面）就会先被一堆片段带走。
 """
 
 from __future__ import annotations
@@ -40,6 +45,10 @@ def search(
             created_before=payload.filters.created_before,
         )
 
+    # 基础阈值与 MCP 那条路**同源**：一处读取（``runtime_config.retrieval_thresholds``），
+    # 免得"网页上有分布、MCP 里没有"这种同一份设置两种行为的不一致。
+    stats_floor, baseline = services.runtime.retrieval_thresholds()
+
     response = services.retrieval.search(
         RetrievalQuery(
             query=payload.query,
@@ -50,12 +59,28 @@ def search(
             score_threshold=payload.score_threshold,
             min_vector_score=payload.min_vector_score,
             min_term_coverage=payload.min_term_coverage,
+            stats_floor=stats_floor,
+            baseline=baseline,
+            keep=payload.keep,
+            min_score=payload.min_score,
+            per_doc=payload.per_doc,
             rerank=payload.rerank,
             filters=filters,
         )
     )
 
+    distribution = response.distribution
+    decision = response.decision
+    decided_by = "" if decision is None else str(decision.get("decided_by") or "")
     return SearchResponse(
+        # 判定在前：界面上该显示的是"这批命中是什么状态"，原文是它的下文
+        summary=(
+            distribution.headline(kept=len(response.hits), decided_by=decided_by)
+            if distribution is not None
+            else ""
+        ),
+        distribution=distribution.as_payload() if distribution is not None else None,
+        decision=decision,
         hits=[SearchHitOut.model_validate(hit) for hit in response.hits],
         mode=response.mode,
         reranked=response.reranked,

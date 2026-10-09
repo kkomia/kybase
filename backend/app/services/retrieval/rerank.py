@@ -9,10 +9,19 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from app.core.http import shared_client
 from app.core.lazy_httpx import httpx  # 惰性代理：不让 click/pygments/rich 进导入闭包（P4-3）
-from app.services.runtime_config import RuntimeConfigService
+
+if TYPE_CHECKING:
+    # **只在类型检查时导入**：本文件用到它只是 ``build_reranker`` 的一个标注（有
+    # ``from __future__ import annotations``，运行时不需要这个对象）。而反向的依赖是
+    # 真的——``runtime_config`` 要拿 ``retrieval.distribution.DEFAULT_STATS_FLOOR`` 生成
+    # 设置页那一格的默认值——两条边都在模块级就成环（导入本包即触发
+    # ``ImportError: cannot import name 'RuntimeConfigService' from partially initialized
+    # module``）。与 ``services/embedding/__init__.py`` 的那处是同一个形状。
+    from app.services.runtime_config import RuntimeConfigService
 
 logger = logging.getLogger(__name__)
 

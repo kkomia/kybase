@@ -23,6 +23,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.retrieval.distribution import (
+    DEFAULT_STATS_FLOOR,
     FIT_NONE,
     FIT_STRONG,
     FIT_UNKNOWN,
@@ -33,7 +34,7 @@ from app.services.retrieval.distribution import (
 )
 
 BASELINE = 0.531  # 旧刻度 0.89
-FLOOR = 0.37  # 旧刻度 0.80
+FLOOR = DEFAULT_STATS_FLOOR  # 旧刻度 0.80 的换算（0.368 → 取 0.37）
 
 
 def _flat_band() -> list[tuple[str, float | None, str]]:
@@ -77,7 +78,10 @@ def test_the_thresholds_are_on_the_true_cosine_scale() -> None:
     margin = to_true(0.89 + 0.04) - to_true(0.89)
     assert margin == pytest.approx(0.095, abs=1e-3)
 
-    assert float(DEFAULTS["retrieval.floor_score"]) == pytest.approx(0.37)
+    assert pytest.approx(0.37) == DEFAULT_STATS_FLOOR
+    # **默认值只有一处定义**：设置页那一格是 `str(DEFAULT_STATS_FLOOR)` 生成的，
+    # 不是第二个 0.37 字面量——两个数并存的后果是"设置页说按 0.37 收候选、实际按别的数收"
+    assert DEFAULTS["retrieval.floor_score"] == str(DEFAULT_STATS_FLOOR)
     strong_margin = STRONG_MARGIN
     assert strong_margin == pytest.approx(0.095)
     # 基线保持 "0 = 自动"（按嵌入模型查标定表），不许写死某个模型的值
@@ -240,3 +244,64 @@ def test_the_payload_is_compact_and_rounded() -> None:
     per_document = payload["per_document"]
     assert isinstance(per_document, list) and per_document
     assert all(len(item) == 2 for item in per_document)
+
+
+# --------------------------------------------------------------- 一句话判定（v0.55）
+#
+# 这是模型在原文之前读到的**第一行**（MCP / REST / Wiki 三处共用它）。所以它必须
+# 自足：条数、收敛后留了几条、契合程度——少一样模型就得自己去翻载荷；
+# 而且三种"没有"要说成三句不同的话（窗口为空 / 整批不像 / 没标定过判不了），
+# 混起来模型就会把噪声当依据。
+
+
+def test_the_headline_carries_the_whole_verdict() -> None:
+    """一句话里要有：候选多少、收敛后留几条、谁定的、契合程度。"""
+    distribution = summarize(_flat_band(), floor=FLOOR, baseline=BASELINE, keep_cap=6)
+
+    line = distribution.headline(kept=4, decided_by="suggested")
+
+    assert "\n" not in line, "它是响应里的第一行，不是一段话"
+    assert "候选 86 条" in line
+    assert "留 4 条" in line
+    assert "资料很对得上" in line
+    assert "建议" in line
+    # 收敛参数是模型给的时，判定要能说出这一来源（用户问"为什么只回 2 条"要答得出来）
+    assert "模型" in distribution.headline(kept=2, decided_by="model")
+    # 两个都给不出来（分布自己单独用）时也不许崩
+    assert distribution.headline()
+
+
+def test_the_headline_says_the_library_has_nothing_for_an_empty_window() -> None:
+    """空窗口要说"库里没有命中"——不是"这批不够像"，也不是"判不了"。三者对模型是三种下一步。"""
+    distribution = summarize([], floor=FLOOR, baseline=BASELINE, keep_cap=6)
+
+    line = distribution.headline(kept=0, decided_by="suggested")
+
+    assert "库里没有命中" in line
+    assert "候选 0 条" in line
+
+
+def test_the_headline_says_the_material_cannot_answer_an_off_topic_question() -> None:
+    """整批压在基线之下 → 说"资料里没有"：这句话是"别拿这几条编答案"的最后一道闸。"""
+    items = [("手册", 0.520 - 0.002 * index, f"doc{index % 45}") for index in range(30)]
+    distribution = summarize(items, floor=FLOOR, baseline=BASELINE, keep_cap=6)
+
+    line = distribution.headline(kept=0, decided_by="suggested")
+
+    assert "资料里没有" in line
+    assert "候选 30 条" in line
+
+
+def test_the_headline_admits_it_cannot_judge_an_uncalibrated_library() -> None:
+    """没标定过 = **判不了**，而且要顺带说明"不做收敛"——否则模型会以为 6 条是挑过的。
+
+    这一句里不能再出现"基线"：那会让人以为"高于基线几条"是量过的数。
+    """
+    distribution = summarize(_flat_band(), floor=FLOOR, baseline=None, keep_cap=6)
+
+    line = distribution.headline(kept=6, decided_by="suggested")
+
+    assert "判不了" in line
+    assert "不做收敛" in line
+    assert "基线" not in line
+    assert "候选 86 条" in line

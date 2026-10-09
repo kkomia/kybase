@@ -31,6 +31,7 @@ import logging
 import re
 import uuid
 from datetime import UTC, datetime
+from typing import Protocol
 
 from app.core.exceptions import ConflictError, InvalidRequestError, NotFoundError
 from app.models.enums import TaskKind, TaskState
@@ -46,7 +47,7 @@ from app.storage.base import (
     WikiSourceRecord,
 )
 
-__all__ = ["MAX_TOPICS", "MIN_TOPICS", "WikiService"]
+__all__ = ["MAX_TOPICS", "MIN_TOPICS", "RuntimeSource", "WikiService"]
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,17 @@ _OVERVIEW_INSTRUCTION = (
 )
 
 
+class RuntimeSource(LLMSource, Protocol):
+    """Wiki 需要的运行期配置：建对话客户端（``LLMSource``）+ 这次检索的基础阈值。
+
+    写成协议而不是直接标注 ``RuntimeConfigService``：本模块只用得到这两个方法，
+    而直接把那个类搬进来会让"Wiki 依赖设置页的内部形状"这件事看起来理所当然。
+    用例传进来的假对象也只需要实现这两个（见 ``tests/unit/services/test_wiki.py``）。
+    """
+
+    def retrieval_thresholds(self) -> tuple[float, float | None]: ...
+
+
 class WikiService:
     """规划主题 + 逐页写作 + 落库出处。生成走任务队列，失败不影响摄入主链路。"""
 
@@ -110,7 +122,7 @@ class WikiService:
         self,
         stores: StoreBundle,
         *,
-        runtime: LLMSource,
+        runtime: RuntimeSource,
         retrieval: RetrievalService,
     ) -> None:
         self._stores = stores
@@ -317,8 +329,15 @@ class WikiService:
         return topics or _fallback_topics(documents, MAX_TOPICS)
 
     def _retrieve(self, kb_id: str, title: str, brief: str) -> list:
-        """主题页的资料：直接用现成的混合检索，**不另起一套采样**。"""
+        """主题页的资料：直接用现成的混合检索，**不另起一套采样**。
+
+        基础阈值按设置页那一对（与 MCP / REST 同源）：Wiki 的每一页也是"一批命中 +
+        一份分布"——同一批设置在不同入口给出不同结果，是最难查的一类不一致。
+        这里仍然**只看命中**（分布不参与写作），但要是传了别的阈值，
+        同一句话在网页检索里和在 Wiki 里切出来的就不是同一批资料。
+        """
         query = f"{title} {brief}".strip()
+        stats_floor, baseline = self._runtime.retrieval_thresholds()
         try:
             response = self._retrieval.search(
                 RetrievalQuery(
@@ -326,6 +345,8 @@ class WikiService:
                     kb_ids=[kb_id],
                     top_k=CHUNKS_PER_PAGE,
                     candidate_k=max(CHUNKS_PER_PAGE * 4, 30),
+                    stats_floor=stats_floor,
+                    baseline=baseline,
                 )
             )
         except Exception:

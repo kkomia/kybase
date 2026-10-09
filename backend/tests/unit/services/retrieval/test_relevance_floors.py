@@ -13,7 +13,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.retrieval import RetrievalMode, RetrievalQuery, RetrievalService
+from app.services.retrieval import (
+    DEFAULT_STATS_FLOOR,
+    RetrievalMode,
+    RetrievalQuery,
+    RetrievalService,
+)
 from app.services.retrieval.rerank import NoopReranker
 from app.services.retrieval.service import (
     DEFAULT_MIN_TERM_COVERAGE,
@@ -50,10 +55,15 @@ def _floors(model_id: str, **overrides: float) -> tuple[float, float]:
 
 
 def test_calibrated_model_turns_both_floors_on() -> None:
-    """本机（bge-m3）标定过：语向下限 + 词面下限一起生效。"""
+    """本机（bge-m3）标定过：判定开着，而**窗口下沿比标定值更低**。
+
+    两件事要一起说：相关度下限本身是 0.531（那条线决定"什么算相关"），
+    但统计窗口必须放宽到 0.37 —— 判断契合程度靠的是"答案周围围着多少噪声"，
+    窗口不放宽就只剩答案那一小撮，``fit`` 永远判不出 ``none``（见 service 模块头）。
+    """
     vector, coverage = _floors("BAAI/bge-m3")
 
-    assert vector == MIN_VECTOR_SCORE_BY_MODEL["bge-m3"]
+    assert vector == DEFAULT_STATS_FLOOR < MIN_VECTOR_SCORE_BY_MODEL["bge-m3"]
     assert coverage == DEFAULT_MIN_TERM_COVERAGE
 
 
@@ -130,19 +140,66 @@ def test_uncalibrated_model_keeps_both_floors_off() -> None:
 
 
 def test_explicit_zero_disables_each_floor() -> None:
-    """参数要能关：显式传 0 即关闭（分别可关，不是一个总开关）。"""
+    """参数要能关：显式传 0 即关闭（分别可关，不是一个总开关）。
+
+    **但"关"只针对判定，不针对统计窗口**：窗口是 ``stats_floor`` 的事（见下一条），
+    它没有"关闭"这个取值——分布与收敛是产品特征，不该有一个数能把它关掉。
+    """
     assert _floors("BAAI/bge-m3", min_vector_score=0.0) == (0.0, 0.0)
     assert _floors("BAAI/bge-m3", min_term_coverage=0.0) == (
-        MIN_VECTOR_SCORE_BY_MODEL["bge-m3"],
+        DEFAULT_STATS_FLOOR,
         0.0,
     )
 
 
 def test_explicit_values_override_the_calibration() -> None:
-    """显式传值就是显式：不信标定表的调用方（调试台）能自己定。"""
+    """显式传值就是显式：不信标定表的调用方（调试台）能自己定，**包括比默认窗口更严**。
+
+    显式给了 ``min_vector_score`` 时它就是这次实际收候选的那条线（载荷里的 ``floor``
+    也如实报它，见 ``effective_stats_window``）：否则"调严一点看看"这个动作只会静悄悄
+    地什么都不改——而一个不生效的旋钮比没有旋钮更糟。
+    """
     assert _floors("BAAI/bge-m3", min_vector_score=0.7, min_term_coverage=0.3) == (0.7, 0.3)
+    # 比默认窗口松也照用（放开召回时就是这个用法）
+    assert _floors("BAAI/bge-m3", min_vector_score=0.3) == (0.3, DEFAULT_MIN_TERM_COVERAGE)
     # 未标定的模型也能被显式打开（这时词面那一条是唯一的判定依据）
     assert _floors("dev/deterministic-hash", min_term_coverage=0.5) == (0.0, 0.5)
+
+
+def test_the_window_of_a_search_is_the_line_it_actually_collected_on() -> None:
+    """窗口只有一个来源，且报出去的必须**就是**实际用的那条线（v0.55）。
+
+    - 没给显式下限：按 ``stats_floor``（非正数回落默认）——这是 MCP / REST / Wiki 三条
+      产品路径的用法；
+    - 给了显式下限：它优先（窗口 = 那条线）。抬得比默认窗口严时是"少看一点"，
+      松时是"多看一点"，两种都是调用方明确要的。
+    """
+    from app.services.retrieval.service import effective_stats_window
+
+    assert effective_stats_window(None) == DEFAULT_STATS_FLOOR
+    assert effective_stats_window(0.0) == DEFAULT_STATS_FLOOR
+    assert effective_stats_window(0.55) == 0.55
+    assert effective_stats_window(0.37, 0.7) == 0.7
+    assert effective_stats_window(0.55, 0.37) == 0.37
+    # 显式传 0 = 判定整套关掉、候选全收：窗口如实报 0，不假装还看了一眼 0.37
+    assert effective_stats_window(0.55, 0.0) == 0.0
+
+
+def test_a_positive_window_overrides_the_default_and_a_zero_one_does_not_disable_it() -> None:
+    """``stats_floor`` 只有"调"这一种用法（v0.55）：正数覆盖默认，非正数回落默认。
+
+    从前 ``None`` = 不统计、``0`` = 从零开始收；现在非正数一律等于"没给"——
+    一个 0 就能把分布关掉的年代，正是它在 REST / Wiki 两条路上消失的原因。
+    """
+    assert _floors("BAAI/bge-m3", stats_floor=0.5) == (0.5, DEFAULT_MIN_TERM_COVERAGE)
+    assert _floors("BAAI/bge-m3", stats_floor=0.0) == (
+        DEFAULT_STATS_FLOOR,
+        DEFAULT_MIN_TERM_COVERAGE,
+    )
+    assert _floors("BAAI/bge-m3", stats_floor=None) == (
+        DEFAULT_STATS_FLOOR,
+        DEFAULT_MIN_TERM_COVERAGE,
+    )
 
 
 def test_floors_are_resolved_per_knowledge_base() -> None:
@@ -168,7 +225,7 @@ def test_model_lookup_failure_degrades_to_no_floor() -> None:
 def test_floors_do_not_depend_on_the_mode(mode: str) -> None:
     """全文档也要有词面下限（那一档没有向量分，词面是唯一的依据）。"""
     assert _floors("BAAI/bge-m3", mode=mode) == (
-        MIN_VECTOR_SCORE_BY_MODEL["bge-m3"],
+        DEFAULT_STATS_FLOOR,
         DEFAULT_MIN_TERM_COVERAGE,
     )
 

@@ -219,7 +219,9 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "在知识库里检索原文片段。**这是本服务的主打能力**："
                 "返回的是原文出处（含文档名与页码），不是生成的回答。"
                 "需要一段连贯的话时用 REST 的 chat 接口，这个工具给的是依据。\n\n"
-                "**返回里带一份 `distribution`（这一批命中的分布）**，用它决定「要多少」：\n"
+                "**结果的第一行就是判定**：`summary` 一句话说清候选多少、收敛后留了几条、"
+                "契合程度（`distribution` 是它背后的完整分布，排在原文之前）——"
+                "先读判定、再决定要不要翻 `hits`。\n"
                 "- `fit`：`strong` 很对得上 / `weak` 只对上一部分 / `none` 这份资料答不了"
                 "（`none` 时**如实说资料里没有**，不要拿这几条噪声编答案）/ "
                 "`unknown` 这个库的嵌入模型没标定过、**判不了契合度**（这时按你要的条数返回，"
@@ -228,9 +230,11 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "- `scores`：max / p90 / p75 / median / p25 / min 与 `band`（带宽小 = "
                 "这一批都差不多，换阈值切出来的还是同一批内容）；\n"
                 "- `documents` / `per_document`：落在几篇文档上、每篇几条——**冗余在这里**。\n\n"
-                "程序会给一组建议（`distribution.suggested`），你可以用自己的判断覆盖它："
-                "这一轮只要最相关的两三段就传 `keep=3`；要更严就传 `min_score`（绝对余弦）；"
-                "同一个问题被好几本书各答一遍时用 `per_doc`（每篇最多留几条）收敛。"
+                "`keep` / `min_score` / `per_doc` 就是**你按这份分布收敛**的三个旋钮"
+                "（不传 = 用 `distribution.suggested` 的建议）：这一轮只要最相关的两三段就传 "
+                "`keep=3`；要更严就传 `min_score`（绝对余弦）；同一个问题被好几本书各答一遍时"
+                "用 `per_doc`（每篇最多留几条）收敛。`decision` 会告诉你这次是模型定的还是"
+                "按建议走的。"
             ),
             "inputSchema": {
                 "type": "object",
@@ -532,16 +536,17 @@ def _search(services: Services, args: dict[str, Any], *, caller: Caller) -> dict
     top_k = int(args.get("top_k") or 6)
     top_k = max(1, min(MAX_TOP_K, top_k))
 
-    # 动态返回（v0.54）：兜底阈值与基线从设置读（用户可配），模型给的 keep/min_score/per_doc
-    # 覆盖分布的建议。两个设置都读不到时**保持既有行为**（不传 stats_floor = 不统计）。
-    floor = services.runtime.get_float("retrieval.floor_score")
-    baseline = services.runtime.get_float("retrieval.baseline_score") or None
+    # 动态返回（v0.54；v0.55 起**无条件**）：兜底阈值与基线从设置读（用户可配，只调不关），
+    # 模型给的 keep/min_score/per_doc 覆盖分布的建议。**读出什么就交什么**——
+    # 这一位不再有"关掉"的取值（曾经 ``floor_score = "0"`` 就等于"不要分布"，
+    # 见 `retrieval.service.resolve_stats_floor`）。
+    stats_floor, baseline = services.runtime.retrieval_thresholds()
     response = services.retrieval.search(
         _query(
             query=query,
             kb_ids=kb_ids,
             top_k=top_k,
-            stats_floor=floor if floor > 0.0 else None,
+            stats_floor=stats_floor,
             baseline=baseline,
             keep=_int_or_none(args.get("keep")),
             min_score=_float_or_none(args.get("min_score")),
@@ -549,7 +554,21 @@ def _search(services: Services, args: dict[str, Any], *, caller: Caller) -> dict
         )
     )
     distribution = response.distribution
+    decision = response.decision
+    decided_by = "" if decision is None else str(decision.get("decided_by") or "")
     payload: dict[str, Any] = {
+        # **判定在前、原文在后**（v0.55 的产品口径）：模型先读到一句话的判定
+        # （候选多少、收敛后留几条、契合程度如何），再决定要不要翻下面的原文。
+        # 键的顺序就是阅读顺序——分布排在 `hits` 之后时，它只会被当成事后统计。
+        "summary": (
+            distribution.headline(kept=len(response.hits), decided_by=decided_by)
+            if distribution is not None
+            else ""
+        ),
+        "distribution": distribution.as_payload() if distribution is not None else None,
+        "decision": decision,
+        "returned": len(response.hits),
+        "filtered_out": response.filtered_out,
         "query": query,
         "hits": [
             {
@@ -570,22 +589,14 @@ def _search(services: Services, args: dict[str, Any], *, caller: Caller) -> dict
             }
             for hit in response.hits
         ],
-        "filtered_out": response.filtered_out,
-        "returned": len(response.hits),
-        "decision": response.decision,
-        "distribution": distribution.as_payload() if distribution is not None else None,
     }
     if distribution is not None and distribution.fit == "none":
         # 拟合度是"这份资料答不了"时**必须说清**：不说的话模型会把这批 0.8x 的片段
-        # 当依据编答案，而那正是最坏的一种回答（看着有出处，其实没有内容）
+        # 当依据编答案，而那正是最坏的一种回答（看着有出处，其实没有内容）。
+        # 这一条**不折进 `summary`**：`summary` 是每批都有的一行判定，读多了会被跳过，
+        # 而"资料里没有"必须被看见。收敛参数（keep / min_score / per_doc 与来路）
+        # 已经写在 `summary` 与 `decision` 里，不再另起一句重复一遍。
         payload["note"] = distribution.note
-    elif distribution is not None and response.decision is not None:
-        payload["note"] = (
-            "这批是按上面的分布**收敛后**的结果"
-            f"（keep={response.decision['keep']}、min_score={response.decision['min_score']}、"
-            f"per_doc={response.decision['per_doc']}，{response.decision['decided_by']}）。"
-            "不够就直接说不够；要更多/更少就带着 keep / min_score / per_doc 再查一次。"
-        )
     return payload
 
 
@@ -765,8 +776,9 @@ def _query(  # type: ignore[no-untyped-def]
     放在函数里 import：``mcp_server`` 层与 ``services`` 层都往这儿引用，
     顶层 import 会让这条单向依赖变得不明显。
 
-    ``stats_floor`` 非空 = **开启动态返回**（v0.54）：程序先按兜底低阈值收候选、
-    统计分布，再按 ``keep`` / ``min_score`` / ``per_doc``（模型给的，或分布的建议）收敛。
+    ``stats_floor`` / ``baseline`` 是**这次检索的基础阈值**（设置页可调，见
+    ``runtime_config.retrieval_thresholds``）。注意 ``stats_floor`` **不是开关**：
+    给它 ``None`` 或非正数只是"用默认窗口"，分布与收敛照常跑（v0.55）。
     """
     from app.services.retrieval import RetrievalQuery
 

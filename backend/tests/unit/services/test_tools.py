@@ -452,6 +452,48 @@ def test_search_result_shape_is_stable(services: Services, kb: str, admin: Calle
     assert set(result) >= {"query", "hits", "filtered_out"}
 
 
+def test_search_leads_with_the_verdict_then_the_distribution_then_the_passages(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """**键序 = 阅读顺序**（v0.55）：判定与分布排在原文之前，模型先读到才谈得上"先想再翻"。
+
+    分布排在 ``hits`` 之后时，它只会被当成事后统计；而"这批命中是什么状态"恰恰是
+    读过原文就说不清的东西（看着有出处，其实没有内容）。
+    """
+    result = call_tool(
+        services, "search", {"query": "眼轴", "knowledge_base_ids": [kb]}, caller=admin
+    )
+
+    keys = list(result)
+    assert keys.index("summary") < keys.index("distribution") < keys.index("decision")
+    assert keys.index("decision") < keys.index("returned") < keys.index("hits")
+    assert result["summary"], "判定不能是空串：它是模型读到的第一行"
+    assert result["distribution"] is not None, "分布无条件在（这条路上没有开关）"
+    assert result["decision"] is not None
+
+
+def test_search_converges_on_the_knobs_the_model_gives(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """模型给的 ``keep`` / ``per_doc`` 要真的传到检索里，并记在 ``decision`` 上。
+
+    记 ``decided_by="model"`` 不是为了好看：用户问"为什么只回了 1 条"时，
+    答案必须是一个数加一个来源。
+    """
+    result = call_tool(
+        services,
+        "search",
+        {"query": "眼轴", "knowledge_base_ids": [kb], "keep": 1, "per_doc": 1},
+        caller=admin,
+    )
+
+    assert result["decision"]["keep"] == 1
+    assert result["decision"]["per_doc"] == 1
+    assert result["decision"]["decided_by"] == "model"
+    assert "模型" in result["summary"]
+    assert len(result["hits"]) <= 1
+
+
 # --------------------------------------------------------------------- 文档状态
 
 

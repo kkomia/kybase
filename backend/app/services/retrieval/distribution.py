@@ -40,6 +40,19 @@
 
 这三个档不是装饰：``search`` 工具会把它们写进工具结果，``none`` 那一路的处置是
 **如实告诉用户"资料里没有"**，而不是把一堆噪声当依据编答案。
+
+## 这一层是**无条件**的（v0.55）
+
+早先它只在 MCP 工具那条路上生效（``retrieval.floor_score = "0"`` 等于"关掉特色"），
+于是 REST 与 Wiki 的响应里根本没有分布，同一个服务在不同入口给出两种东西。现在：
+
+- 每条检索路径（MCP / REST / Wiki）都会算出分布，**``stats_floor`` 没有"关闭"这个取值**：
+  非正数（含 ``None``）一律回落到 :data:`DEFAULT_STATS_FLOOR`，见
+  ``service.resolve_stats_floor``；
+- 三个入口共用 :meth:`ScoreDistribution.headline` 的一句话判定，而且它排在原文之前
+  （"判定在前"是产品口径，不是排版偏好）；
+- 设置页那两项（``retrieval.floor_score`` / ``retrieval.baseline_score``）只用于**调**
+  窗口与参照线：正的兜底阈值覆盖默认、正的基线覆盖标定值，**关不掉任何东西**。
 """
 
 from __future__ import annotations
@@ -50,6 +63,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 __all__ = [
+    "DEFAULT_STATS_FLOOR",
     "FIT_NONE",
     "FIT_STRONG",
     "FIT_UNKNOWN",
@@ -72,6 +86,21 @@ FIT_UNKNOWN = "unknown"
 也就是这个机制上线之前的既有行为。**这一条是安全阀**：标定值只覆盖 bge-m3，
 别的模型上拿它的基线去判"契合程度"会把它们的真命中全判成 noise。
 """
+
+#: 分布统计窗口的**兜底低阈值**（绝对余弦）：这一层的下沿，也是一个**不可关闭**的默认值。
+#:
+#: 压低与"不可关闭"是同一件事的两面：判断契合程度靠的是"这条答案周围围着多少噪声"
+#: ——窗口被相关度下限（bge-m3 0.531）剪掉之后，分布里只剩答案那一小撮，``max`` 与
+#: ``baseline`` 就没得比了，``fit`` 会永远落在 strong/weak、**永远不会是 none**，
+#: "资料里没有"这句最要紧的话就再也说不出来。所以窗口必须比实测噪声带
+#: （0.460–0.520）更低。取值来历：旧刻度 0.80 的逐点换算
+#: （``v = 1 - √(2(1 - 旧值))`` = 0.3675，取 0.37），见 ``service.similarity_from_distance``。
+#:
+#: **这个数只在这里写一次**：``runtime_config.DEFAULTS["retrieval.floor_score"]`` 由它生成
+#: （设置页那一项是"调窗口"而不是"关窗口"），``service.search`` 的兜底也读它——两处各写
+#: 一个 0.37 的现实后果是"设置页说按 0.37 收候选、实际按别的数收"，而这类不一致查起来
+#: 毫无线索。
+DEFAULT_STATS_FLOOR = 0.37
 
 #: ``strong`` 要求最高分比基线高出的量。**在真余弦刻度上**：旧刻度取 0.04
 #: （"实测真查询比噪声头高 0.03+，留一点余量"），换算到真余弦 —— 同一条变换在
@@ -171,6 +200,49 @@ class ScoreDistribution:
             payload["documents"] = self.documents
             payload["per_document"] = [list(item) for item in self.per_document]
         return payload
+
+    def headline(self, *, kept: int | None = None, decided_by: str | None = None) -> str:
+        """这一批命中**该怎么读**的一行字：放在响应最前面，模型先读到它再决定翻不翻原文。
+
+        **为什么要有这一句**：命中分布是这个服务的特色，而它的产品口径是"判定在前"——
+        模型先知道"候选多少、收敛后留了几条、契合程度如何"，再决定要不要读下面的原文。
+        让调用方各拼一句话（MCP 一处、REST 一处、Wiki 一处）的结果是同一件事有三种说法，
+        而"资料里没有"这句最要紧的话会在某一处漏掉。
+
+        ``kept`` 是收敛后**实际返回**的条数（分布自己算不出来：那是 ``decision`` 的产物），
+        ``decided_by`` 是收敛参数的来路（``"model"`` / ``"suggested"``）。两者给不出来时
+        只说分布本身，**不编**。
+
+        三种要说实话的情形各有专句：``count == 0``（窗口之上是空的）、``fit == "none"``
+        （整批压在基线之下 = 这份资料答不了）、``fit == "unknown"``（没标定过 = 判不了
+        契合程度，也不收敛）。这三句的区别是"没有"、"不像"与"不知道"，混起来模型就会
+        把噪声当依据。
+        """
+        if decided_by == "model":
+            by = "，收敛参数由模型给出"
+        elif decided_by == "suggested":
+            by = "，收敛参数按程序建议"
+        else:
+            by = ""
+        kept_part = f"，收敛后留 {kept} 条{by}" if kept is not None else by
+
+        if self.count == 0:
+            # 空窗口：是"库里没有命中"，不是"这批不够像"——两者对模型是两种下一步
+            return f"候选 0 条（兜底阈值 {self.floor:.3f} 之上为空）{kept_part}：库里没有命中。"
+
+        head = f"候选 {self.count} 条"
+        if self.fit != FIT_UNKNOWN:
+            # 没标定过就别报"高于基线几条"：那是拿别人的尺子量出来的数
+            head += f"、其中 {self.above_baseline} 条高于基线 {self.baseline:.3f}"
+        if self.fit == FIT_NONE:
+            verdict = "这份资料答不了这个问题，如实说资料里没有，别拿这几条编答案"
+        elif self.fit == FIT_UNKNOWN:
+            verdict = "契合程度判不了（这个库的嵌入模型没标定过），不做收敛"
+        elif self.fit == FIT_STRONG:
+            verdict = "资料很对得上，按每篇最相关的收敛"
+        else:
+            verdict = "只对上一部分，只回答问到的那一点"
+        return f"{head}{kept_part}：{verdict}。"
 
 
 def percentile(sorted_values: Sequence[float], fraction: float) -> float:

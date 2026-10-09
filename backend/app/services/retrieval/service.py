@@ -13,6 +13,11 @@
 - **相关度下限作用于通道原始分**（v0.53，见 ``_passes_relevance``）：相对阈值剪不掉
   "整批都不相关"那一类——噪声查询的最高分本身就是噪声，比例永远接近 1（实测：传 0.9
   仍剩 7 条噪声、0.99 只砍掉名次靠后的）。要判断"这批东西压根不相关"，只能看绝对值；
+- **分布与收敛无条件执行**（v0.55，见 ``distribution.py`` 的模块头）：统计窗口
+  （``DEFAULT_STATS_FLOOR``）、报出分布、按分布收敛这三步在**每一次**检索里都跑，
+  ``stats_floor`` 只用来**调**窗口（正数覆盖默认，非正数回落默认）——**没有"关掉"
+  这个取值**。窗口还必须放宽到统计下沿（``_relevance_floors``），因为"报出契合程度"
+  的前提是那批噪声也在窗口里；这两件事是一体的，拆开就只剩"答案那一小撮"可比；
 - **rerank 失败降级为不重排**：日志告警即可，绝不因此让整次检索失败（架构 §5 把它定义为可选增强）。
 """
 
@@ -20,12 +25,17 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from collections.abc import Sequence
 
 from app.services.embedding.base import EmbeddingNotConfiguredError, EmbeddingProvider
 from app.services.embedding.resolver import EmbeddingResolver
 from app.services.retrieval.coverage import content_terms, term_coverage
-from app.services.retrieval.distribution import ScoreDistribution, summarize
+from app.services.retrieval.distribution import (
+    DEFAULT_STATS_FLOOR,
+    ScoreDistribution,
+    summarize,
+)
 from app.services.retrieval.fusion import DEFAULT_RRF_K, rrf_fuse
 from app.services.retrieval.rerank import RerankError, RerankProvider
 from app.services.retrieval.types import (
@@ -42,9 +52,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_MIN_TERM_COVERAGE",
+    "DEFAULT_STATS_FLOOR",
     "MIN_VECTOR_SCORE_BY_MODEL",
     "RetrievalService",
     "calibrated_vector_floor",
+    "effective_stats_window",
+    "resolve_stats_floor",
     "similarity_from_distance",
 ]
 
@@ -146,6 +159,43 @@ def calibrated_vector_floor(model_id: str) -> float:
     return 0.0
 
 
+def resolve_stats_floor(stats_floor: float | None) -> float:
+    """这次检索的**统计窗口下沿**：非正数（含 ``None``）一律回落到默认窗口。
+
+    这一位**没有"关闭"这个取值**（v0.55 的口径）。早先 ``None`` = 不统计、
+    ``0`` = 从零开始收，于是"关掉这个特色"只需要一个 0——而 ``retrieval.floor_score``
+    的默认值是 ``"0"`` 的那些部署、以及压根不传这一项的 REST / Wiki 两条路，
+    就是这样悄悄少了分布（同一份命中在 MCP 里带分布、在网页里没有）。
+
+    现在只剩一件事要判："调用方给了个正数没有"。给了就用它的（设置页那一项是**调**窗口），
+    没给或给了非正数就用 :data:`DEFAULT_STATS_FLOOR`——**默认窗口永远在**。
+    """
+    if stats_floor is not None and stats_floor > 0.0:
+        return float(stats_floor)
+    return DEFAULT_STATS_FLOOR
+
+
+def effective_stats_window(
+    stats_floor: float | None, explicit_vector_score: float | None = None
+) -> float:
+    """这次检索**实际按哪条线收候选**：载荷里报给模型的 ``floor`` 就是它。
+
+    两个来源，**显式的那个优先**：
+
+    - 调用方显式给了 ``min_vector_score``（调试台、精细调用方）：它就是窗口。判定下限
+      本来就是"从哪条线开始收"，报一个更低的数等于让载荷替我们背书一句没做过的事
+      （"0.37 之上的都看了"）；而显式抬高它只是少收几条，不会改变别的行为。
+      显式传 0 = 判定整套关掉、候选全收，这时窗口如实报 0；
+    - 否则 :func:`resolve_stats_floor`——非正数一律回落到默认窗口（永远关不掉）。
+
+    **只放宽、不收紧**说的是窗口对**标定值**的作用（见 ``_relevance_floors``）：
+    窗口比标定值低时按窗口收，比它高时按标定值收。
+    """
+    if explicit_vector_score is not None:
+        return max(0.0, float(explicit_vector_score))
+    return resolve_stats_floor(stats_floor)
+
+
 def _passes_relevance(
     raw_scores: dict[str, float],
     text: str,
@@ -208,11 +258,17 @@ class RetrievalService:
         rrf_k: int = DEFAULT_RRF_K,
         embedders: EmbeddingResolver | None = None,
         usage_recorder=None,  # type: ignore[no-untyped-def]
+        search_recorder=None,  # type: ignore[no-untyped-def]
     ) -> None:
         self._stores = stores
         # 用量回调（可选）：**检索次数原先只在日志里**，于是"检索到底跑了多少次、
         # 平均命中几块"这类问题没有数字可查。缺席时什么都不记，功能照常
         self._usage_recorder = usage_recorder
+        # 按库命中回调（可选，v0.61）：一次检索按库交出一份
+        # ``{kb_id: (候选数, 留存数)}``。**检索层不认识存储**——它只说"这次每个库
+        # 贡献了多少、留了多少、整批判成了什么"，落库由 ``services/search_stats.py``
+        # 负责。缺席时什么都不记，检索照常。
+        self._search_recorder = search_recorder
         self._embedder = embedder
         # 按库解析嵌入模型（v11）：不同库可能用不同模型，查询向量必须按库算
         self._embedders = embedders
@@ -231,6 +287,11 @@ class RetrievalService:
     ) -> RetrievalResponse:
         if not request.query.strip() or not request.kb_ids:
             return RetrievalResponse(hits=[], mode=request.mode, reranked=False)
+
+        # **统计窗口只解析一次**（v0.55）：下面每一处用它的人都拿这个值——放宽相关度下限
+        # （`_relevance_floors`）、统计（`summarize`）、收敛（`_apply_distribution`）。
+        # 三处各自去读一次 `request.stats_floor` 的结果是"报告的窗口不是实际用的窗口"。
+        stats_floor = effective_stats_window(request.stats_floor, request.min_vector_score)
 
         started_all = time.perf_counter()
         raw: dict[str, dict[str, float]] = {}
@@ -269,20 +330,28 @@ class RetrievalService:
             )
 
         fused = rrf_fuse(ordered, k=self._rrf_k)
-        hits, filtered_out = self._materialize(fused, raw, request, embedders)
+        hits, filtered_out = self._materialize(fused, raw, request, embedders, stats_floor)
         hits, reranked = self._maybe_rerank(hits, request)
 
-        # —— 动态返回（v0.54）：先看分布，再决定切在哪 ——
-        distribution = None
-        decision: dict[str, object] | None = None
-        if request.stats_floor is not None:
-            hits, distribution, decision, dropped = self._apply_distribution(
-                hits, request, embedders
-            )
-            filtered_out += dropped
+        # —— 动态返回（v0.54；v0.55 起**无条件**）：先看分布，再决定切在哪 ——
+        # 这里没有 if：分布与收敛**永远**跑。理由见模块头与 `_relevance_floors`——
+        # 统计窗口的放宽与"报出分布"是同一件事的两半：先把噪声带一起收进来，
+        # 才谈得上"报出契合程度、再按它切掉"。让调用方传个 0 / None 就能跳过它，
+        # 等于允许某条入口悄悄退回"没有分布"的旧行为，而那正是这次要拆掉的东西。
+        hits, distribution, decision, dropped, candidates_by_kb = self._apply_distribution(
+            hits, request, embedders, stats_floor
+        )
+        filtered_out += dropped
         # 记在**返回之前**：返回给调用方的条数才是"命中数"，与 stats 里的分路召回数
         # 不是一回事（后者是融合前的候选量）
         self._record_usage(request, hits=hits[: request.top_k], started=started_all)
+        self._record_search_hits(
+            request,
+            hits=hits[: request.top_k],
+            candidates_by_kb=candidates_by_kb,
+            fit=distribution.fit,
+            started=started_all,
+        )
 
         return RetrievalResponse(
             hits=hits[: request.top_k],
@@ -299,7 +368,8 @@ class RetrievalService:
         hits: list[RetrievalHit],
         request: RetrievalQuery,
         embedders: dict[str, EmbeddingProvider] | None = None,
-    ) -> tuple[list[RetrievalHit], ScoreDistribution, dict[str, object], int]:
+        stats_floor: float | None = None,
+    ) -> tuple[list[RetrievalHit], ScoreDistribution, dict[str, object], int, Counter[str]]:
         """按分布与调用方的决定**收敛**返回集（见 ``distribution.py`` 的模块头）。
 
         三件事按顺序做，顺序不能反：
@@ -313,13 +383,26 @@ class RetrievalService:
 
         ``decided_by`` 记清这次是"模型定的"还是"按建议走的"——用户问"为什么只回 3 条"
         时，答案必须是一个数加一个来源，而不是一句"系统自动"。
+
+        ``stats_floor`` 是 ``search`` 解析好的统计窗口下沿，**必须**原样传给
+        ``summarize``：载荷里的 ``floor`` 是给模型看的"这批候选是按哪条线收上来的"，
+        与 ``_relevance_floors`` 实际用的那条线对不上的话，那个数就没有意义了。
+
+        返回值最后一项是**按库的收敛前条数**（``{kb_id: 候选数}``）：它必须在这里数，
+        因为"候选"的定义就是"``summarize`` 看到的那一批"——回 ``search`` 再从头数一遍
+        等于对同一件事有第二个定义，而两处迟早会对不上（v0.61 的按库命中趋势要它）。
+        收敛**之后**的条数由 ``search`` 从返回列表里数（那是 ``decision`` 的产物，不在这里）。
         """
         basis = "vector" if any("vector" in hit.raw_scores for hit in hits) else "none"
-        # 基线：显式给了就用（用户配的那一项），否则按嵌入模型标定——**都没标定就是 None**，
-        # 那时判不了契合度、也不收敛（见 `distribution.FIT_UNKNOWN`：安全阀）。
+        # 收敛前的按库条数：**就是下面传给 summarize 的同一批 hits**，所以在这里数
+        candidates_by_kb: Counter[str] = Counter(hit.knowledge_base_id for hit in hits)
+        # 基线：显式给了正数就用（用户配的那一项），否则按嵌入模型标定——**都没标定就是
+        # None**，那时判不了契合度、也不收敛（见 `distribution.FIT_UNKNOWN`：安全阀）。
+        # 非正数与"没给"同义（设置页那一侧也是这么折的，见 `retrieval_thresholds`）：
+        # 一条 0 的基线不是"关掉判定"，而是"整批都过线"，那与不判是两回事。
         baseline = (
             request.baseline
-            if request.baseline is not None
+            if request.baseline is not None and request.baseline > 0.0
             else self._calibrated_baseline(request, embedders)
         )
         scored: list[tuple[str, float | None, str]] = [
@@ -334,7 +417,10 @@ class RetrievalService:
         ]
         distribution = summarize(
             scored,
-            floor=request.stats_floor or 0.0,
+            floor=effective_stats_window(
+                stats_floor if stats_floor is not None else request.stats_floor,
+                request.min_vector_score,
+            ),
             baseline=baseline,
             basis=basis,
             keep_cap=request.top_k,
@@ -387,7 +473,7 @@ class RetrievalService:
             "fit": distribution.fit,
             "dropped": dropped,
         }
-        return hits, distribution, decision, dropped
+        return hits, distribution, decision, dropped, candidates_by_kb
 
     def _calibrated_baseline(
         self, request: RetrievalQuery, embedders: dict[str, EmbeddingProvider] | None = None
@@ -433,6 +519,50 @@ class RetrievalService:
         except Exception:
             # 与对话/嵌入同一条纪律：**统计失败绝不能反过来影响检索本身**
             logger.exception("检索用量记录失败（不影响本次检索）")
+
+    def _record_search_hits(
+        self,
+        request: RetrievalQuery,
+        *,
+        hits: Sequence[RetrievalHit],
+        candidates_by_kb: Counter[str],
+        fit: str,
+        started: float,
+    ) -> None:
+        """记一次检索的**按库命中**（v0.61）：候选、留存、契合度。
+
+        交给回调的是并集 ``{kb_id: (候选数, 留存数)}``：
+
+        - ``candidates_by_kb`` 是收敛**之前**各库贡献的条数（``_apply_distribution`` 里数的）；
+        - 留存数是**返回给调用方的那一批**里各库的条数（收敛之后的）；
+        - 再并上 ``request.kb_ids``——**"这个库被检索了但一条没命中"也要记一行**
+          （候选 0）。少了它，"这个库最近没人查"与"查了但查不到"在曲线上长得一样，
+          而那正是这条曲线要回答的一半问题。
+
+        并集在这里算而不是在回调里：只有检索层知道"这次检索了哪些库"。
+        ``request.kb_ids`` 空的那一档（"全库检索"）在 ``search`` 开头就返回了，
+        真走到这里又一条命中都没有的话，也没有任何一个库可以被归因——
+        **那就什么都不写**（回调收到空映射会直接返回）。
+        """
+        if self._search_recorder is None:
+            return
+        try:
+            kept_by_kb: Counter[str] = Counter(hit.knowledge_base_id for hit in hits)
+            kb_ids = set(candidates_by_kb) | set(kept_by_kb) | set(request.kb_ids)
+            if not kb_ids:
+                return
+            self._search_recorder(
+                hits_by_kb={
+                    kb_id: (candidates_by_kb.get(kb_id, 0), kept_by_kb.get(kb_id, 0))
+                    for kb_id in kb_ids
+                },
+                fit=fit,
+                # 与 `_record_usage` 用同一个时钟（同为 perf_counter）：见那里的说明，
+                # 混用 monotonic 会算出负数时长
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+        except Exception:
+            logger.exception("检索命中记录失败（不影响本次检索）")
 
     # ------------------------------------------------------------------ 召回通道
 
@@ -521,6 +651,7 @@ class RetrievalService:
         raw: dict[str, dict[str, float]],
         request: RetrievalQuery,
         embedders: dict[str, EmbeddingProvider] | None = None,
+        stats_floor: float | None = None,
     ) -> tuple[list[RetrievalHit], int]:
         if not fused:
             return [], 0
@@ -532,7 +663,7 @@ class RetrievalService:
         top_score = fused[0][1] or 1.0
         threshold = request.score_threshold
         # 相关度下限（每库一对）：按模型标定，见 `MIN_VECTOR_SCORE_BY_MODEL` 与 `coverage.py`
-        floors = self._relevance_floors(request, embedders)
+        floors = self._relevance_floors(request, embedders, stats_floor)
         # **这次检索有没有语义证据**：向量通道一条候选都没返回时（没配嵌入模型、
         # 或选了纯关键词那一档）判定层不下结论——理由见 `_passes_relevance`
         semantic = bool(raw.get(VECTOR_CHANNEL))
@@ -613,7 +744,10 @@ class RetrievalService:
         return hits, filtered_out
 
     def _relevance_floors(
-        self, request: RetrievalQuery, embedders: dict[str, EmbeddingProvider] | None = None
+        self,
+        request: RetrievalQuery,
+        embedders: dict[str, EmbeddingProvider] | None = None,
+        stats_floor: float | None = None,
     ) -> dict[str, tuple[float, float]]:
         """这次检索各库的（余弦下限, 词面覆盖下限）。
 
@@ -624,12 +758,21 @@ class RetrievalService:
         在没有语义判定兜底时把召回砍掉一截。这正是"宁可少拦"的落点：本机（bge-m3）
         两条件都开，别的模型保持既有行为，要收紧请显式传参。
 
+        ``stats_floor`` 是这次检索的**统计窗口下沿**（``search`` 解析一次后传下来；
+        直接调本方法的用例不传也行——那时按默认窗口走，语义一致）。
+
         ``embedders`` 是这次检索的**每库解析一次**的缓存（见 ``_embedder_cached``）：
         这里要的只是"这个库用的是哪个模型"（查标定表），但它与向量通道要的是**同一个
         对象**——分开解析会让每个库多一次 resolver 往返（用例盯着这个次数）。
         """
         explicit_vector = request.min_vector_score
         explicit_coverage = request.min_term_coverage
+        # 窗口由 ``search`` 解析好传下来；直接调本方法（用例）时可省，
+        # 那时按请求里那两项（含显式下限）重新算一遍——两种调用不能有两种窗口
+        window = effective_stats_window(
+            stats_floor if stats_floor is not None else request.stats_floor,
+            explicit_vector,
+        )
         floors: dict[str, tuple[float, float]] = {}
         for kb_id in request.kb_ids:
             vector = (
@@ -637,12 +780,18 @@ class RetrievalService:
                 if explicit_vector is None
                 else max(0.0, explicit_vector)
             )
-            if request.stats_floor is not None and vector > 0.0:
-                # **动态返回时把窗口放宽到兜底阈值**（v0.54）：相关度下限（bge-m3 0.531）会把
-                # "可能相关"的那一段也剪掉，而判断契合程度靠的正是"这条答案周围围着多少
-                # 噪声"——窗口被剪掉了，分布就只剩答案那一小撮，``baseline`` 也就无从比较。
-                # 只放宽、不收紧：兜底阈值比标定值高时按标定值走。
-                vector = min(vector, max(0.0, request.stats_floor))
+            if vector > 0.0:
+                # **把窗口放宽到统计下沿**（v0.54 起；v0.55 起**无条件**，原来是
+                # `if request.stats_floor is not None` 才做）。放宽不是顺手为之，
+                # 它和"报出分布"是同一件事的两半：相关度下限（bge-m3 0.531）会把
+                # "可能相关"的那一段也剪掉，而判断契合程度靠的正是"这条答案周围围着
+                # 多少噪声"——窗口被剪掉了，分布就只剩答案那一小撮，``baseline`` 无从比较，
+                # ``fit`` 永远是 strong/weak、永远判不出 none（"资料里没有"就说不出口）。
+                #
+                # 只放宽、不收紧：``min`` 只会把线往下拉。显式给了 ``min_vector_score``
+                # 时窗口就是那个数（见 ``effective_stats_window``），这一行于是是个恒等式
+                # ——留着它是为了让"窗口"这一处只有一个说法。
+                vector = min(vector, window)
             if explicit_coverage is None:
                 # 语向下限开着才有词面下限：两者是一套（见方法说明）
                 coverage = DEFAULT_MIN_TERM_COVERAGE if vector > 0.0 else 0.0

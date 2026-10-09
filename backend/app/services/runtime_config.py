@@ -38,6 +38,7 @@ from app.services.embedding.protocols import (
     supports_media,
 )
 from app.services.llm import LLMConfig, normalize_effort
+from app.services.retrieval.distribution import DEFAULT_STATS_FLOOR
 from app.services.secrets import SecretStore, setting_target, use_keychain
 from app.storage.base import StoreBundle
 
@@ -129,6 +130,8 @@ SETTING_GROUPS: dict[str, Any] = {
     # 数字是**真余弦**（旧刻度的量法见 services/retrieval/service.py 的
     # `similarity_from_distance`）：无关问题整批落在 0.460–0.520、相关问题在 0.593–0.805，
     # 基线 0.531 卡在中间。
+    # **v0.55 起这两项是"调"，不是"开关"**：填非正数只是回落默认，分布与收敛照常跑
+    # （见 `retrieval_thresholds`）——这一层是产品特征，不该有一个数能把它关掉。
     "retrieval": {
         "label": "检索",
         "fields": [
@@ -170,16 +173,19 @@ DEFAULTS: dict[str, str] = {
     # **两个数都在"真余弦"刻度上**（2026-09-29 换了口径：以前"相似度"按欧氏公式算，
     # 整体虚高，见 services/retrieval/service.py 的 `similarity_from_distance`）。
     # 旧刻度 → 真余弦的换算：``v = 1 - √(2(1 - 旧值))``，同一批实测数换算如下：
-    #   兜底阈值 0.80 → **0.368**（取 0.37）：实测无关问题整批落在 0.460–0.520，
-    #     统计窗口要比它更低，"答案周围围着多少噪声"才看得出来（相关度下限 0.531
-    #     会把这一段剪掉）；
+    #   兜底阈值 0.80 → **0.368**（取 0.37，即 `distribution.DEFAULT_STATS_FLOOR`）：
+    #     实测无关问题整批落在 0.460–0.520，统计窗口要比它更低，"答案周围围着多少噪声"
+    #     才看得出来（相关度下限 0.531 会把这一段剪掉）；
     #   基线 **0（= 自动）** → 按嵌入模型查标定表（bge-m3 → 0.531）。**默认不写死**：
     #     余弦的绝对尺度是模型属性，别的模型上拿别人的基线判"契合程度"会把真命中
     #     全判成噪声；没标定过的模型上这一层只报分布、不判也不收敛。
     # 注意：这两个是**用户可改**的设置。若有人按旧刻度手工填过值（例如 0.80），
     # 换算后它的含义变了（0.80 现在是"相当高"的一条线），应当按新刻度重填一次——
     # 本机开发库里这一项没被改过（`retrieval.floor_score` 走默认）。
-    "retrieval.floor_score": "0.37",
+    # **v0.55 起默认值只写一次**：那一格由 `distribution.DEFAULT_STATS_FLOOR` 生成
+    # （这里是 `str(...)`，不是第二个 0.37 字面量），而且这一位**不再有"关掉"的取值**：
+    # 填 0 / 负数都回落到默认窗口，分布与收敛照常跑（见 `retrieval_thresholds`）。
+    "retrieval.floor_score": str(DEFAULT_STATS_FLOOR),
     "retrieval.baseline_score": "0",
     # 入库时给每篇文档生成摘要（v25）。它是**省 token 的机制**而不是锦上添花：
     # 一次提问复用一篇摘要，能省掉成倍的资料 token。关掉它只会让检索更贵。
@@ -441,6 +447,29 @@ class RuntimeConfigService:
             return float(raw)
         except ValueError:
             return float(DEFAULTS.get(key, "0") or 0)
+
+    def retrieval_thresholds(self) -> tuple[float, float | None]:
+        """这次检索的（统计窗口下沿, 契合度基线）：动态返回的两个基础阈值。
+
+        **两个数一起给**，而且只在这里读一次：MCP 工具、REST 端点、Wiki 三条路都要这一对，
+        各抄一遍键名与回落口径的结果是同一份设置在不同入口给出不同的结果——而"网页上有
+        分布、MCP 里没有"这类不一致查起来毫无线索（见 ``services/retrieval/distribution.py``
+        的模块头）。
+
+        - 窗口下沿：**只认正数**。``0`` / 负数 / 解析不了都回落到
+          ``DEFAULT_STATS_FLOOR``——这一位在 v0.55 之后**没有"关掉"这个取值**
+          （曾经常见配置 ``floor_score = "0"`` 就等于"不要分布"，也正是它被悄悄关掉的方式）；
+        - 基线：``0`` / 负数 = **不写死**，交 ``None`` 让服务按库的嵌入模型查标定表
+          （安全阀：没标定过的模型上判不了契合度，见 ``distribution.FIT_UNKNOWN``）。
+        """
+        values = self.get_many(("retrieval.floor_score", "retrieval.baseline_score"))
+        floor = _as_float(values["retrieval.floor_score"], DEFAULT_STATS_FLOOR)
+        if floor <= 0.0:
+            # **"0" = 没给**，不是"关掉"：与 ``retrieval.service.resolve_stats_floor`` 同一条
+            # 口径（服务侧还会再兜一次，这里先把有效值给出去，免得调用方拿着一个 0 去解释）
+            floor = DEFAULT_STATS_FLOOR
+        baseline = _as_float(values["retrieval.baseline_score"], 0.0)
+        return floor, (baseline if baseline > 0.0 else None)
 
     def get_bool(self, key: str, *, default: bool = False) -> bool:
         """取一个布尔设置。

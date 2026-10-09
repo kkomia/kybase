@@ -28,12 +28,26 @@ from app.storage.base import DocumentRecord, KnowledgeBaseRecord
 
 
 class FakeChat:
-    """假的对话模型：按提示词内容分流（规划 / 总览 / 正文），记录调用次数。"""
+    """假的运行期配置：按提示词内容分流（规划 / 总览 / 正文），记录调用次数。
 
-    def __init__(self, plan: str | None = None, citations: int = 2) -> None:
+    它同时当"对话模型"与"运行期配置"用（生产里这两件事都在 ``RuntimeConfigService``
+    上）：所以除了 ``complete``，还要回答这次检索的基础阈值。
+    """
+
+    def __init__(
+        self,
+        plan: str | None = None,
+        citations: int = 2,
+        thresholds: tuple[float, float | None] = (0.0, None),
+    ) -> None:
         self.plan = plan
         self.citations = citations
+        self.thresholds = thresholds
         self.calls: list[str] = []
+
+    def retrieval_thresholds(self) -> tuple[float, float | None]:
+        """默认给"没设过"：服务侧按默认窗口 + 标定基线解析（与真部署一致）。"""
+        return self.thresholds
 
     def complete(self, messages):  # type: ignore[no-untyped-def]
         prompt = messages[-1].content
@@ -61,15 +75,17 @@ class FakeHit:
 
 
 class FakeRetrieval:
-    """只实现 ``search``：返回固定几条命中。"""
+    """只实现 ``search``：返回固定几条命中（同时记下每次请求，供"传了什么"那类断言用）。"""
 
     def __init__(self, per_query: int = 2, empty: bool = False) -> None:
         self.per_query = per_query
         self.empty = empty
         self.queries: list[str] = []
+        self.requests: list[object] = []
 
     def search(self, request):  # type: ignore[no-untyped-def]
         self.queries.append(request.query)
+        self.requests.append(request)
 
         class Response:
             hits = [] if self.empty else [FakeHit(i) for i in range(1, self.per_query + 1)]
@@ -166,6 +182,25 @@ def test_generate_writes_overview_topic_pages_and_sources(bundle) -> None:
     # 总览页没有出处（它是导航页），但有站内链接
     assert service.sources(overview.id) == []
     assert "[[近视防控]]" in overview.content_md
+
+
+def test_topic_retrieval_uses_the_configured_thresholds(bundle) -> None:
+    """Wiki 的每一页也是"一批命中 + 一份分布"：基础阈值按设置页那一对传下去。
+
+    不传的话它就落在默认窗口上，与网页检索那一次切出来的不是同一批资料——
+    同一句话在两个入口给出不同的结果，是最难查的一类不一致。
+    """
+    _kb(bundle)
+    _doc(bundle, "kb_wiki")
+    retrieval = FakeRetrieval(per_query=1)
+    service = WikiService(bundle, runtime=FakeChat(thresholds=(0.5, 0.4)), retrieval=retrieval)
+
+    service.generate("kb_wiki")
+
+    assert retrieval.requests, "每个主题页都该检索一次"
+    assert all(
+        request.stats_floor == 0.5 and request.baseline == 0.4 for request in retrieval.requests
+    )
 
 
 def test_generate_replaces_the_previous_pages(bundle) -> None:
