@@ -11,7 +11,7 @@
  * ## 本仓库（kybase）的减法
  *
  * 这一份前端是知识库服务的**独立管理台**，不带 agent 语义：页面只有
- * 登录 / 概览 / 所有知识库 / 库详情 / Wiki / 文档详情 / 任务中心 / 工具 / 模型 /
+ * 登录 / 概览 / 所有知识库 / 库详情 / Wiki / 文档详情 / 任务中心 / 接入 / 模型 /
  * API 密钥 / 404。
  * 对话、笔记、记忆、能力、备份、工作区那几页**不在本仓库**（它们留在 kylab 前端壳里），
  * 所以这里的条目比 kylab 那份少了一半——`PAGES` 与 `app/App.tsx` 的路由表是同一份清单的两面。
@@ -27,6 +27,7 @@ export const PAGES = {
   wiki: () => import('@/features/knowledge').then((m) => ({ default: m.WikiView })),
   document: () => import('@/features/knowledge').then((m) => ({ default: m.DocumentView })),
   tasks: () => import('@/features/misc/tasks/TasksPage').then((m) => ({ default: m.TasksPage })),
+  // 接入：怎么把客户端接进来（地址 / 密钥 / 客户端片段）+ 对外工具清单
   tools: () => import('@/features/misc/tools/ToolsPage').then((m) => ({ default: m.ToolsPage })),
   // 模型：用途绑定（出题 / 摘要走 chat 那一格）+ 供应商与模型登记
   models: () =>

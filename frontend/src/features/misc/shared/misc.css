@@ -3069,6 +3069,135 @@
     color: var(--status-warning);
   }
 
+  /* ---------------------------------------------------------------- 接入页（分档 / 片段 / 验证 / 排障） */
+
+  /* 分档的内容：档内不止一段（地址 / 鉴权 / 片段…）竖排，间距取段间距一档。
+     Radix 的 Tabs 根只给 8px，缺了这一层各段会黏在一起。 */
+  .m-tab-pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    margin-top: var(--space-2);
+  }
+
+  /* 客户端分档：档内是几段片段，间距比段间距小一档 */
+  .m-client-tab {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  /* 一段可复制的片段：标题行（标签 + 复制）、位置、代码块 */
+  .m-snippet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .m-snippet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .m-snippet-title {
+    font-size: var(--text-meta-size);
+    color: var(--text-primary);
+  }
+
+  /* 这段贴到哪里（配置文件路径 / 客户端表单里的哪一格） */
+  .m-snippet-where {
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  /* 代码块：整段可复制，故横向滚动而不折行——折了它跟粘进客户端的就不是一段 */
+  .m-code-block {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-row);
+    font-family: var(--font-mono);
+    font-size: var(--text-micro-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* 三步验证：序号 + 这一句"成功长什么样" */
+  .m-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .m-step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .m-step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-active);
+    font-size: var(--text-micro-size);
+    color: var(--text-secondary);
+  }
+
+  .m-step-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    min-width: 0;
+  }
+
+  /* 排障小表：现象 | 先看这里 */
+  .m-trouble {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .m-trouble th {
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
+    font-size: var(--text-micro-size);
+    font-weight: 600;
+    color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .m-trouble td {
+    padding: var(--space-2) var(--space-4);
+    vertical-align: top;
+    font-size: var(--text-meta-size);
+    line-height: var(--line-ui);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .m-trouble tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* 第一列（现象）是一句短话，不折行更整齐；窄屏那条规则会把它放开 */
+  .m-trouble td:first-child {
+    width: 1%;
+    white-space: nowrap;
+    color: var(--text-primary);
+  }
+
   /* ---------------------------------------------------------------- 窄屏 */
 
   @media (max-width: 960px) {
@@ -3108,6 +3237,12 @@
     .m-usage-figures,
     .m-form-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* 排障表：窄屏下第一列放开折行，免得"调用被拒 / 401"这种短话把表格挤到横向滚动 */
+    .m-trouble td:first-child {
+      width: auto;
+      white-space: normal;
     }
   }
 }

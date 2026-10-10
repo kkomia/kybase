@@ -89,7 +89,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/kb\//, '文档列表'],
   [/^\/documents\//, '文档详情'],
   [/^\/tasks/, '任务中心'],
-  [/^\/tools/, '工具'],
+  [/^\/tools/, '接入'],
   [/^\/models/, '模型'],
   [/^\/api-keys/, 'API 密钥'],
 ]
@@ -236,7 +236,7 @@ export function App() {
                 <Route path="/documents/:documentId" element={<DocumentView />} />
                 {/* 任务中心：流水线任务（摄入 / 解析 / 索引）与运行负载 */}
                 <Route path="/tasks" element={<TasksPage />} />
-                {/* 对外能力：工具目录（含 MCP 地址与随附技能）——任何登录会话都读得到 */}
+                {/* 对外能力：接入页（服务地址 / 密钥 / 客户端片段 + 工具目录）——任何登录会话都读得到 */}
                 <Route path="/tools" element={<ToolsPage />} />
                 {/* 模型：用途绑定（出题 / 摘要走 chat 那一格）与供应商、模型登记；
                     写端点只认管理员，成员进来看到的是页面自己的只读态 */}
