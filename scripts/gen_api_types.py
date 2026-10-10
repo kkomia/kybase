@@ -25,8 +25,10 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,7 +45,12 @@ from pathlib import Path
 # 多一个 `kylab-openapi-*`。指到仓库内 `.tmp/` 之后，回退路径也落在被忽略的目录里。
 _TMP_DIR = Path(__file__).resolve().parents[1] / ".tmp"
 _TMP_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["KYLAB_DATA_DIR"] = tempfile.mkdtemp(prefix="kylab-openapi-", dir=_TMP_DIR)
+# **要自己收尾**（2026-10-10）：`mkdtemp` 建出来的目录**不会自动删**，而这个数据目录
+# 每次运行都要建一个（`temporaryDirectory` 那两处会自清，这一处不会）。不收尾的话
+# 每跑一次门禁就在 `.tmp/` 里留一个 `kylab-openapi-*`——实测一天攒了 38 个。
+_DATA_DIR = tempfile.mkdtemp(prefix="kylab-openapi-", dir=_TMP_DIR)
+os.environ["KYLAB_DATA_DIR"] = _DATA_DIR
+atexit.register(shutil.rmtree, _DATA_DIR, ignore_errors=True)
 
 ROOT = Path(__file__).resolve().parents[1]
 
