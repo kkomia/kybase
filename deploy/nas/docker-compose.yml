@@ -53,6 +53,14 @@
 #    绕过反代直连后端会让"一半请求带 X-Forwarded-*、一半不带"，那是最难查的一类差异。
 #    需要直连调试时把 backend 的 ports 那两行注释打开。
 #
+# ## 两个对外地址（KYLAB_MCP_PUBLIC_URL / KYLAB_PUBLIC_BASE_URL）
+#
+# **只有部署方才知道**的对外地址（REST 在 8081、MCP 在 8765，也可能落在两个域名后面）：
+# 服务端**不猜、不拼**，留空就是没有。填进 `app/.env` 之后，管理台「接入」页才给出
+# **可直接粘贴**的客户端片段（`GET /api/v1/tools` 的 `mcp_endpoint`）；MCP 的
+# `get_document_content` 的 `download_url` 与 `get_document_pages` 的 `image_url`
+# 也才拼得出绝对地址。留空只降级、不报错。两者都透传给了 backend 与 mcp 两份。
+#
 # ## 构建期走国内镜像源（KYLAB_UV_INDEX_URL / NPM_REGISTRY）
 #
 # 这台机器到境外带宽极差（kylab 那边实测：从 files.pythonhosted.org 拉 wheel
@@ -114,6 +122,11 @@ x-backend-env: &backend-env
   KYLAB_LOG_LEVEL: ${KYLAB_LOG_LEVEL:-INFO}
   # 留空则由首次 setup 自动生成一条并落库（库里已经有就用库里的）
   KYLAB_URL_SIGNING_SECRET: ${KYLAB_URL_SIGNING_SECRET:-}
+  # ---- 对外地址（只有部署方才知道，见文件头「两个对外地址」）----
+  # 填了接入页才会给出可直接粘贴的客户端片段；留空 = 与从前逐字相同：不猜、不拼，
+  # 界面照实说没配（download_url / image_url 同理，只降级不报错）
+  KYLAB_MCP_PUBLIC_URL: ${KYLAB_MCP_PUBLIC_URL:-}
+  KYLAB_PUBLIC_BASE_URL: ${KYLAB_PUBLIC_BASE_URL:-}
 
 services:
   backend:

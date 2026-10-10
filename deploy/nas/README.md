@@ -297,7 +297,7 @@ curl -s http://127.0.0.1:8081/ | grep -o 'id="root"'
 
 ## `.env`（在服务器上，不进仓库）
 
-`app/.env` 只有四项，值与本机 `/vol1/1000/docker/kylab/docker-compose.yml` 里的一致
+`app/.env` 必填四项，值与本机 `/vol1/1000/docker/kylab/docker-compose.yml` 里的一致
 （共用同一套存储，见文件头）：
 
 ```ini
@@ -305,6 +305,15 @@ KYLAB_PG_PASSWORD=<与存储层 compose 里的一致>
 KYLAB_S3_ACCESS_KEY=<MinIO 的 access key>
 KYLAB_S3_SECRET_KEY=<MinIO 的 secret key>
 KYLAB_S3_BUCKET=kylab
+```
+
+另有两项**可选**的对外地址（默认空 = 与从前逐字相同）：它们是**只有部署方才知道**的地址，
+服务端不猜也不拼。填了管理台「接入」页才给出**可直接粘贴**的客户端片段，
+MCP 的 `download_url` / `image_url` 也才是绝对地址：
+
+```ini
+# KYLAB_MCP_PUBLIC_URL=http://<这台机器的地址>:8765/mcp   # 整条，端口是 MCP 那个
+# KYLAB_PUBLIC_BASE_URL=http://<这台机器的地址>:8081      # 不含 /api/v1
 ```
 
 **为什么不把这些写进仓库**：仓库里那两份 compose 用的是占位默认值，真实凭据只活在这台

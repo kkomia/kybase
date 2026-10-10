@@ -152,6 +152,11 @@ services:
       KYLAB_CORS_ORIGINS: ${KYLAB_CORS_ORIGINS:-http://localhost:8080}
       # 内嵌消费线程：**单容器部署要留着它**，否则上传后没人处理队列
       KYLAB_RUN_WORKER: ${KYLAB_RUN_WORKER:-true}
+      # ---- 对外地址（只有部署方才知道，见 deploy/nas/docker-compose.yml 文件头）----
+      # 填了管理台「接入」页才会给出可直接粘贴的客户端片段，MCP 的 download_url /
+      # image_url 也才是绝对地址；留空只降级、不报错（服务端不猜、不拼）
+      KYLAB_MCP_PUBLIC_URL: ${KYLAB_MCP_PUBLIC_URL:-}
+      KYLAB_PUBLIC_BASE_URL: ${KYLAB_PUBLIC_BASE_URL:-}
     volumes:
       - kybase-data:/data
     # 不直接对外暴露 8000：统一从 nginx 进，避免绕过反代后

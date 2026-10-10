@@ -21,7 +21,7 @@
 | 工具 | 干什么 |
 |---|---|
 | `list_knowledge_bases` | 列库（检索前先调它拿库 id） |
-| `search` | 混合检索，**返回带出处的原文片段**（不是生成的答案）。结果的**第一行是判定**（`summary` / `fit`），先读它再读片段 |
+| `search` | 混合检索，**返回带出处的原文片段**（不是生成的答案）。结果的**第一行是判定**（`summary` / `fit`），先读它再读片段。要「只查某本书某章」用 `filters`（`document_ids` / `page_from` / `page_to` / `heading_contains` / `created_after` / `created_before` / `source_kinds`）——**先筛后排**，别把整库命中捞出来再自己挑 |
 | `list_documents` / `get_document_status` | 文档列表 / 处理进度 |
 | `get_document_content` | 取一份文档的全文：`format="markdown"`（默认）回解析后的正文，`format="original"` 回原文件 base64；正文超 20 万字符只回前一段并标 `truncated`，原文件超 32 MB 直接拒（改用 REST 下载） |
 | `get_document_pages` | 取一份文档**某几页**的原文（`from_page` / `to_page`，一次最多 50 页）：每页一条 `page` / `text`；PDF 与图片类还给这一页原图的 `image_url`。没有页码信息（`.md` / Office 类来源）的文档回 `page_text_available=false`、每页 `text` 是空串 |
@@ -42,7 +42,7 @@
   实测连着几次部署都是 `0.1.0`，工具面却变过。
 - 本机自检：`cd backend && python -m app.mcp_server.server --list-tools`，**最后一行**
   是 `surface_fingerprint: <…>`；
-- `GET /api/v1/tools` 的 `surface_fingerprint`（管理台侧栏「工具」页也显示它，带复制按钮）。
+- `GET /api/v1/tools` 的 `surface_fingerprint`（管理台侧栏「接入」页的「工具」档也显示它，带复制按钮）。
 
 **怎么用**：第一次接通时把这个数记下来（一个字符串）。之后客户端**每次拿到 `search`
 的 `structuredContent` 里也带着它**，或者重连时看一眼 `serverInfo.version`——
@@ -116,10 +116,10 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
   调不动的工具。真去调范围外的，服务端在 `call_tool` 那一刻回 403 并**列出可用的工具名**。
 - 写一个不存在的工具名会在**发钥匙时**被拒（`422`），不会静默存下一把"看起来授权了"的钥匙。
 - **改范围要撤销后重发**：这族端点只有列表 / 新建 / 撤销三个，没有"改一把已有 Key"。
-- 工具名以 `tools/list`（或管理台侧栏「工具」页 / `GET /api/v1/tools`）列出来的为准，别凭记忆写。
+- 工具名以 `tools/list`（或管理台侧栏「接入」页的「工具」档 / `GET /api/v1/tools`）列出来的为准，别凭记忆写。
 
-> 想先看全量清单：管理台侧栏「工具」页渲染的就是 `GET /api/v1/tools`——工具（标签 / 摘要 /
-> 是否写操作 / 参数）+ 随附技能 + 配好的 MCP 地址。只读档凭据即可读。
+> 想先看全量清单：管理台侧栏「接入」页渲染的就是 `GET /api/v1/tools`——「工具」档列工具（标签 /
+> 摘要 / 是否写操作 / 参数）+ 随附技能，「接入」档给配好的 MCP 地址与客户端片段。只读档凭据即可读。
 
 ## 读 `search` 的结果：**先读判定，再读片段**
 
@@ -160,6 +160,25 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
 一句话：**当 KB 会淹你的时候，读判定、然后收敛（不够就翻页），
 而不是把 12 条片段全塞进上下文。**
 
+**过滤（`filters`）：先筛后排，不是拿到结果再挑。** 用户自己划了范围时（"只查某本书"、
+"只看第 40–60 页"、"只在某一章里找"、"只要上个月入库的"）就用它，**别把整库的命中捞出来
+再自己翻结果筛**——条件在检索时就限制了候选范围，所以 `summary` / `distribution` /
+`decision` 说的也是这一范围内的命中。字段：
+
+- `document_ids`：只查某几份文档；
+- `page_from` / `page_to`（从 1 起）：只要某一段页码，**块级**条件；
+- `heading_contains`：只要章节标题里含这段字的块（大小写不敏感）——要「只在某一章里找」
+  用**它**，比页码可靠；
+- `created_after` / `created_before`：按**文档**入库时间（ISO 8601，如
+  `2026-01-31T00:00:00Z`）；
+- `source_kinds`：按来源类别（`upload` / `html` / `rss` / `webdav`）。
+
+**代价必须说清（页码那条）**：解析产物里没有页码信息的文档（`.md` / Office 这类没有固定页的
+来源）会被**整体排除**，命中可能因此为空——这是「宁缺勿错」的取舍（一个翻不到原文的页码比
+没有页码更糟），不是服务坏了；这类文档改用 `heading_contains`。
+`filters` 里的字段名或取值写错**会回 `isError: true`**（中文说明），**不会安静地不筛**：
+安静不筛的表现是"筛过了却拿到范围外的结果"，而那种结果与正常结果长得一模一样。
+
 ## 失败长什么样：`isError`
 
 工具调用返回时，结果里带一个协议层的 `isError` 布尔量：
@@ -180,7 +199,9 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
 | 403 越权 | Key 绑了库范围，查的库不在范围内；或者这把 Key 限了**工具范围**，你要调的工具不在其中 | 换不限范围的 Key，或把目标库 / 目标工具加进范围（改范围要**撤销后重发**，见上文「只放开一部分工具」） |
 | 连接超时 / 拒绝 | 不在局域网，或 NAS 上 `kybase-app-mcp` 容器没在跑 | `docker ps \| grep kybase-app-mcp`（NAS 上）；本机先 `curl http://192.168.31.18:8765/mcp` 应回 400/401 而不是拒连 |
 | `search` 回了一堆片段，不知道有没有用 | **没读结果的第一行**：`summary` / `fit` 就是"这批命中能不能用"的判定 | 先读 `summary` 与 `fit`；`none` 如实说资料里没有，别拿片段编答案；`unknown` 表示这个库的嵌入模型没标定过，判不了 |
-| `search` 传了 `keep`/`min_score`/`per_doc`/`offset` 没效果 | 这些参数已进白名单（`keep`/`min_score`/`per_doc` 2026-10-09、`offset` 2026-10-10）；若仍无效，是 `_PARAMS` 与 schema 又漂了（门禁 `test_parameter_whitelists_match_the_schemas` 会红） | 先读 `summary` 看判定；要收敛就按 `distribution.suggested` 传这三个再查一次；要更全就开大 `top_k` 并按 `next_offset` 翻页 |
+| `search` 传了 `keep`/`min_score`/`per_doc`/`offset`/`filters` 没效果 | 这些参数都已进白名单（`keep`/`min_score`/`per_doc` 2026-10-09、`offset` 2026-10-10、`filters` 2026-10-10）；若仍无效，是 `_PARAMS` 与 schema 又漂了（门禁 `test_parameter_whitelists_match_the_schemas` 会红） | 先读 `summary` 看判定；要收敛就按 `distribution.suggested` 传那三个再查一次；要更全就开大 `top_k` 并按 `next_offset` 翻页 |
+| `filters` 传了 `page_from` / `page_to` 之后一条都不剩 | **多半不是坏了**：这份文档的解析产物里没有页码信息（`.md` / Office 来源本来就 `page = null`），而按页码筛会把它们**整体排除** | 这类文档改用 `heading_contains`（章节标题子串）或 `document_ids`；要确认有没有可信页码，看 REST 命中里的 `page` 是不是 `null` |
+| `filters` 报错说字段名不认得 | 筛条件的字段名写错了（如 `document_id` / `page` / `create_after`）。**这是刻意的**：认不出的条件安静丢掉，等于把"只查这本书"变成"哪本都查" | 按错误里列出的可用字段名改（`document_ids` / `source_kinds` / `created_after` / `created_before` / `page_from` / `page_to` / `heading_contains`） |
 | `search` 回了一批 `similarity` 为空的行，看着像分数没算出来 | **不是坏了**：那些命中的 `basis` 是 `fulltext`，来自词面通道，**本来就没有余弦** | 高 `min_score` 管不到它们（条数在后端的 `decision.unscored_kept` 里）；要更严就自己按 `lexical_score` 筛 |
 | 工具调用返回成功，但内容是一个 `{"error": …}` | **这次其实是失败的**——看协议层的 `isError`，领域失败为 `true` | 读 `error` 里的中文改参数；别把 `{"error": …}` 当正常数据往下传 |
 | 参数名或行为与本文对不上 | 服务端在这期间换过契约：**发版号可能没动**，得看工具面指纹 | 比对 `serverInfo.version` 的 `+mcp.<指纹>`（或 `--list-tools` 最后一行 / `GET /api/v1/tools`），变了就按新契约重读本文与工具描述 |
