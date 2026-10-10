@@ -3,8 +3,9 @@
 #
 # **这条路是旧的 archive 推源码，常规升级不要用它。** NAS 的 `src/` 现在是
 # `git@gitee.com:kkomia/kybase.git` 的 git 检出（只读部署公钥 `~/.ssh/kybase-gitee-deploy`，
-# Gitee 侧名叫 `kybase-nas-deploy`），标准流程是「本仓 push → NAS `cd src && git pull`
-# → `cd ../app && docker compose up -d --build`」（见 deploy/nas/README.md 的「升级」与
+# Gitee 侧名叫 `kybase-nas-deploy`），标准流程是「本仓 push → NAS `cd src && git pull --ff-only`
+# → **把 src 那份 compose 同步到 app/**（副本，`git pull` 更新不到）→ `cd ../app && docker compose up -d --build`」
+# （见 deploy/nas/README.md 的「升级」与
 # 「NAS 上的 git 检出」）。这个脚本保留给两种情形：① 要钉到某个具体提交（回滚）；
 # ② NAS 拉不到 Gitee。**它对 git 检出是"外人插手"**：`tar --overwrite` 覆盖工作区会让它
 # 偏离 HEAD，之后 NAS 上 `git pull --ff-only` 会拒绝执行——用完记得
@@ -83,7 +84,8 @@ if [ "$DRY" = "1" ]; then
   echo "   远端那一步（update-frontend.sh）会：判源码形态 → 只重建 frontend → up -d → 核对首页 200 与 #root"
   echo "   本机最后会 curl http://$HOST:8081/ 并认挂载点。去掉 --dry-run 就真跑。"
   echo "   提醒：这是**旧 archive 路**（会覆盖 git 检出的工作区）。常规升级更省事的是："
-  echo "     cd $SRC && git pull && cd $APP && docker compose up -d --build"
+  echo "     cd $SRC && git pull --ff-only && cp $SRC/deploy/nas/docker-compose.yml $APP/docker-compose.yml"
+  echo "     cd $APP && docker compose up -d --build"
   exit 0
 fi
 

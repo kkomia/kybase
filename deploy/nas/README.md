@@ -41,7 +41,8 @@ kybase 只占应用层——存储层是 kylab 时代留下的、**两个应用�
 /vol1/1000/docker/kybase/         # 应用层（本仓）
 ├── src/                          # 源码：git@gitee.com:kkomia/kybase.git 的**检出**（只读部署公钥）
 ├── app/
-│   ├── docker-compose.yml        # 应用层（就是 deploy/nas/docker-compose.yml）
+│   ├── docker-compose.yml        # 应用层：deploy/nas/docker-compose.yml 的**副本**
+│   │                             #   （不是软链，`git pull` 更新不到它——升级要一起同步，见下）
 │   └── .env                      # 凭据：PG 口令 + MinIO 密钥（**不入库**，见下）
 └── data/                         # 后端 /data：DuckDB 表格副本、日志、回退原件（持久化）
 ```
@@ -66,17 +67,27 @@ docker compose down                 # 停掉（**不动存储层**）
 
 ### 升级（标准流程：`git pull` 那条路）
 
-`src/` **是本仓在 Gitee 上的 git 检出**，所以升级就是三步：
+`src/` **是本仓在 Gitee 上的 git 检出**，所以升级是四步——**第 ③ 步别省**：
 
 ```bash
 # ① 本机：把要上线的提交推上去
 cd <本仓> && git push origin master
 # ② NAS：拉代码
-cd /vol1/1000/docker/kybase/src && git pull
-# ③ NAS：重建并起
+cd /vol1/1000/docker/kybase/src && git pull --ff-only
+# ③ NAS：把 compose 同步过去（它就是 deploy/nas/docker-compose.yml 的副本）
+cp /vol1/1000/docker/kybase/src/deploy/nas/docker-compose.yml \
+   /vol1/1000/docker/kybase/app/docker-compose.yml
+# ④ NAS：重建并起
 cd ../app && docker compose up -d --build
 ```
 
+- **第 ③ 步为什么必须在**：`app/docker-compose.yml` 是**手工副本**，不是软链、也不在 `src/`
+  里，所以 `git pull` 永远更新不到它。漏掉它的表现是"代码是新的、配置是老的那一份"——
+  最典型的一次是 `KYLAB_MCP_PUBLIC_URL` / `KYLAB_PUBLIC_BASE_URL` 加进了仓库那份，
+  线上却一直没生效（管理台的「接入」页于是显示"没配地址"）。改动里若含**端口、卷、
+  环境变量**，漏同步就等于没上。
+- **改之前先看一眼差异**：`diff app/docker-compose.yml src/deploy/nas/docker-compose.yml`。
+  出现**非注释**差异说明有人就地改过线上那份，要么把改动收进仓库、要么确认可以丢。
 - **`--build` 要带上**：镜像是从 `src/` 构建的，只 `up -d` 会用旧镜像。
   `backend/` 或 `mcp` 相关的东西变了更必须整棵重建（见下"后端也变了的时候"）。
 - **只换前端**那条快路仍在（`update-frontend.sh`，会先 `fetch/pull` 再只重建 frontend）；
@@ -140,7 +151,8 @@ docker compose exec -T backend python -c "from app.mcp_server.server import MCP_
 ## 从这台 Windows 直接部署（**旧 archive 路径**，回滚或 NAS 拉不到 Gitee 时才用）
 
 > **常规升级不走这里。** `src/` 现在是 git 检出，标准流程是「本仓 push →
-> NAS `cd src && git pull` → `cd ../app && docker compose up -d --build`」（见上文「升级」一节）。
+> NAS `cd src && git pull --ff-only` → 同步 `app/docker-compose.yml` 那份副本 →
+> `cd ../app && docker compose up -d --build`」（见上文「升级」一节）。
 > 这一节保留的是**当年那条路**：本机 `git archive` 一份源码推到 NAS 的 `src/`，
 > 再在那边只重建 frontend。它在两种情况下仍然有用：
 > ① 要上线的不是 `master` 的最新提交，而是要**钉到某个具体提交**（回滚）；
@@ -285,12 +297,14 @@ index.html 引用的每个 `/assets/...` 都 200（防"dist 传了一半"）/**�
 cd /vol1/1000/docker/kybase/src
 git log --oneline -10                 # 找要回的那个提交
 git fetch --all && git checkout <提交>   # 或 git reset --hard <提交>
+cp deploy/nas/docker-compose.yml ../app/docker-compose.yml   # 回滚也要同步副本
 cd ../app && docker compose build && docker compose up -d
 curl -s http://127.0.0.1:8081/ | grep -o 'id="root"'
 ```
 
 - 检出处于"游离 HEAD"时，回滚完成、要接着推进时 `git checkout master && git pull` 即可。
-- **回到线上那版**：`cd src && git checkout master && git pull`（就是常规升级那三步的第 ②③ 步）。
+- **回到线上那版**：`cd src && git checkout master && git pull --ff-only`
+  （就是常规升级那四步的第 ②③ 步——**compose 副本那一步不能跳**）。
 - 旧路（`src/` 还是 archive 累积目录时的做法：`mv src src.bak-…` 换目录）只在你确实
   保留了那种备份目录时才用；或者从本机 `git archive <提交> | ssh … tar -x --overwrite`
   推过去（**注意**：那会让检出偏离 HEAD，事后 `cd src && git checkout -- .`，见上文那节）。

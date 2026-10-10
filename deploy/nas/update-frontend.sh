@@ -19,7 +19,9 @@
 #    compose 里给前端构建传了 `NPM_REGISTRY=registry.npmmirror.com`（见 deploy/nas/docker-compose.yml）。
 #
 # **常规升级更省事的一条**（整棵都要重建时）：
-#   cd /vol1/1000/docker/kybase/src && git pull && cd ../app && docker compose up -d --build
+#   cd /vol1/1000/docker/kybase/src && git pull --ff-only
+#   cp src 里那份 deploy/nas/docker-compose.yml 到 ../app/docker-compose.yml   # 副本，别省
+#   cd ../app && docker compose up -d --build
 set -eu
 
 BRANCH="${1:-master}"
