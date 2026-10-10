@@ -2530,6 +2530,109 @@
     max-width: 96px;
   }
 
+  /* ---- 过滤条件（可折叠） ----
+     收起时摘要与「清除」仍在（见 `kb-filter-active`）：折叠的是**格子**，不是"带着条件在查"
+     这件事——那件事必须一直看得见。 */
+  .kb-filter-section {
+    margin-top: var(--space-4);
+  }
+
+  .kb-filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1) 0;
+    font-size: var(--text-meta-size);
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .kb-filter-count {
+    padding: 0 var(--space-1);
+    font-size: var(--text-micro-size);
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--radius-badge);
+  }
+
+  .kb-filter-body {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-3) 0 var(--space-1);
+  }
+
+  .kb-filter-pair {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .kb-filter-pair > [data-slot='input'] {
+    flex: 1 1 0;
+  }
+
+  /* 文档多选：高度上限 + 已选摘要（见 `kb-filter-picked`）——一个库里几百篇文档，
+     全摊开就把面板撑破了。132px 是三行左右的**结构常量**（同 `.kb-tree` 的列宽那一类）。 */
+  .kb-filter-docs {
+    max-height: 132px;
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .kb-filter-docs li + li {
+    margin-top: var(--space-1);
+  }
+
+  .kb-filter-picked {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-filter-clear {
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  .kb-filter-error {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-micro-size);
+    color: var(--status-danger);
+  }
+
+  .kb-filter-active {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  .kb-filter-chips {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-filter-chip {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-primary);
+    background: var(--bg-subtle);
+    border-radius: var(--radius-badge);
+  }
+
   .kb-history {
     margin: var(--space-6) 0 var(--space-2);
     font-size: var(--text-micro-size);

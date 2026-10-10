@@ -24,12 +24,30 @@
  * **那一格数字发成两个**：`keep`（这一页几条）与 `top_k`（这次能翻到的池子深浅）都发
  * 用户填的那个数。只发 `top_k` 的话，一页仍按后端**建议**剪（常常比用户要的少），
  * 于是"填 8 却回 4"——用户要的是"最多 N 条"，那个上限得自己说出来。
+ *
+ * **过滤下沉到了检索层**（不再事后筛）：面板上因此多了一块可折叠的「过滤条件」——文档、
+ * 页码范围、章节标题、入库时间，它们在**候选生成之前**生效（下推到 SQL）。两个后果落在
+ * 这一层：响应里的 `filtered_out` 于是恒为 0，"元数据过滤掉 N 条"那种报账在带条件时换成
+ * 一句"已按条件限定范围"（**不能报 0**：命中少了一大截却说一条没筛掉，用户只会以为坏了）；
+ * 页码与标题是**排除性**条件（没有页码/标题的块一条都取不到），那两句字段级提示不能省。
  */
 import { useEffect, useState } from 'react'
-import { RefreshCw, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react'
 
+import { listDocuments } from '@/api/documents'
 import { search, type SearchFit, type SearchResponse } from '@/api/search'
 import { EmptyState, SkeletonRows } from '@/features/knowledge/composites'
+import {
+  buildSearchFilters,
+  dateRangeError,
+  DOCUMENT_OPTIONS_LIMIT,
+  EMPTY_SEARCH_FILTER_DRAFT,
+  filterSummaryOf,
+  pageRangeError,
+  SearchFilterFields,
+  type DocumentOption,
+  type SearchFilterDraft,
+} from '@/features/knowledge/SearchFilterFields'
 import { notify } from '@/features/knowledge/store'
 import { failureText } from '@/features/preview'
 import { formatAge, formatCount, formatLatency, formatScore } from '@/lib/format'
@@ -78,6 +96,14 @@ interface Turn {
   error: string
   /** 发起时间：会话历史里要能看出"这是刚才那次"还是"十分钟前那次"。 */
   at: number
+  /**
+   * 这一轮**带着过滤条件**发的（`filters` 非空）。
+   *
+   * 命中摘要那行看的是它，不是"现在表单里填了什么"：用户改完条件还没点检索时，
+   * 手里这份结果仍对应旧条件。而"过滤掉了多少"已经报不出来（`filtered_out` 恒为 0，
+   * 条件在候选生成前就生效了），所以只能由这里说一句"范围被限定过"。
+   */
+  hasFilters: boolean
 }
 
 interface KbSearchPanelProps {
@@ -96,6 +122,13 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
   const [topK, setTopK] = useState('8')
   const [candidateK, setCandidateK] = useState('40')
   const [rerank, setRerank] = useState(false)
+  /** 过滤区默认**收起**：它是"这次查哪儿"的附加条件，不是每次检索都要看的参数。 */
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filterDraft, setFilterDraft] = useState<SearchFilterDraft>(EMPTY_SEARCH_FILTER_DRAFT)
+  /** 当前库的文档清单：过滤区里"只查这本书"的候选（只要 id 与名字）。 */
+  const [documents, setDocuments] = useState<DocumentOption[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsError, setDocumentsError] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
   const [searching, setSearching] = useState(false)
   const [activeTurn, setActiveTurn] = useState(-1)
@@ -109,6 +142,42 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
     const timer = window.setInterval(() => setNow(Date.now()), 10_000)
     return () => window.clearInterval(timer)
   }, [open])
+
+  /**
+   * 文档清单（过滤区那格的候选）。
+   *
+   * **不等用户展开才去读**：展开后再加载会先闪一下"正在读取文档…"；而这份清单本来就跟着
+   * 库走——换库必须重读，否则勾着的 id 是上一个库的（那会查出一片空白）。
+   */
+  useEffect(() => {
+    if (!open || !kbId) return undefined
+    let cancelled = false
+    setDocumentsLoading(true)
+    listDocuments(kbId, { limit: DOCUMENT_OPTIONS_LIMIT })
+      .then((page) => {
+        if (cancelled) return
+        setDocuments(page.items.map((item) => ({ id: item.id, name: item.name })))
+        setDocumentsError('')
+      })
+      .catch((cause) => {
+        if (cancelled) return
+        // 读不到清单不该挡住检索：退化成"没有候选"，原因照实写在那一格下面
+        setDocuments([])
+        setDocumentsError(failureText(cause, '文档列表加载失败'))
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, kbId])
+
+  /** 换库时把过滤条件清掉：文档 id 分库，页码与日期也跟着换一个库重新填。 */
+  useEffect(() => {
+    setFilterDraft(EMPTY_SEARCH_FILTER_DRAFT)
+    setFiltersOpen(false)
+  }, [kbId])
 
   const latest = turns[activeTurn] ?? null
   /** 命中过多时正文收成三行摘要：一屏放不下两条结果就没法相互比较。 */
@@ -129,6 +198,11 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
   const unscoredKept = latest?.response?.decision?.unscored_kept ?? 0
   /** 下一页的起点；`null` = 这一页就是全部（翻到底了）。 */
   const nextOffset = latest?.response?.next_offset ?? null
+  /** 页码 / 日期的字段级提示（空串 = 通过）；发请求前先过这一关，不让它换成一次 422。 */
+  const pageError = pageRangeError(filterDraft.pageFrom, filterDraft.pageTo)
+  const dateError = dateRangeError(filterDraft.createdAfter, filterDraft.createdBefore)
+  /** 已生效条件的摘要：收起过滤区时它是"现在带着条件在查"的唯一线索。 */
+  const chips = filterSummaryOf(filterDraft, documents)
 
   async function runSearch(raw?: string): Promise<void> {
     const text = (raw ?? query).trim()
@@ -136,8 +210,23 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
       notify.warning('请输入检索内容')
       return
     }
+    const invalid = pageError || dateError
+    if (invalid) {
+      // 就地拦下并展开过滤区（错在哪一格要看得见）：后端页码那一项是 `ge=1`，
+      // 让它打一趟 422 再回来解释，比在这里说一句慢得多、也含糊得多。
+      setFiltersOpen(true)
+      notify.warning(invalid)
+      return
+    }
     setSearching(true)
-    const turn: Turn = { query: text, response: null, error: '', at: Date.now() }
+    const filters = buildSearchFilters(filterDraft)
+    const turn: Turn = {
+      query: text,
+      response: null,
+      error: '',
+      at: Date.now(),
+      hasFilters: filters !== undefined,
+    }
     setTurns((current) => [...current, turn])
     setActiveTurn(turns.length)
     try {
@@ -154,6 +243,8 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
         top_k: wanted,
         candidate_k: Number(candidateK) || 40,
         rerank,
+        // 一件条件都没有时是 `undefined`（**不筛**与"筛了个空"是两件事）
+        filters,
       })
       setTurns((current) => current.map((item) => (item === turn ? { ...item, response } : item)))
     } catch (cause) {
@@ -223,6 +314,61 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                     onChange={(event) => setTopK(event.target.value)}
                   />
                 </label>
+              </div>
+
+              {/*
+                过滤条件（默认收起）。它是"这次查哪儿"的附加条件——收起来是为了不占地方，
+                但**收起时也留一行摘要**：不然用户看不出"现在带着条件在查"，
+                只看到"这个库的命中怎么突然少了"。
+              */}
+              <div className="kb-filter-section">
+                <button
+                  type="button"
+                  className="kb-filter-toggle"
+                  aria-expanded={filtersOpen}
+                  onClick={() => setFiltersOpen((value) => !value)}
+                >
+                  {filtersOpen ? (
+                    <ChevronDown size={14} aria-hidden="true" />
+                  ) : (
+                    <ChevronRight size={14} aria-hidden="true" />
+                  )}
+                  <span>过滤条件</span>
+                  {chips.length > 0 ? (
+                    <span className="kb-filter-count">{chips.length}</span>
+                  ) : null}
+                </button>
+                {filtersOpen ? (
+                  <SearchFilterFields
+                    draft={filterDraft}
+                    onChange={(patch) => setFilterDraft((current) => ({ ...current, ...patch }))}
+                    documents={documents}
+                    documentsLoading={documentsLoading}
+                    documentsError={documentsError}
+                    pageError={pageError}
+                    dateError={dateError}
+                  />
+                ) : null}
+                {chips.length > 0 ? (
+                  <div className="kb-filter-active">
+                    <ul className="kb-filter-chips">
+                      {chips.map((chip) => (
+                        <li key={chip} className="kb-filter-chip">
+                          {chip}
+                        </li>
+                      ))}
+                    </ul>
+                    {/* 清除只把条件清掉，**不顺手重查**：与"改了参数点检索"同一条习惯，
+                        避免"改一下条件就抖一次结果"。 */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setFilterDraft(EMPTY_SEARCH_FILTER_DRAFT)}
+                    >
+                      清除
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               <details className="kb-advanced">
@@ -337,7 +483,12 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                     {unscoredKept > 0 ? <span>未过下限 {formatCount(unscoredKept)} 条</span> : null}
                     {/* 这一页只是一趟更深检索里的一段：还有就照实说（面板不翻页，只报事实）。 */}
                     {nextOffset !== null ? <span>还有更深的候选</span> : null}
-                    {latest.response.filtered_out > 0 ? (
+                    {/* 这一轮带着条件查的：**不报"过滤掉几条"**。条件在候选生成之前就生效，
+                        `filtered_out` 恒为 0——报它等于说"一条都没筛掉"，而命中却少了一大截。
+                        照实说的是"范围被限定过"，具体条件在左边那行摘要里。 */}
+                    {latest.hasFilters ? (
+                      <span>已按条件限定范围</span>
+                    ) : latest.response.filtered_out > 0 ? (
                       <span>元数据过滤掉 {latest.response.filtered_out} 条</span>
                     ) : null}
                   </div>
@@ -371,7 +522,11 @@ export function KbSearchPanel({ open, kbId, kbName, onClose, onOpenDocument }: K
                   {latest.response.hits.length === 0 ? (
                     <EmptyState
                       title="没有命中"
-                      hint="换关键词、放宽模式到混合检索，或确认文档已经处理到「已索引」。"
+                      hint={
+                        latest.hasFilters
+                          ? '清除过滤条件，或换关键词重试。'
+                          : '换关键词、放宽模式到混合检索，或确认文档已经处理到「已索引」。'
+                      }
                     />
                   ) : (
                     <ol className="kb-hit-list">

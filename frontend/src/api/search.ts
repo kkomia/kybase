@@ -18,11 +18,31 @@
 
 import { request } from './client'
 
+/**
+ * 检索范围的条件（后端 `MetadataFilterIn`，字段说明见 `./schema.d.ts`）。
+ *
+ * **条件在候选生成之前生效**（下推到 SQL），不是事后筛：候选池本来就小了，所以
+ * "这次命中少"是过滤的直接后果。响应里的 `filtered_out` 因此恒为 0——被条件挡掉的块
+ * 压根没进候选，调用方不能再拿它当"筛掉几条"报账。
+ *
+ * 每项都可选、`None`/空 = 不设限。两条**排除性**的取舍照实写在字段上：
+ * 给了 `page_from`/`page_to` 或 `heading_contains` 时，`page` / `heading_path`
+ * 为 `NULL` 的块（`.md`、Office 来源）会被整体排除——这是取舍不是故障。
+ */
 export interface SearchFilters {
+  /** 只在这些文档里查（"只查某本书"）。 */
   document_ids?: string[]
   source_kinds?: string[]
+  /** 文档入库时间的下界（含边界）。 */
   created_after?: string
+  /** 文档入库时间的上界（含边界）。 */
   created_before?: string
+  /** 只要 `page >= page_from` 的块（"某章"，按页码）。没有页码的块一条都取不到。 */
+  page_from?: number
+  /** 只要 `page <= page_to` 的块。 */
+  page_to?: number
+  /** 标题路径包含这个子串（大小写不敏感），如 `"第3章"`。标题为空的块一条都取不到。 */
+  heading_contains?: string
 }
 
 export interface SearchRequest {
