@@ -24,7 +24,7 @@
 | `search` | 混合检索，**返回带出处的原文片段**（不是生成的答案）。结果的**第一行是判定**（`summary` / `fit`），先读它再读片段。要「只查某本书某章」用 `filters`（`document_ids` / `page_from` / `page_to` / `heading_contains` / `created_after` / `created_before` / `source_kinds`）——**先筛后排**，别把整库命中捞出来再自己挑 |
 | `list_documents` / `get_document_status` | 文档列表 / 处理进度 |
 | `get_document_content` | 取一份文档的全文：`format="markdown"`（默认）回解析后的正文，`format="original"` 回原文件 base64；正文超 20 万字符只回前一段并标 `truncated`，原文件超 32 MB 直接拒（改用 REST 下载） |
-| `get_document_pages` | 取一份文档**某几页**的原文（`from_page` / `to_page`，一次最多 50 页）：每页一条 `page` / `text`；PDF 与图片类还给这一页原图的 `image_url`。没有页码信息（`.md` / Office 类来源）的文档回 `page_text_available=false`、每页 `text` 是空串 |
+| `get_document_pages` | 取一份文档**某几页**的原文（`from_page` / `to_page`，一次最多 50 页）：每页一条 `page` / `text`；PDF 与图片类还给这一页原图的 `image_url`。没有页码信息（`.md` / Office 类来源）的文档回 `page_text_available=false`、每页 `text` 是空串。**另一种要认的情况**：`pages_reliable=false` 表示这份产物**有**页码、但与文档自称的总页数对不上（`pages_located` 远小于 `total_pages`）——`text` 照给，可**别拿某一段当「第 N 页」引用**（它可能横跨很多页）；要修就让用户用 `reparse_document` 重新解析 |
 | `create_knowledge_base` / `upload_document` / `add_data_source` | 建库 / 上传 / 登记数据源（**写操作，需要读写档 Key**） |
 | `reparse_document` | **强制重新解析**一份文档：清掉切块 / 向量 / 解析产物，从解析器整条重跑（**写操作，需要读写档 Key**）。只有处理已结束的文档收得下，有任务在跑时被拒；会真调解析器、可能消耗云端解析额度 |
 | `delete_document` | 删文档（原文进回收站 7 天，**向量立即清除**） |
@@ -138,9 +138,12 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
 
 `search` 还**另附一份机器可读的 `structuredContent`**（给按 schema 读的客户端，
 键集与 `outputSchema` 一致：`summary` / `fit` / `distribution` / `decision` /
-`returned` / `filtered_out` / `offset` / `next_offset` / `surface_fingerprint`）。
-要判断成败、要接着翻页、要对比指纹，读它比解析那段中文文本省事；
-**要读原文与键序，仍然读文本那份**（它一次都没变过形状）。
+`returned` / `filtered_out` / `offset` / `next_offset` / **`query` / `hits`** /
+`surface_fingerprint`）。
+要判断成败、要接着翻页、要对比指纹，读它比解析那段中文文本省事。
+**两份是同一批数据的两种读法，不是"摘要 + 全文"**：`query` 与 `hits`（每条命中
+与文本那份逐键相同）也在里面——按 schema 读的客户端照样拿得到原文片段与出处；
+**要读键序仍然读文本那份**（它一次都没变过形状）。
 
 **收敛**：`keep`（**一页几条**，1–50）、`min_score`（绝对余弦 0–1）、
 `per_doc`（1–10），三个旋钮已进白名单、能经 MCP 生效；直接按
