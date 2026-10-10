@@ -78,6 +78,7 @@ __all__ = [
     "ObjectStore",
     "ParseResultRecord",
     "ScheduledTaskRecord",
+    "SearchFilter",
     "SearchHit",
     "SessionEventRecord",
     "SessionRecord",
@@ -2588,6 +2589,64 @@ class MetaStore(ABC):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class SearchFilter:
+    """**下推到存储层**的检索过滤条件：块自身的元数据 + 它所属文档的元数据。
+
+    **为什么要在存储层另立一份，而不是收 ``services`` 那侧的 ``MetadataFilter``**：
+    分层纪律（工程规范 §3.3）规定 ``storage/`` 不得依赖 ``services/``；而过滤又偏偏
+    只能在这里做才有意义——"只查某本书某章"必须在**候选生成之前**裁剪，等两条通道
+    各自按 ``top_k`` 取完再筛，那本书的块根本没机会进候选（见
+    :meth:`VectorStore.search` 的说明）。所以条件在存储这一侧重新声明一遍，
+    由 ``services/retrieval/service.py`` 翻译过来，字段与 ``MetadataFilter`` 一一对应。
+
+    各项的取值口径与 ``MetadataFilter`` 完全一致；``None`` / 空序列 = 这一项不设限。
+
+    **没有页码或标题路径的块会被对应的条件整体排除**（``chunk.page`` /
+    ``chunk.heading_path`` 为 ``NULL`` 时 SQL 比较结果是 ``NULL``、不是真，
+    于是既不满足"页码在 40–60 之间"也不满足"标题含某某"）。这是有意的：给了
+    ``page_from`` 就是"我只要那一段页码"，把"页码未知"的块混进来只会让调用方
+    在原文里读到别处的内容。反过来，``.md`` / Office 这类本来就没有页码的来源，
+    一旦让用户按页码筛，就是**一整批都查不到**——这一点必须在对外说明里写清。
+    """
+
+    document_ids: Sequence[str] | None = None
+    source_kinds: Sequence[DataSourceKind] | None = None
+    created_after: datetime | None = None
+    created_before: datetime | None = None
+    page_from: int | None = None
+    page_to: int | None = None
+    heading_contains: str | None = None
+
+    def is_empty(self) -> bool:
+        """一件要筛的事都没有——调用方据此完全跳过过滤（连 JOIN 都不加）。
+
+        页码那两项判的是 ``is not None`` 而不是真假：``page_from = 0`` 是一个
+        有意义的条件（"只要有页码的块"），按真假判会把它当成"没给"。
+        """
+        return not (
+            self.document_ids
+            or self.source_kinds
+            or self.created_after is not None
+            or self.created_before is not None
+            or self.page_from is not None
+            or self.page_to is not None
+            or self.heading_contains
+        )
+
+    @property
+    def needs_documents(self) -> bool:
+        """这批条件里有没有落在 ``documents`` 表上的（决定要不要 JOIN 它）。
+
+        单独一位是因为两个仓储的 JOIN 成本不同：全文那侧本来就已经 JOIN 了
+        ``documents``（为裁掉停用的文档），而向量分区表里只有 ``chunk_id`` 与
+        ``embedding``——不必要的那一次 JOIN 能省就省。
+        """
+        return bool(
+            self.source_kinds or self.created_after is not None or self.created_before is not None
+        )
+
+
 class VectorStore(ABC):
     """向量仓储：按知识库分区（架构 §8.3），维度在分区创建时确定。"""
 
@@ -2611,8 +2670,24 @@ class VectorStore(ABC):
 
     @abstractmethod
     def search(
-        self, kb_id: str, *, query_vector: Sequence[float], top_k: int
-    ) -> list[VectorMatch]: ...
+        self,
+        kb_id: str,
+        *,
+        query_vector: Sequence[float],
+        top_k: int,
+        filter: SearchFilter | None = None,
+    ) -> list[VectorMatch]:
+        """最近的 ``top_k`` 个向量。
+
+        ``filter`` **在 SQL 里就裁掉不合条件的候选**，而不是取完 ``top_k`` 再由调用方
+        一条条丢——两者的差别就是"只查某本书"能不能用：事后筛时 ``top_k`` 个名额被
+        全库的块先占满，那本书往往一条都不剩。这是本参数存在的全部理由。
+
+        带 ``filter`` 的实现必须**同时**满足两件事：结果属于过滤后的集合，
+        以及条数仍按过滤后的集合取满 ``top_k``（而不是"取满全库的 top_k 再从里面挑"）。
+
+        ``filter`` 为 ``None`` 或 ``is_empty()`` 时行为与从前**逐字一致**。
+        """
 
     @abstractmethod
     def drop_partition(self, kb_id: str) -> None: ...
@@ -2632,7 +2707,19 @@ class FullTextStore(ABC):
     def delete_chunks(self, chunk_ids: Sequence[str]) -> int: ...
 
     @abstractmethod
-    def search(self, *, query: str, top_k: int, kb_id: str | None = None) -> list[SearchHit]: ...
+    def search(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        kb_id: str | None = None,
+        filter: SearchFilter | None = None,
+    ) -> list[SearchHit]:
+        """``filter`` 与 :meth:`VectorStore.search` 的那一位**同名同义**：在 SQL 里裁候选。
+
+        两条通道必须筛得一模一样，否则会出现"全文搜不到、向量搜得到"这类静默不一致
+        （与"文档级停用要在 SQL 里裁"是同一条纪律）。
+        """
 
 
 class ObjectStore(ABC):

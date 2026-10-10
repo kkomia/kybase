@@ -43,6 +43,9 @@ def search(
             source_kinds=payload.filters.source_kinds,
             created_after=payload.filters.created_after,
             created_before=payload.filters.created_before,
+            page_from=payload.filters.page_from,
+            page_to=payload.filters.page_to,
+            heading_contains=payload.filters.heading_contains,
         )
 
     # 基础阈值与 MCP 那条路**同源**：一处读取（``runtime_config.retrieval_thresholds``），

@@ -1,13 +1,16 @@
 """混合检索服务（M3 T3.1–T3.6）。
 
-流程：**多路召回 → RRF 融合 → 元数据过滤 → 可选 rerank → 截断**。
+流程：**过滤条件下推 → 多路召回 → RRF 融合 → 元数据过滤（兜底） → 可选 rerank → 截断**。
 
 几处刻意的决定：
 
 - **先按 kb_id 收敛再检索**（架构 §8.3）：向量表本就按库分区，全文侧也带 kb 过滤；
-- **元数据过滤放在召回之后**：MVP 用"多召回再筛"实现，因为过滤维度（类型、时间）不在
-  检索索引里。代价是过滤很严时可能筛空，故把 ``filtered_out`` 一并返回，让界面能解释
-  为什么结果为空；后续可把常用过滤下沉到索引；
+- **元数据过滤下推到候选生成之前**（v0.64）：条件先由 :func:`_store_filter` 翻成
+  ``SearchFilter``，再交给两条通道的 ``search(filter=…)``，由 SQL 在 **top_k 名额分配
+  之前**裁掉不合条件的块。这条改动的由来是"只查某本书"用不了：从前是"取满全局
+  ``top_k`` 再一条条丢"，而那本书的块压根没进过候选，于是经常筛成 0 条。事后那一道
+  仍然留着（``_passes_filters`` / ``_passes_chunk_filters``），但已降级为**兜底守卫**
+  ——见它们的说明；
 - **阈值作用于相对融合分**（``该条分 / 最高分``）：向量距离与 BM25 分数量纲不同，
   绝对阈值没法跨模式通用；相对阈值在任何模式下语义一致（1.0 = 只保留并列第一）；
 - **相关度下限作用于通道原始分**（v0.53，见 ``_passes_relevance``）：相对阈值剪不掉
@@ -52,7 +55,7 @@ from app.services.retrieval.types import (
     RetrievalQuery,
     RetrievalResponse,
 )
-from app.storage.base import DocumentRecord, StoreBundle
+from app.storage.base import ChunkRecord, DocumentRecord, SearchFilter, StoreBundle
 
 logger = logging.getLogger(__name__)
 
@@ -322,9 +325,15 @@ class RetrievalService:
         # 盯着这个次数）。
         embedders: dict[str, EmbeddingProvider] = {}
 
+        # **过滤条件只翻译一次**（v0.64）：两条通道要的是同一份下推条件，各翻一次
+        # 是同一件事的两个副本；而"两路筛得不一样"正是最该避免的那种不一致。
+        store_filter = _store_filter(request.filters)
+
         if request.mode in (RetrievalMode.HYBRID, RetrievalMode.VECTOR):
             started = time.perf_counter()
-            vector_ranked, vector_scores = self._vector_channel(request, query_vector, embedders)
+            vector_ranked, vector_scores = self._vector_channel(
+                request, query_vector, embedders, store_filter
+            )
             raw[VECTOR_CHANNEL] = vector_scores
             ordered.append((VECTOR_CHANNEL, vector_ranked))
             stats.append(
@@ -337,7 +346,7 @@ class RetrievalService:
 
         if request.mode in (RetrievalMode.HYBRID, RetrievalMode.FULLTEXT):
             started = time.perf_counter()
-            text_ranked, text_scores = self._fulltext_channel(request)
+            text_ranked, text_scores = self._fulltext_channel(request, store_filter)
             raw[FULLTEXT_CHANNEL] = text_scores
             ordered.append((FULLTEXT_CHANNEL, text_ranked))
             stats.append(
@@ -649,6 +658,7 @@ class RetrievalService:
         request: RetrievalQuery,
         query_vector: Sequence[float] | None,
         embedders: dict[str, EmbeddingProvider] | None = None,
+        store_filter: SearchFilter | None = None,
     ) -> tuple[list[str], dict[str, float]]:
         best: dict[str, float] = {}
         recall_factor = 2 if self._stores.meta.any_disabled_documents(request.kb_ids) else 1
@@ -685,8 +695,15 @@ class RetrievalService:
             # 有停用文档的库才 2 倍超采：KNN 扫描时没法按"文档是否停用"过滤，
             # 停用的命中会在下游 _materialize 被裁掉——多召回一倍作补偿。
             # 没有停用文档时保持原深度（candidate_k 语义不漂，也省一次放大）。
+            #
+            # **与 `store_filter` 是两回事**：那一份是调用方给的过滤条件，在 SQL 里
+            # 已经裁掉了（连名额都不占）；这一份说的是"停用的文档"，它仍然只能在下游裁
+            # ——停用是**用户随时会翻回来的状态**，而不是这次检索的范围。
             for match in self._stores.vectors.search(
-                kb_id, query_vector=vector, top_k=request.candidate_k * recall_factor
+                kb_id,
+                query_vector=vector,
+                top_k=request.candidate_k * recall_factor,
+                filter=store_filter,
             ):
                 # 同一条 chunk 不应出现在多个库，但真出现时取更近的那个距离
                 if match.chunk_id not in best or match.distance < best[match.chunk_id]:
@@ -707,12 +724,15 @@ class RetrievalService:
         return self._embedders.for_kb(kb)
 
     def _fulltext_channel(
-        self, request: RetrievalQuery
+        self, request: RetrievalQuery, store_filter: SearchFilter | None = None
     ) -> tuple[list[str], dict[str, float]]:
         scored: dict[str, float] = {}
         for kb_id in request.kb_ids:
             hits = self._stores.fulltext.search(
-                query=request.query, top_k=request.candidate_k, kb_id=kb_id
+                query=request.query,
+                top_k=request.candidate_k,
+                kb_id=kb_id,
+                filter=store_filter,
             )
             for hit in hits:
                 if hit.chunk_id not in scored or hit.score > scored[hit.chunk_id]:
@@ -750,6 +770,10 @@ class RetrievalService:
         terms: tuple[str, ...] | None = None
 
         hits: list[RetrievalHit] = []
+        # **`filtered_out` 数的是"这一步之后丢掉的"**（脏数据 / 禁用 / 阈值 / 相关度下限）。
+        # v0.64 起元数据过滤在 SQL 里就生效了，被它挡掉的块**压根没进候选**、也就数不到
+        # ——所以"过滤很严时这个数是 0、结果却是空的"是正常现象，不是漏报。
+        # 字段语义没变（仍是"有几条被丢掉了"），变的只是过滤发生的位置。
         filtered_out = 0
         for chunk_id, score, channels, ranks in fused:
             chunk = chunks.get(chunk_id)
@@ -773,6 +797,9 @@ class RetrievalService:
                 continue
 
             if not _passes_filters(document, request.filters):
+                filtered_out += 1
+                continue
+            if not _passes_chunk_filters(chunk, request.filters):
                 filtered_out += 1
                 continue
             if threshold is not None and (score / top_score) < threshold:
@@ -943,7 +970,40 @@ class RetrievalService:
         return reordered, True
 
 
+def _store_filter(filters: MetadataFilter | None) -> SearchFilter | None:
+    """把调用方的过滤条件翻成存储层能下推的那一份；``None`` = 一件要筛的事都没有。
+
+    **为什么要翻而不是直接传 ``MetadataFilter``**：``storage/`` 不得依赖 ``services/``
+    （工程规范 §3.3 的分层纪律），而过滤又偏偏只有在存储层做才有意义——见
+    ``SearchFilter`` 与 ``VectorStore.search`` 的说明。翻译是逐字段的搬运，两边的
+    字段名与语义**刻意保持同名**：多一层改名就多一处会漂的地方。
+
+    ``is_empty()`` 的一侧在这里折成 ``None``：空条件意味着"连 JOIN 都不加"，
+    那正是"不带过滤时查询逐字不变"的前提。
+    """
+    if filters is None or filters.is_empty():
+        return None
+    return SearchFilter(
+        document_ids=filters.document_ids,
+        source_kinds=filters.source_kinds,
+        created_after=filters.created_after,
+        created_before=filters.created_before,
+        page_from=filters.page_from,
+        page_to=filters.page_to,
+        heading_contains=filters.heading_contains,
+    )
+
+
 def _passes_filters(document: DocumentRecord | None, filters: MetadataFilter | None) -> bool:
+    """**兜底守卫**：文档级条件（``document_ids`` / ``source_kinds`` / 创建时间）。
+
+    主要机制已经不在这一层了（v0.64 起条件在 SQL 里就生效，见 ``_store_filter``），
+    留着它守的是"下推不完整"这一类情况：新加的过滤维度只写进了 ``MetadataFilter``
+    而忘了加进 ``SearchFilter`` 的翻译、或将来某个仓储实现没有能力在候选生成前过滤。
+    真拦到东西说明下推漏了——**宁可少给一条，也不能把用户明确排除掉的文档交出去**。
+
+    两条纪律与从前一致：拿不到文档记录时（脏数据）判不通过；条件为"没给"时放行。
+    """
     if filters is None or filters.is_empty():
         return True
     if document is None:
@@ -959,3 +1019,27 @@ def _passes_filters(document: DocumentRecord | None, filters: MetadataFilter | N
         filters.created_before
         and (document.created_at is None or document.created_at > filters.created_before)
     )
+
+
+def _passes_chunk_filters(chunk: ChunkRecord, filters: MetadataFilter | None) -> bool:
+    """兜底守卫的另一半：**块自己的**条件（``page_from`` / ``page_to`` / ``heading_contains``）。
+
+    与 ``_passes_filters`` 同一分工（下推为主、这里是最后一道），拆成两个函数只是因为
+    它们读的记录不同：那三个条件住在 ``chunk`` 上，而 ``_passes_filters`` 拿的是文档。
+
+    **没有页码的块被页码条件排除**，与 SQL 那一侧（``page >= %s`` 对 ``NULL`` 不为真）
+    **必须同口径**：同一份条件在两条路径上给出不同答案，就是"下推生效与否结果不一样"
+    这类最难查的 bug。``heading_path`` 同理。大小写不敏感这一半用 ``casefold``——
+    它比 SQL 的 ``lower`` 更狠一点，方向上只会"多拦"、不会放行。
+    """
+    if filters is None or filters.is_empty():
+        return True
+    if filters.page_from is not None and (chunk.page is None or chunk.page < filters.page_from):
+        return False
+    if filters.page_to is not None and (chunk.page is None or chunk.page > filters.page_to):
+        return False
+    if filters.heading_contains:
+        heading = chunk.heading_path or ""
+        if filters.heading_contains.casefold() not in heading.casefold():
+            return False
+    return True

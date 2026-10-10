@@ -23,8 +23,9 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-from app.storage.base import ChunkRecord, FullTextStore, SearchHit
+from app.storage.base import ChunkRecord, FullTextStore, SearchFilter, SearchHit
 from app.storage.postgres_impl.connection import Database
+from app.storage.postgres_impl.search_filter import conditions
 from app.storage.text import cut, tokenize
 
 #: 惰性拿到的 jieba（**故意不是模块级导入** ✗）。
@@ -152,7 +153,14 @@ class PostgresFullTextStore(FullTextStore):
 
     # ------------------------------------------------------------------ 检索
 
-    def search(self, *, query: str, top_k: int, kb_id: str | None = None) -> list[SearchHit]:
+    def search(
+        self,
+        *,
+        query: str,
+        top_k: int,
+        kb_id: str | None = None,
+        filter: SearchFilter | None = None,
+    ) -> list[SearchHit]:
         """全文检索。
 
         **JOIN documents 并要求 ``disabled = false``**：文档级停用在 SQL 里就裁掉，
@@ -161,6 +169,11 @@ class PostgresFullTextStore(FullTextStore):
 
         ``chunk`` 级的 disabled 不在这一层过滤（与 SQLite 版一致）：
         留给下游统一处理，两个通道的口径必须一样。
+
+        ``filter`` 同样**在 SQL 里裁候选**（`top_k` 个名额只发给合条件的块），
+        而不是取完再丢——理由与 ``VectorStore.search`` 完全一样。这里天然已经
+        JOIN 了 ``chunks`` 与 ``documents``，条件直接拼上去即可；`disabled`
+        那两个条件与它互不干扰。
         """
         if top_k <= 0:
             return []
@@ -182,6 +195,10 @@ class PostgresFullTextStore(FullTextStore):
         if kb_id is not None:
             sql.append("   AND c.knowledge_base_id = %s")
             params.append(kb_id)
+        if filter is not None and not filter.is_empty():
+            clauses, filter_params = conditions(filter)
+            sql.extend(f"   AND {clause}" for clause in clauses)
+            params.extend(filter_params)
         sql.append(" ORDER BY rank DESC, c.chunk_id LIMIT %s")
         params.append(top_k)
 

@@ -32,8 +32,9 @@ if TYPE_CHECKING:
     # （边车不连 PostgreSQL ✓）。
     from psycopg import Connection
 
-from app.storage.base import VectorDimensionMismatch, VectorMatch, VectorStore
+from app.storage.base import SearchFilter, VectorDimensionMismatch, VectorMatch, VectorStore
 from app.storage.postgres_impl.connection import Database
+from app.storage.postgres_impl.search_filter import conditions
 
 logger = logging.getLogger(__name__)
 
@@ -225,11 +226,38 @@ class PostgresVectorStore(VectorStore):
     # ------------------------------------------------------------------ 检索
 
     def search(
-        self, kb_id: str, *, query_vector: Sequence[float], top_k: int
+        self,
+        kb_id: str,
+        *,
+        query_vector: Sequence[float],
+        top_k: int,
+        filter: SearchFilter | None = None,
     ) -> list[VectorMatch]:
+        """带 ``filter`` 时把条件**下推进 SQL**：JOIN ``chunks`` 裁候选（见下）。
+
+        为什么是 JOIN 而不是"先查一批允许的 ``chunk_id``、再 ``chunk_id = ANY(...)``"：
+        分区表里只有 ``chunk_id`` 与 ``embedding``，过滤要用的 ``document_id`` /
+        ``page`` / ``heading_path`` 都在 ``chunks`` 里（同一库，能直连）。第二条路
+        要么多一次往返、要么把整本书的几千个 ``chunk_id`` 装进一个数组参数里传回来，
+        而且它**把"哪些块允许"变成了一次物化的中间结果**——规划器只能围着那张清单
+        做计划，而 JOIN 让它可以按代价选：过滤选择性高时"先筛 chunks、再按主键回表
+        取向量、最后排序"（实测就是这个计划，结果**精确**），不那么高时反过来用
+        HNSW 索引按距离扫、拿过滤条件当索引谓词。两条路都把池子限定在过滤后的集合里。
+        走 JOIN 还有一个只有它有的好处：**不必为了下推去动 ``vec_`` 表结构**
+        （那是存储迁移，不是这次要解决的问题）。
+
+        代价说清：走 HNSW 那条路时，索引原本收满 ``ef_search`` 个候选就返回，
+        而其中绝大多数可能被过滤条件丢掉——**实测**（pgvector 0.8.6，5000 条里
+        只有 3000 条合条件、`LIMIT 50`）：不放开时回 **0 条**，放开后回满 50 条。
+        所以带过滤时必须一起打开 ``hnsw.iterative_scan``（见下面的说明），
+        否则"只查某本书"仍然只会回几条甚至一条都没有。不带 ``filter`` 时查询
+        **逐字不变**（连 JOIN 都不加），这条路径的行为与从前完全一致。
+        """
         if top_k <= 0:
             return []
         table = self._table(kb_id)
+        # 归一成"要么一份真的条件、要么 None"：后面每一处都只需判一次空
+        pushdown = filter if filter is not None and not filter.is_empty() else None
         # 用 session 而不是 read：SET LOCAL 只作用于当前事务，需要显式事务边界
         with self._db.session() as conn:
             dim = self._declared_dim(conn, table)
@@ -243,11 +271,32 @@ class PostgresVectorStore(VectorStore):
             # EF_SEARCH 是本模块常量、不是外部输入，内联没有注入面
             conn.execute(f"SET LOCAL hnsw.ef_search = {int(EF_SEARCH)}")
             literal = _literal(query_vector)
-            rows = conn.execute(
-                f"SELECT chunk_id, embedding <=> %s::vector AS distance "  # noqa: S608
-                f"FROM {table} ORDER BY embedding <=> %s::vector LIMIT %s",
-                (literal, literal, top_k),
-            ).fetchall()
+            source = f"{table} AS v"
+            where: list[str] = []
+            params: list[object] = [literal]
+            if pushdown is not None:
+                where, filter_params = conditions(pushdown)
+                source += " JOIN chunks AS c ON c.chunk_id = v.chunk_id"
+                if pushdown.needs_documents:
+                    source += " JOIN documents AS d ON d.id = c.document_id"
+                params.extend(filter_params)
+                # **带过滤时放开 HNSW 的召回深度**：索引扫描原本在收满 ef_search 个
+                # 候选后就返回，而带过滤的扫描会把其中大部分丢掉——"只查某本书某章"
+                # 于是可能只回两三条、甚至一条都没有（实测：5000 条里 3000 条合条件时，
+                # 不放开回 0 条，放开后回满 LIMIT）。relaxed_order 让扫描越过 ef_search
+                # 继续找，直到 LIMIT 满足（或全表扫完）。
+                # **顺序会被放宽**（它不再保证严格按距离递增），但调用方
+                # ``_vector_channel`` 拿到之后会按距离重排，所以顺序本来就不是这里要保证的事。
+                # 老版本 pgvector 不认这一项：带点的自定义 GUC 仍可赋值，只是不起作用
+                # （实测 PG 对未注册的限定名 GUC 一律接受），所以不必先查扩展版本，
+                # 也不会在旧部署上把一个 SET 变成硬失败。
+                conn.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
+            sql = f"SELECT v.chunk_id, v.embedding <=> %s::vector AS distance FROM {source}"  # noqa: S608
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY v.embedding <=> %s::vector LIMIT %s"
+            params.extend([literal, top_k])
+            rows = conn.execute(sql, params).fetchall()
         return [VectorMatch(chunk_id=row["chunk_id"], distance=row["distance"]) for row in rows]
 
     # ------------------------------------------------------------------ 内部

@@ -44,16 +44,54 @@ FULLTEXT_CHANNEL = "fulltext"
 
 @dataclass(frozen=True, slots=True)
 class MetadataFilter:
-    """元数据过滤（架构 §5）。"""
+    """元数据过滤（架构 §5）。**在候选生成之前下推到两条召回通道**。
+
+    从前它只被事后应用（取完 ``top_k`` 再逐条丢），于是"只查某本书"这类**落在少数文档
+    上**的过滤常常筛成 0 条或很少条——名额早被全库的块占满了。现在这些条件由
+    ``service._store_filter`` 翻成存储层的 ``SearchFilter``，跟着查询一起进 SQL
+    （见 ``storage/base.py::SearchFilter`` 与 ``PostgresVectorStore.search``）；
+    事后那一道只留作兜底（``_passes_filters``）。
+
+    两类字段的**排除语义**要分清：
+
+    - ``document_ids`` / ``source_kinds`` / ``created_after`` / ``created_before``
+      筛的是**文档**，文档不满足就整篇的块都不要；
+    - ``page_from`` / ``page_to`` / ``heading_contains`` 筛的是**块自己**。块没有
+      页码（``page`` 为 ``None``）或没有标题路径时，**被页码/标题条件整体排除**——
+      "我要第 40–60 页"这句话里没有"页码未知的也要"的位置。代价是 ``.md`` / Office
+      这类来源本来就没有页码（``page`` 恒为 ``None``）与扫描版 PDF 的不可信页码，
+      一旦按页码筛，它们会一条都不剩——对外说明里必须写清这一点。
+    """
 
     document_ids: Sequence[str] | None = None
     source_kinds: Sequence[DataSourceKind] | None = None
     created_after: datetime | None = None
     created_before: datetime | None = None
+    page_from: int | None = None
+    """只要 ``chunk.page >= page_from`` 的块（"某章"按页码的那一半）。"""
+    page_to: int | None = None
+    """只要 ``chunk.page <= page_to`` 的块。"""
+    heading_contains: str | None = None
+    """``chunk.heading_path`` **包含**这个子串（大小写不敏感）。
+
+    找"某章"比页码更准：标题路径是切块时按原文标题层级拼出来的（``第3章 > 3.2节``），
+    页码只在 PDF 来源上存在、还可能不可信。空串按"没给"处理。
+    """
 
     def is_empty(self) -> bool:
-        return not any(
-            (self.document_ids, self.source_kinds, self.created_after, self.created_before)
+        """一件要筛的事都没有。
+
+        页码那两项判 ``is not None`` 而不是真假：``page_from = 0`` 是个有意义的条件
+        （"只要有页码的块"），按真假判会把它当成"没给"。
+        """
+        return not (
+            self.document_ids
+            or self.source_kinds
+            or self.created_after is not None
+            or self.created_before is not None
+            or self.page_from is not None
+            or self.page_to is not None
+            or self.heading_contains
         )
 
 

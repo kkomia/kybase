@@ -12,11 +12,21 @@ from app.storage.base import (
     FullTextStore,
     KnowledgeBaseRecord,
     MetaStore,
+    SearchFilter,
 )
+
+_ORDINAL_PAGE: object = object()
+"""``_chunk`` 的 ``page`` 默认值：按 ``ordinal + 1`` 填（既有用例的摆法）。
+
+**默认值不能是 ``None``**：``None`` 在这份类型里是个**有意义的取值**（"这一块没有
+页码"），拿它当"没给"就再也摆不出"页码为空的块"——而那正是页码过滤要钉住的一半。
+"""
 
 
 def _chunk(chunk_id: str, ordinal: int, text: str, *, document_id: str = "doc_1",
-           kb_id: str = "kb_1", image_ids: tuple[str, ...] = ()) -> ChunkRecord:
+           kb_id: str = "kb_1", image_ids: tuple[str, ...] = (),
+           page: int | object | None = _ORDINAL_PAGE,
+           heading: str | None = "第3章 > 3.2节") -> ChunkRecord:
     return ChunkRecord(
         chunk_id=chunk_id,
         document_id=document_id,
@@ -25,8 +35,8 @@ def _chunk(chunk_id: str, ordinal: int, text: str, *, document_id: str = "doc_1"
         ordinal=ordinal,
         text=text,
         content_hash=f"h-{chunk_id}",
-        heading_path="第3章 > 3.2节",
-        page=ordinal + 1,
+        heading_path=heading,
+        page=ordinal + 1 if page is _ORDINAL_PAGE else page,  # type: ignore[arg-type]
         image_ids=image_ids,
     )
 
@@ -131,3 +141,65 @@ def test_special_characters_do_not_break_match(store: MetaStore,
 def test_empty_index_returns_no_hits(fulltext_store: FullTextStore) -> None:
     assert fulltext_store.search(query="任何词", top_k=5) == []
     assert fulltext_store.index_chunks([]) is None
+
+
+# --------------------------------------------------------------------- 过滤下推（v0.64）
+#
+# 过滤**在 SQL 里生效**，而且 ``top_k`` 个名额只在合条件的块里分——这一层是
+# "只查某本书某章"能不能用的分界线：取满 ``top_k`` 再由调用方丢的话，别的书会把名额
+# 占满，那本书即使有几百个块也一条都回不来（见 ``SearchFilter`` 的说明）。
+
+
+def test_filter_conditions_are_applied_in_sql(store: MetaStore,
+                                              fulltext_store: FullTextStore, kb,
+                                              document) -> None:
+    """文档 / 页码 / 标题三个条件都在 SQL 里裁，且 ``top_k`` 按**过滤后**的集合算。"""
+    store.create_document(
+        DocumentRecord(id="doc_2", knowledge_base_id="kb_1", name="别的书.md",
+                       source_kind=DataSourceKind.UPLOAD, content_hash="hash-filter",
+                       stage=DocumentStage.UPLOADED)
+    )
+    _seed(store, fulltext_store, [
+        _chunk("c_med_5", 0, "检索 检索 检索 与 医学 手册", page=5, heading="第3章 > 3.1节"),
+        _chunk("c_med_10", 1, "检索 检索 检索 与 医学 手册", page=10, heading="第3章 > 3.2节"),
+        _chunk("c_med_none", 2, "检索 检索 检索 与 医学 手册", page=None, heading=None),
+    ])
+    # 别的书：词面密度更高（不设限时它会占满 top_k 名额），而且**没有页码**
+    _seed(store, fulltext_store, [
+        _chunk("c_ops_7", 0, "检索 检索 检索 检索 检索 检索", document_id="doc_2", page=None,
+               heading="Chapter 7"),
+    ])
+
+    def found(**filter_kwargs: object) -> set[str]:
+        hits = fulltext_store.search(
+            query="检索", top_k=10, filter=SearchFilter(**filter_kwargs)  # type: ignore[arg-type]
+        )
+        return {hit.chunk_id for hit in hits}
+
+    # 不设限时名额被词面密度更高的那段占走
+    assert [hit.chunk_id for hit in fulltext_store.search(query="检索", top_k=1)] == ["c_ops_7"]
+
+    # 只要这本书：名额在它自己的三段里分
+    filtered = fulltext_store.search(
+        query="检索", top_k=2, filter=SearchFilter(document_ids=["doc_1"])
+    )
+    assert len(filtered) == 2
+    assert {hit.document_id for hit in filtered} == {"doc_1"}
+
+    # 页码：含边界；**页码为空的块被排除**（`c_med_none` 与别的书那段都不出现）
+    assert found(page_from=5, page_to=5) == {"c_med_5"}
+    assert found(page_from=5) == {"c_med_5", "c_med_10"}
+    assert found(page_to=5) == {"c_med_5"}
+    assert found(page_from=5, page_to=10) == {"c_med_5", "c_med_10"}
+    assert found(page_from=100) == set()
+
+    # 标题：大小写不敏感的子串；标题为空的块被排除
+    assert found(heading_contains="3.2") == {"c_med_10"}
+    assert found(heading_contains="chapter") == {"c_ops_7"}
+    assert found(heading_contains="CHAPTER 7") == {"c_ops_7"}
+    assert found(heading_contains="没这一章") == set()
+
+    # 空条件 = 不过滤（与"没传"逐字一致）
+    assert fulltext_store.search(
+        query="检索", top_k=10, filter=SearchFilter()
+    ) == fulltext_store.search(query="检索", top_k=10)

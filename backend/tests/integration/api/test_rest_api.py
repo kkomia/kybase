@@ -468,7 +468,50 @@ def test_search_modes_and_filters(client: TestClient, kb_id: str) -> None:
         }
     ).json()
     assert filtered["hits"] == []
-    assert filtered["filtered_out"] > 0
+    # 过滤条件在 SQL 里就生效（v0.64），所以**没有"取回来又被丢掉"的条数**：
+    # 池子是空的，`filtered_out` 是 0。它现在只数"进了候选之后才被丢掉的那些"
+    assert filtered["filtered_out"] == 0
+
+
+def test_search_filters_accept_page_and_heading(client: TestClient, kb_id: str) -> None:
+    """``filters`` 也认 ``page_from`` / ``page_to`` / ``heading_contains``（v0.64）。
+
+    医学场景要的"只查某本书某章"就是这三个字段加上 ``document_ids``：它们与 MCP
+    那条路同名同义（字段表在 ``services/tools`` 的 ``_FILTER_FIELDS``）。.md 来源
+    没有页码，所以这里只钉"端点收得下、传得进去"——具体裁法由检索层的用例钉。
+    """
+    _upload(client, kb_id)
+    _drain_worker()
+
+    body = client.post(
+        "/api/v1/search",
+        json={
+            "query": "部署",
+            "kb_ids": [kb_id],
+            "filters": {"page_from": 3, "page_to": 12, "heading_contains": "配置"},
+        },
+    ).json()
+
+    assert body["hits"] == [], "这份 .md 没有页码，按页码筛本来就取不到"
+    assert body["filtered_out"] == 0
+
+    # 区间反了要当场说清：静默回空结果会被读成"这本书里没有这段内容"
+    bad_range = client.post(
+        "/api/v1/search",
+        json={
+            "query": "部署",
+            "kb_ids": [kb_id],
+            "filters": {"page_from": 12, "page_to": 3},
+        },
+    )
+    assert bad_range.status_code == 422
+
+    for payload in ({"page_from": 0}, {"page_to": -1}):
+        response = client.post(
+            "/api/v1/search",
+            json={"query": "部署", "kb_ids": [kb_id], "filters": payload},
+        )
+        assert response.status_code == 422, payload
 
 
 def test_search_response_leads_with_the_verdict_and_the_distribution(

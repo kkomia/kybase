@@ -7,7 +7,14 @@
 
 import pytest
 
-from app.storage.base import VectorDimensionMismatch, VectorStore
+from app.models.enums import DataSourceKind, DocumentStage
+from app.storage.base import (
+    ChunkRecord,
+    DocumentRecord,
+    SearchFilter,
+    VectorDimensionMismatch,
+    VectorStore,
+)
 from app.storage.postgres_impl.vector_store import HNSW_MAX_DIM, PostgresVectorStore
 
 DIM = 4
@@ -15,6 +22,19 @@ DIM = 4
 
 def _v(*values: float) -> list[float]:
     return list(values)
+
+
+def _chunk(chunk_id: str, ordinal: int, document_id: str, *, page: int | None) -> ChunkRecord:
+    return ChunkRecord(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        knowledge_base_id="kb_1",
+        part_id=None,
+        ordinal=ordinal,
+        text=f"{chunk_id} 的正文",
+        content_hash=f"h-{chunk_id}",
+        page=page,
+    )
 
 
 def test_partition_is_created_lazily_and_idempotently(vector_store: VectorStore) -> None:
@@ -190,3 +210,63 @@ def test_unsafe_kb_id_is_rejected(vector_store: VectorStore, evil: str) -> None:
     """知识库 ID 会拼进表名（SQL 无法参数化表名），必须白名单校验。"""
     with pytest.raises(ValueError):
         vector_store.ensure_partition(evil, dim=DIM)
+
+
+# --------------------------------------------------------------------- 过滤下推（v0.64）
+#
+# 分区表里只有 ``chunk_id`` 与 ``embedding``，过滤要用的列全在 ``chunks`` /
+# ``documents`` 里（同一库，能直接 JOIN）。这里钉住的是**下推真的发生了**：
+# 名额在合条件的块里分，而不是"取满 top_k 再由调用方丢出去"。
+
+
+def test_search_filter_limits_the_candidate_pool(store, kb, document,
+                                                 vector_store: VectorStore) -> None:
+    """带 ``filter`` 时名额在**过滤后的集合**里分（"只查某本书"能用的前提）。
+
+    摆法：doc_2（别的书）的两段整体更近。``top_k=2`` 只看 doc_1——
+    "取满两条再筛"会一条都不剩（两条都来自 doc_2），下推则回到 doc_1 自己的两段。
+    """
+    store.create_document(
+        DocumentRecord(id="doc_2", knowledge_base_id=kb.id, name="别的书.pdf",
+                       source_kind=DataSourceKind.UPLOAD, content_hash="hash-vec-filter",
+                       stage=DocumentStage.UPLOADED)
+    )
+    store.replace_chunks("doc_1", [
+        _chunk("c_med_a", 0, "doc_1", page=5),
+        _chunk("c_med_b", 1, "doc_1", page=10),
+    ])
+    store.replace_chunks("doc_2", [
+        _chunk("c_ops_a", 0, "doc_2", page=None),
+        _chunk("c_ops_b", 1, "doc_2", page=7),
+    ])
+    vector_store.ensure_partition(kb.id, dim=DIM)
+    vector_store.upsert_vectors(kb.id, items=[
+        # 别的书更近：不设限时 top_k=2 全是它的
+        ("c_ops_a", _v(1.0, 0.0, 0.0, 0.0)),
+        ("c_ops_b", _v(0.99, 0.141, 0.0, 0.0)),
+        ("c_med_a", _v(0.90, 0.436, 0.0, 0.0)),
+        ("c_med_b", _v(0.89, 0.456, 0.0, 0.0)),
+    ])
+
+    unfiltered = vector_store.search(kb.id, query_vector=_v(1.0, 0.0, 0.0, 0.0), top_k=2)
+    assert {match.chunk_id for match in unfiltered} == {"c_ops_a", "c_ops_b"}
+
+    # 按文档：名额只在 doc_1 的段里分。**不比较顺序**——`hnsw.iterative_scan`
+    # 会把顺序放宽，重排是调用方（`services/retrieval`）的事
+    by_document = vector_store.search(
+        kb.id, query_vector=_v(1.0, 0.0, 0.0, 0.0), top_k=2,
+        filter=SearchFilter(document_ids=["doc_1"]),
+    )
+    assert {match.chunk_id for match in by_document} == {"c_med_a", "c_med_b"}
+
+    # 按页码：**页码为空的块被排除**，而且它不占用名额
+    by_page = vector_store.search(
+        kb.id, query_vector=_v(1.0, 0.0, 0.0, 0.0), top_k=2,
+        filter=SearchFilter(page_from=7),
+    )
+    assert {match.chunk_id for match in by_page} == {"c_med_b", "c_ops_b"}
+
+    # 空条件 = 不过滤
+    assert vector_store.search(
+        kb.id, query_vector=_v(1.0, 0.0, 0.0, 0.0), top_k=2, filter=SearchFilter()
+    ) == unfiltered

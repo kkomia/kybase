@@ -597,10 +597,49 @@ class SystemLoadOut(BaseModel):
 
 
 class MetadataFilterIn(BaseModel):
+    """检索范围的条件。**条件在候选生成之前生效**（下推到 SQL），不是事后筛。
+
+    所以"只查某本书的一章"能真正用：``document_ids`` + ``page_from``/``page_to``
+    或 ``heading_contains`` 一起给，抽样的名额只在这本书的这一章里分。
+    """
+
+    # `use_attribute_docstrings`：这一层没有记录对象可映射，字段说明只能靠 docstring ——
+    # 而"没有页码的文档会被页码过滤整体排除"这件事**必须进契约**（OpenAPI 与生成的
+    # `schema.d.ts`），否则调用方拿到空结果只会以为"这本书里没有这段内容"。
+    model_config = _RECORD_CONFIG
+
     document_ids: list[str] | None = None
+    """只在这些文档里查（"只查某本书"）。"""
+
     source_kinds: list[DataSourceKind] | None = None
     created_after: datetime | None = None
+    """文档的创建时间下界（含边界）。"""
     created_before: datetime | None = None
+    """文档的创建时间上界（含边界）。"""
+    page_from: int | None = Field(default=None, ge=1)
+    """只要 ``page >= page_from`` 的块（"某章"，按页码）。
+
+    **没有页码信息的内容会被整体排除**：``.md`` / Office 来源的块 ``page`` 为空，
+    扫描版 PDF 的页码也可能不可信——按页码筛时它们一条都取不到。要按章节查，
+    优先用 ``heading_contains``。
+    """
+    page_to: int | None = Field(default=None, ge=1)
+    """只要 ``page <= page_to`` 的块。"""
+    heading_contains: str | None = None
+    """标题路径包含这个子串（大小写不敏感），如 ``"第3章"``。
+
+    切块时按原文标题层级拼出来的路径（``第3章 > 3.2节``），比页码更可靠。
+    **标题路径为空的块会被整体排除**。
+    """
+
+    @model_validator(mode="after")
+    def _check_page_range(self) -> MetadataFilterIn:
+        """区间反了当场说清——静默返回空结果会被读成"这本书里没有这段内容"。"""
+        if self.page_from is None or self.page_to is None:
+            return self
+        if self.page_to < self.page_from:
+            raise ValueError("page_to 不能小于 page_from")
+        return self
 
 
 class SearchRequest(BaseModel):

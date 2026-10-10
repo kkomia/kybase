@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.models.enums import DataSourceKind
+from app.models.enums import DataSourceKind, DocumentStage
 from app.parsers.plain_text import PlainTextParser
 from app.services.chunking import ChunkingConfig
 from app.services.embedding.base import EmbeddingNotConfiguredError
@@ -26,7 +26,12 @@ from app.services.retrieval import (
 )
 from app.services.retrieval.distribution import FIT_NONE
 from app.services.retrieval.rerank import RerankError, RerankProvider
-from app.storage.base import StoreBundle
+from app.storage.base import (
+    ChunkRecord,
+    DocumentRecord,
+    KnowledgeBaseRecord,
+    StoreBundle,
+)
 
 DIM = 64
 
@@ -199,7 +204,11 @@ def test_filter_by_document_id(seeded: StoreBundle, retrieval: RetrievalService)
 
     assert response.hits
     assert {hit.document_id for hit in response.hits} == {target.id}
-    assert response.filtered_out > 0  # 被挡掉多少要说清楚，否则"结果为空"无从解释
+    # **`filtered_out` 为 0 是 v0.64 起对的**：条件已经下推到 SQL，别的文档的块
+    # 压根没进候选，也就没有"取回来之后又被丢掉"的条数可报（见
+    # ``service._materialize`` 里那个计数）。它不再能用来解释"结果为什么为空"——
+    # "池子里本来就没有"与"筛掉了"现在是两件事。
+    assert response.filtered_out == 0
 
 
 def test_filter_by_source_kind(seeded: StoreBundle, retrieval: RetrievalService) -> None:
@@ -211,7 +220,9 @@ def test_filter_by_source_kind(seeded: StoreBundle, retrieval: RetrievalService)
         )
     )
     assert only_html.hits == []
-    assert only_html.filtered_out > 0
+    # 空结果来自"没有一篇是 html"这个事实本身，而不是"取回来后全被丢掉"：
+    # 条件在 SQL 里就生效了（v0.64），所以这个计数是 0
+    assert only_html.filtered_out == 0
 
 
 def test_filter_by_time_window(seeded: StoreBundle, retrieval: RetrievalService) -> None:
@@ -411,6 +422,44 @@ def test_filter_without_document_is_rejected() -> None:
 
     assert _passes_filters(None, MetadataFilter(document_ids=["doc_x"])) is False
     assert _passes_filters(None, None) is True
+
+
+def test_chunk_level_guard_matches_the_pushed_down_semantics() -> None:
+    """兜底守卫（``_passes_chunk_filters``）与 SQL 那一侧**同口径**（v0.64）。
+
+    条件现在由 SQL 生效，这条守卫正常一次都不该拦到东西；留着它是为了"下推不完整"
+    的那一类（新维度忘了进 ``SearchFilter`` 的翻译）。**两条路给不同答案最难查**：
+    同一次检索会因为下推有没有生效而给出不同结果。所以边界直接钉在这里。
+    """
+    from app.services.retrieval.service import _passes_chunk_filters
+
+    def chunk(page: int | None, heading: str | None) -> ChunkRecord:
+        return ChunkRecord(
+            chunk_id="c1",
+            document_id="d1",
+            knowledge_base_id="kb_1",
+            part_id=None,
+            ordinal=0,
+            text="正文",
+            content_hash="h1",
+            page=page,
+            heading_path=heading,
+        )
+
+    # 边界含端点
+    assert _passes_chunk_filters(chunk(40, "第3章"), MetadataFilter(page_from=40, page_to=60))
+    assert _passes_chunk_filters(chunk(60, "第3章"), MetadataFilter(page_from=40, page_to=60))
+    assert not _passes_chunk_filters(chunk(39, "第3章"), MetadataFilter(page_from=40, page_to=60))
+    assert not _passes_chunk_filters(chunk(61, "第3章"), MetadataFilter(page_from=40, page_to=60))
+    # 没有页码的块被排除（与 SQL 的 `NULL >= 40` 不为真同口径）
+    assert not _passes_chunk_filters(chunk(None, "第3章"), MetadataFilter(page_from=40))
+    # 标题：子串 + 大小写不敏感；标题为空的块被排除
+    assert _passes_chunk_filters(chunk(50, "Chapter 3 > 3.2"), MetadataFilter(
+        heading_contains="chapter 3"
+    ))
+    assert not _passes_chunk_filters(chunk(50, None), MetadataFilter(heading_contains="第3章"))
+    # 没给条件就放行
+    assert _passes_chunk_filters(chunk(None, None), MetadataFilter(document_ids=["d1"]))
 
 
 # --------------------------------------------------------------------- 参数校验
@@ -1304,3 +1353,280 @@ def test_per_doc_alone_is_a_decision_from_the_caller(
 
     assert response.decision["per_doc"] == 1
     assert response.decision["decided_by"] == "model"
+
+
+# ------------------------------------------------- 过滤下推：先裁候选池，再谈条数（v0.64）
+#
+# 从前元数据过滤只在**取完候选之后**应用：两条通道各自按 ``candidate_k`` 取满，再一条条
+# 按它所属文档的元数据丢掉。后果正是用户报的那件事——"只查某本书"筛成 0 条或很少条，
+# 因为那本书的块压根没进过候选（名额被别的书占满了）。医学场景想"只查某本书某章"
+# 于是只能事后筛。
+#
+# 现在条件被翻成存储层的 ``SearchFilter`` 下推进 SQL（向量那侧 JOIN ``chunks`` /
+# ``documents``），名额在**过滤后的集合里**分。
+#
+# 下面这批用例摆的是**手工构造的块**（不走摄入链路）：要验的是"条件有没有进 SQL"，
+# 页码与标题路径必须由用例指定——真走解析器的话 ``.md`` 来源的 ``page`` 恒为 ``None``
+# （那正是"按页码筛会把整份 md 排除"的由来），摆不出边界。
+
+POOL_KB = "kb_pool"
+
+
+def _pool_chunk(
+    chunk_id: str,
+    document_id: str,
+    ordinal: int,
+    text: str,
+    *,
+    page: int | None = None,
+    heading: str | None = None,
+) -> ChunkRecord:
+    return ChunkRecord(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        knowledge_base_id=POOL_KB,
+        part_id=None,
+        ordinal=ordinal,
+        text=text,
+        content_hash=f"h-{chunk_id}",
+        heading_path=heading,
+        page=page,
+    )
+
+
+#: 每段的余弦（与查询向量的重合度）。摆法：**运维那本整体更近**——于是"全局最近的两条
+#: 都在别的书里"，这正是"只查医学手册"在旧实现下会筛空的原因。
+_POOL_COSINES = {
+    "c_med_a": 0.90,
+    "c_med_b": 0.89,
+    "c_med_c": 0.88,
+    "c_med_d": 0.87,
+    "c_ops_a": 0.99,
+    "c_ops_b": 0.98,
+    "c_ops_c": 0.97,
+}
+
+_POOL_CHUNKS = (
+    # 医学手册：三段的页码与标题都在，另有一段**两样都没有**（用来钉住"被整体排除"）
+    _pool_chunk("c_med_a", "doc_med", 0, "检索 与 医学 手册 第一节 的 正文", page=5,
+                heading="第3章 > 3.1节"),
+    _pool_chunk("c_med_b", "doc_med", 1, "检索 与 医学 手册 第二节 的 正文", page=10,
+                heading="第3章 > 3.2节"),
+    _pool_chunk("c_med_c", "doc_med", 2, "检索 与 医学 手册 第四节 的 正文", page=20,
+                heading="第4章 > 4.1节"),
+    _pool_chunk("c_med_d", "doc_med", 3, "检索 与 医学 手册 的 无页码 段落"),
+    # 运维手册：词面密度更高（排在全文通道前面），页码与标题自成一套
+    _pool_chunk("c_ops_a", "doc_ops", 0, "检索 检索 检索 检索", heading="Chapter 7 > 7.1"),
+    _pool_chunk("c_ops_b", "doc_ops", 1, "检索 检索 检索 检索", page=7,
+                heading="Chapter 7 > 7.2"),
+    _pool_chunk("c_ops_c", "doc_ops", 2, "检索 检索 检索 检索", page=8,
+                heading="Chapter 7 > 7.3"),
+)
+
+
+def _seed_pool(bundle: StoreBundle) -> None:
+    """一个库、两篇文档、七个块：页码 / 标题路径 / 向量全部由用例指定。"""
+    bundle.meta.create_knowledge_base(
+        KnowledgeBaseRecord(
+            id=POOL_KB,
+            name="池子库",
+            embedding_model_id=DeterministicEmbedder.model_id,
+            embedding_dim=DIM,
+        )
+    )
+    for document_id, name in (("doc_med", "医学手册.pdf"), ("doc_ops", "运维手册.pdf")):
+        bundle.meta.create_document(
+            DocumentRecord(
+                id=document_id,
+                knowledge_base_id=POOL_KB,
+                name=name,
+                source_kind=DataSourceKind.UPLOAD,
+                content_hash=f"h-{document_id}",
+                stage=DocumentStage.UPLOADED,
+            )
+        )
+    # 分文档写入：``replace_chunks`` 是按文档整份替换的
+    bundle.meta.replace_chunks("doc_med", [c for c in _POOL_CHUNKS if c.document_id == "doc_med"])
+    bundle.meta.replace_chunks("doc_ops", [c for c in _POOL_CHUNKS if c.document_id == "doc_ops"])
+    bundle.fulltext.index_chunks(_POOL_CHUNKS)
+    # 向量分区：正常由摄入链路建，这里手工建（用例只关心检索）
+    bundle.vectors.ensure_partition(POOL_KB, dim=DIM)
+    bundle.vectors.upsert_vectors(
+        POOL_KB,
+        items=[(chunk.chunk_id, _unit_vector(_POOL_COSINES[chunk.chunk_id]))
+               for chunk in _POOL_CHUNKS],
+    )
+
+
+@pytest.fixture
+def pool(bundle: StoreBundle) -> StoreBundle:
+    """摆好那七段（见 ``_seed_pool``）。"""
+    _seed_pool(bundle)
+    return bundle
+
+
+def _search_pool(
+    retrieval: RetrievalService,
+    filters: MetadataFilter | None,
+    *,
+    mode: str = RetrievalMode.FULLTEXT,
+    **overrides: object,
+):
+    """在池子库上跑一次（默认全文通道：七段都含查询词，集合式的断言不看名次）。"""
+    params: dict[str, object] = {
+        "query": "检索",
+        "kb_ids": [POOL_KB],
+        "mode": mode,
+        "top_k": 8,
+        "candidate_k": 8,
+        "filters": filters,
+    }
+    params.update(overrides)
+    return retrieval.search(
+        RetrievalQuery(**params),  # type: ignore[arg-type]
+        query_vector=_unit_vector(1.0),
+    )
+
+
+def test_the_document_filter_shrinks_the_candidate_pool_vector(pool: StoreBundle,
+                                                               retrieval: RetrievalService) -> None:
+    """**这次改动的核心用例（向量通道）**：名额要在那本书里分，不是取完再丢。
+
+    摆法：运维手册那三段的余弦整体更高（0.99/0.98/0.97），医学手册是 0.90 往下；
+    ``top_k=2``、``candidate_k=2``，只看医学手册。于是：
+
+    - **旧实现（事后筛）**：向量通道先取全局最近的两条——两条都在运维手册里——
+      再按文档丢掉，**一条都不剩**（用户说的"只能事后筛"就是这个形状）；
+    - **现在（下推）**：SQL 里就只要医学手册的块，两条名额在它自己的段里分。
+    """
+    response = _search_pool(
+        retrieval,
+        MetadataFilter(document_ids=["doc_med"]),
+        mode=RetrievalMode.VECTOR,
+        top_k=2,
+        candidate_k=2,
+    )
+
+    assert [hit.document_id for hit in response.hits] == ["doc_med", "doc_med"]
+    assert [hit.chunk_id for hit in response.hits] == ["c_med_a", "c_med_b"]
+
+
+def test_the_document_filter_shrinks_the_candidate_pool_fulltext(
+    pool: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """同一个场景走**全文通道**：名额同样在过滤后的集合里分。
+
+    运维手册那三段词面密度更高（``ts_rank_cd`` 排在前面），所以旧的"取满两条再丢"
+    同样会全军覆没。两条通道各自都要受限——只改一路会留下"全文搜不到、向量搜得到"
+    那种静默不一致。
+    """
+    response = _search_pool(
+        retrieval,
+        MetadataFilter(document_ids=["doc_med"]),
+        top_k=2,
+        candidate_k=2,
+    )
+
+    assert len(response.hits) == 2
+    assert {hit.document_id for hit in response.hits} == {"doc_med"}
+
+
+def test_page_range_bounds_are_inclusive_and_null_pages_are_excluded(
+    pool: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """``page_from`` / ``page_to`` **含边界**，且**没有页码的块被整体排除**。
+
+    ``c_med_d``（页码为空）与 ``c_ops_a``（页码为空）在两种条件里都不满足：
+    SQL 里 ``NULL >= 5`` 是 ``NULL``、不是真——"我只第 5–20 页"那句话里没有
+    "页码未知的也要"的位置。代价写在 ``MetadataFilter`` 的说明里：
+    没有页码的**来源**（.md / Office）一旦按页码筛就是一整批都查不到。
+    """
+    def pages(filters: MetadataFilter) -> set[int | None]:
+        return {hit.page for hit in _search_pool(retrieval, filters).hits}
+
+    assert pages(MetadataFilter(page_from=5)) == {5, 7, 8, 10, 20}
+    assert pages(MetadataFilter(page_to=7)) == {5, 7}
+    assert pages(MetadataFilter(page_from=5, page_to=10)) == {5, 7, 8, 10}
+    # 区间之外：一条都没有，而不是"回退成不过滤"
+    assert pages(MetadataFilter(page_from=100)) == set()
+    assert pages(MetadataFilter(page_to=1)) == set()
+
+
+def test_heading_contains_is_case_insensitive_and_skips_empty_headings(
+    pool: StoreBundle, retrieval: RetrievalService
+) -> None:
+    """``heading_contains`` 是**子串**匹配且大小写不敏感；标题路径为空的块被排除。
+
+    找"某章"它比页码准：标题路径是切块时按原文层级拼出来的，中文文档里也没有页码。
+    大小写不敏感与 SQL 那一侧同一口径（``position(lower(x) in lower(heading_path))``），
+    否则同一份条件在"下推生效"与"兜底守卫"两条路上会给出不同答案。
+    """
+    def chunk_ids(filters: MetadataFilter) -> set[str]:
+        return {hit.chunk_id for hit in _search_pool(retrieval, filters).hits}
+
+    assert chunk_ids(MetadataFilter(heading_contains="第3章")) == {"c_med_a", "c_med_b"}
+    assert chunk_ids(MetadataFilter(heading_contains="3.2")) == {"c_med_b"}
+    # 大小写不敏感：库里存的是 "Chapter 7 > 7.2"
+    assert chunk_ids(MetadataFilter(heading_contains="chapter 7")) == {
+        "c_ops_a",
+        "c_ops_b",
+        "c_ops_c",
+    }
+    assert chunk_ids(MetadataFilter(heading_contains="CHAPTER")) == {
+        "c_ops_a",
+        "c_ops_b",
+        "c_ops_c",
+    }
+    assert chunk_ids(MetadataFilter(heading_contains="没这一章")) == set()
+    # `c_med_d` 的 heading_path 为空 → 任何标题条件都排除它
+    assert chunk_ids(MetadataFilter(heading_contains="第")) == {"c_med_a", "c_med_b", "c_med_c"}
+
+
+def test_filters_combine_with_and(pool: StoreBundle, retrieval: RetrievalService) -> None:
+    """多个条件一起给是**与**：文档、页码区间、标题子串都得满足。"""
+    response = _search_pool(
+        retrieval,
+        MetadataFilter(
+            document_ids=["doc_med"],
+            page_from=5,
+            page_to=10,
+            heading_contains="3.2",
+        ),
+    )
+
+    assert [hit.chunk_id for hit in response.hits] == ["c_med_b"]
+
+
+def test_both_channels_respect_the_same_filter(pool: StoreBundle,
+                                               retrieval: RetrievalService) -> None:
+    """三条路（纯向量 / 纯全文 / 混合）在同一个条件下回**同一批**块。
+
+    只把过滤加在其中一条通道上，就会出现"某些模式下过滤不生效"——那种不一致最难查，
+    因为它取决于调用方选了哪个 mode。
+    """
+    for mode in (RetrievalMode.VECTOR, RetrievalMode.FULLTEXT, RetrievalMode.HYBRID):
+        response = _search_pool(retrieval, MetadataFilter(heading_contains="第3章"), mode=mode)
+        assert {hit.chunk_id for hit in response.hits} == {"c_med_a", "c_med_b"}, mode
+
+
+def test_paging_still_walks_the_filtered_survivors(pool: StoreBundle,
+                                                   retrieval: RetrievalService) -> None:
+    """过滤之后翻页照旧：拼起来等于不翻页那一整份，且**每一页都满足条件**。
+
+    这条钉的是"下推没有把翻页弄坏"：名额裁掉之后，``top_k`` / ``keep`` / ``offset``
+    那套账要在**过滤后的集合**上算（旧实现下这里会算出"第二页是空的"）。
+    """
+    filters = MetadataFilter(page_from=5)
+    whole = _search_pool(retrieval, filters, keep=8)
+    assert whole.kept == 5, "第 5 页及以后的块共五段（两段没有页码）"
+
+    walked: list[str] = []
+    offset: int | None = 0
+    while offset is not None:
+        page = _search_pool(retrieval, filters, keep=2, offset=offset)
+        assert page.kept == whole.kept, "判定与翻页无关"
+        assert all(hit.page is not None and hit.page >= 5 for hit in page.hits)
+        walked.extend(hit.chunk_id for hit in page.hits)
+        offset = page.next_offset
+
+    assert walked == [hit.chunk_id for hit in whole.hits]
