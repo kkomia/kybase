@@ -1511,13 +1511,30 @@
 
   .kb-pages-range {
     display: flex;
+    /* 这一行在窄抽屉里放不下时**整体换行**（提示跟着挪到下一行），
+       而不是把其中某一段压窄——见下面 `.text-hint` 那条。 */
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }
 
-  /* 页码是两位数：给一个够放下 "50" 的窄框，别让它吃掉半行 */
+  /* 页码是两位数：给一个够放下 "50" 的窄框，别让它吃掉半行。
+
+     **写 `flex` 而不是 `width`**：`@/ui/input` 自带 `w-full`，而工具类永远赢过这里
+     （见文件头）——原先那条 `width: 64px` 就因此一直没生效，两个输入框各吃满一行，
+     多出来的宽度只好从同一行里唯一可缩的提示身上扣。`flex-basis` 不是 `width`，
+     它直接定主尺寸，这条窄框才算数；`flex-shrink: 0` 一并钉死，谁都别再挤它。 */
   .kb-pages-input {
-    width: 64px;
+    flex: 0 0 64px;
+  }
+
+  /* 提示是"一行的脚注"，不是可压缩的填充物：宽度不够就让 `.kb-pages-range` 换行。
+
+     `white-space: nowrap` 是这条的关键：汉字的 min-content 宽度只有一个字，
+     没有这一句时它会被压成"一次一个汉字"的竖排（实测「单次 / 最多 / 50 / 页」四行）。 */
+  .kb-pages-range .text-hint {
+    flex: none;
+    white-space: nowrap;
   }
 
   /* 工具栏里的那一枚「图片 / 文字」贴着输入框，不再自带顶边距 */
