@@ -503,6 +503,78 @@ def test_readonly_key_cannot_batch(client: TestClient, kb_id: str) -> None:
 
 
 
+# --------------------------------------------------------- 强制重新解析（reparse）
+
+
+def test_reparse_resets_the_stage_and_requeues(client: TestClient, kb_id: str) -> None:
+    """「重新解析」= 清掉产物、退回 uploaded、再排一个任务。
+
+    响应用的是**复位之后**的快照：回入队前那份会显示成还是 indexed，
+    用户会以为点了没反应。
+    """
+    from app.core.services import get_services
+
+    document = _upload(client, kb_id, "重解析.md")
+    get_services().ingest.ingest(document["id"])
+    assert client.get(f"/api/v1/documents/{document['id']}").json()["stage"] == "indexed"
+
+    response = client.post(f"/api/v1/documents/{document['id']}/reparse")
+
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["task_id"]
+    assert body["is_duplicate"] is False
+    assert body["document"]["stage"] == "uploaded"
+
+    # 队列里那条跑完 → 又回到 indexed（这一趟真的重解析了，不是空操作）
+    get_services().ingest.ingest(document["id"])
+    assert client.get(f"/api/v1/documents/{document['id']}").json()["stage"] == "indexed"
+
+
+def test_reparse_rejects_a_document_that_is_still_running(client: TestClient, kb_id: str) -> None:
+    """有任务在跑时给 409——**不是**静默返回那条既有任务：重解析会清产物。"""
+    response = client.post(
+        f"/api/v1/knowledge-bases/{kb_id}/documents",
+        files={"file": ("正在跑.md", io.BytesIO("# x\n\n正文。\n".encode()), "text/markdown")},
+        params={"start": "true"},
+    )
+    document = response.json()["document"]
+    assert response.json()["task_id"]
+
+    conflict = client.post(f"/api/v1/documents/{document['id']}/reparse")
+
+    assert conflict.status_code == 409, conflict.text
+    assert "处理中" in conflict.json()["message"]
+    # 被拒之后文档原封不动（没有半清状态）
+    assert client.get(f"/api/v1/documents/{document['id']}").json()["stage"] == "uploaded"
+
+
+def test_readonly_key_cannot_reparse(client: TestClient, kb_id: str) -> None:
+    document = _upload(client, kb_id, "只读重解析.md")
+    issued = _issue(client, "readonly")
+
+    response = client.post(
+        f"/api/v1/documents/{document['id']}/reparse",
+        headers={"Authorization": f"Bearer {issued['token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_batch_reparse_resets_and_requeues(client: TestClient, kb_id: str) -> None:
+    """批量「重新解析」走同一个动作名，逐条返回成败。"""
+    from app.core.services import get_services
+
+    document = _upload(client, kb_id, "批量重解析.md")
+    get_services().ingest.ingest(document["id"])
+
+    response = _batch(client, kb_id, "reparse", [document["id"]])
+
+    assert response.status_code == 200, response.text
+    assert response.json()["succeeded"] == 1
+    assert client.get(f"/api/v1/documents/{document['id']}").json()["stage"] == "uploaded"
+
+
 # --------------------------------------------------- 整库批量（v17，切分参数改后重跑）
 
 

@@ -1788,6 +1788,15 @@ class PostgresMetaStore(MetaStore):
             created_at=_load(row["created_at"]),
         )
 
+    def delete_parse_result(self, document_id: str) -> int:
+        # 按 document_id 一刀删（含分段产物）：大文件切分时每段一行 part_id，
+        # 只删 part_id 为空那行会让下一轮的 `_parse_in_parts` 撞上旧段产物。
+        with self._db.session() as conn:
+            cursor = conn.execute(
+                "DELETE FROM parse_results WHERE document_id = %s", (document_id,)
+            )
+        return int(cursor.rowcount or 0)
+
     def parser_page_usage(self, parser_name: str, *, since: datetime) -> tuple[int, int]:
         # 页数取下界 0：`page_count` 为 NULL（探测没测出页数）时整篇按 0 计，
         # 而不是 NULL 把 SUM 变成 NULL——"没测出页数"是"算不准"，不是"没消耗"，

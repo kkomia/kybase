@@ -144,6 +144,12 @@ _TOOL_BY_ROUTE: dict[tuple[str, str], str] = {
     # 写进来也是一条永远走不到的死条目。
     ("GET", "/documents/{document_id}/preview"): "get_document_content",
     ("GET", "/documents/{document_id}/download-url"): "get_document_content",
+    # 按页取原文与强制重解析（2026-10-10）：``get_document_pages`` 与 ``reparse_document``
+    # 在 REST 上的入口。**页图那条（``/documents/{id}/pages/{页}/image``）与本表无关**：
+    # 与 ``/content`` 同一个理由，它不挂 ``require_read``（只认 URL 里的签名），写进来
+    # 也是一条永远走不到的死条目。
+    ("GET", "/documents/{document_id}/pages"): "get_document_pages",
+    ("POST", "/documents/{document_id}/reparse"): "reparse_document",
     ("POST", "/knowledge-bases/{kb_id}/data-sources"): "add_data_source",
 }
 

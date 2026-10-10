@@ -471,6 +471,14 @@ def test_every_mapped_route_resolves_to_its_tool(locked: TestClient) -> None:
             f"/api/v1/documents/{document['id']}/download-url",
             {},
         ),
+        # 按页取原文与强制重解析（2026-10-10）：同样是"某个工具在 REST 上的入口"
+        (
+            "get_document_pages",
+            "get",
+            f"/api/v1/documents/{document['id']}/pages",
+            {"params": {"from_page": 1, "to_page": 1}},
+        ),
+        ("reparse_document", "post", f"/api/v1/documents/{document['id']}/reparse", {}),
         (
             "add_data_source",
             "post",
@@ -483,6 +491,48 @@ def test_every_mapped_route_resolves_to_its_tool(locked: TestClient) -> None:
         response = getattr(locked, method)(path, headers=scoped, **kwargs)
         assert response.status_code == 403, f"{method.upper()} {path} 没被工具范围挡住"
         assert tool in response.json()["message"], f"{path} 被拒的理由不是工具范围"
+
+
+def test_tool_scope_covers_the_page_and_reparse_routes(locked: TestClient) -> None:
+    """按页取原文与强制重新解析（2026-10-10）也受工具范围约束。
+
+    **两条都是某个工具在 REST 上的入口**：``GET /documents/{id}/pages`` 是
+    ``get_document_pages``（只读），``POST /documents/{id}/reparse`` 是
+    ``reparse_document``（写）。它们都挂了 ``require_read`` / ``require_write``，
+    所以 ``_TOOL_BY_ROUTE`` 那张表在这里真的走得到——**不登记就是一个绕过口**。
+
+    页图那条（``GET /documents/{id}/pages/{页}/image``）刻意不查：它只认 URL 里的
+    签名（同 ``/documents/{id}/content``），压根不在这张表里，登记了也走不到。
+
+    正反两面都查（同上面那条的理由）：只查"被拒"的话，它可能只是被别的判定顺手
+    挡住了——映射整个失效之后这条用例仍然是绿的。
+    """
+    kb = locked.post("/api/v1/knowledge-bases", json={"name": "新能力库"}).json()
+    document = _upload(locked, kb["id"], "新能力文档.md")
+    pages_params = {"from_page": 1, "to_page": 1}
+    pages_path = f"/api/v1/documents/{document['id']}/pages"
+    reparse_path = f"/api/v1/documents/{document['id']}/reparse"
+
+    # 反面：范围只留 search，这两条都落在范围外
+    blocked = _scoped(_issue(locked, permission="readwrite", allowed_tool_names=["search"]))
+    reparse = locked.post(reparse_path, headers=blocked)
+    assert reparse.status_code == 403, reparse.text
+    assert "reparse_document" in reparse.json()["message"]
+
+    pages = locked.get(pages_path, params=pages_params, headers=blocked)
+    assert pages.status_code == 403, pages.text
+    assert "get_document_pages" in pages.json()["message"]
+
+    # 正面：把工具真放开，两条都要走得通（否则"被拒"可能只是被别的判定挡住了）
+    write_opened = _scoped(
+        _issue(locked, permission="readwrite", allowed_tool_names=["reparse_document"])
+    )
+    requeued = locked.post(reparse_path, headers=write_opened)
+    assert requeued.status_code == 202, requeued.text
+    assert requeued.json()["document"]["stage"] == "uploaded", "重解析要真的复位并重新排队"
+
+    read_opened = _scoped(_issue(locked, allowed_tool_names=["get_document_pages"]))
+    assert locked.get(pages_path, params=pages_params, headers=read_opened).status_code == 200
 
 
 def test_unscoped_key_is_unaffected_by_the_tool_scope(locked: TestClient) -> None:

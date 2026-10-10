@@ -73,6 +73,19 @@ def test_failed_cannot_jump_to_a_terminal_stage() -> None:
     assert can_transition(DocumentStage.FAILED, DocumentStage.INDEXED) is False
 
 
+def test_a_finished_document_can_go_back_to_uploaded_for_a_full_reparse() -> None:
+    """「强制重新解析」：已结束的阶段退回 ``uploaded``，从解析器整条重跑。
+
+    与 ``→ CHUNKING``（重新摄入，复用解析产物）是两条路——解析可能是收费的云端服务，
+    所以"要不要重调解析器"必须由用户明确选。
+    """
+    for stage in (DocumentStage.INDEXED, DocumentStage.FAILED, DocumentStage.CANCELED):
+        assert can_transition(stage, DocumentStage.UPLOADED) is True
+    # 还在跑的阶段不适用：那一路由「重新处理」从切分续跑
+    assert can_transition(DocumentStage.PARSING, DocumentStage.UPLOADED) is False
+    assert can_transition(DocumentStage.CHUNKED, DocumentStage.UPLOADED) is False
+
+
 def test_enhancement_branch_is_reachable_from_indexed() -> None:
     """图谱/Wiki 增强是可选分支，默认关闭但状态可达（架构 §4、§11）。"""
     assert can_transition(DocumentStage.INDEXED, DocumentStage.ENRICHING) is True

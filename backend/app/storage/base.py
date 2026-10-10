@@ -112,7 +112,7 @@ class StoreBundle:
     #
     # 它们**返回的是同一个 ``meta`` 实例**，只是按域收窄了类型：新代码依赖窄接口，
     # "这个模块需要什么"在签名里读得出来；老代码走 `meta.*` 零改动。
-    # 这是拆 MetaStore 的第一步，不是行为变更——23 个域与 183 个方法的归属
+    # 这是拆 MetaStore 的第一步，不是行为变更——23 个域与 184 个方法的归属
     # 见 repositories.py，`tests/unit/storage/test_repositories.py` 机械核对。
 
     @property
@@ -1808,6 +1808,18 @@ class MetaStore(ABC):
 
     @abstractmethod
     def get_parse_result(self, document_id: str) -> ParseResultRecord | None: ...
+
+    @abstractmethod
+    def delete_parse_result(self, document_id: str) -> int:
+        """删掉这个文档的**全部**解析产物，返回删掉的行数。
+
+        "强制重新解析"要先把它清掉：`_reuse_parse_result` 的判据就是"这行在不在"，
+        留着这行，重解析入队之后会被当成"解析已完成"直接跳到切分——
+        也就是用户点了"重新解析"却什么都没重新解析。
+
+        **是删除而不是标记**：那行只是解析器的输出缓存（正文在对象存储里，
+        对象存储那份同 key 覆写），没有需要保留的历史。
+        """
 
     @abstractmethod
     def parser_page_usage(self, parser_name: str, *, since: datetime) -> tuple[int, int]:

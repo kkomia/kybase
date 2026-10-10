@@ -23,8 +23,13 @@ from app.storage.base import StoreBundle
 
 __all__ = ["BATCH_ALL_LIMIT", "BatchItem", "DocumentBatchService"]
 
-BATCH_ACTIONS = ("delete", "reprocess", "move", "enable", "disable", "questions")
-"""支持的批量动作。加动作时同步改 API 的 ``Literal`` 与前端类型。"""
+BATCH_ACTIONS = ("delete", "reprocess", "reparse", "move", "enable", "disable", "questions")
+"""支持的批量动作。加动作时同步改 API 的 ``Literal`` 与前端类型。
+
+``reprocess``（重新摄入：重切块 + 重向量）与 ``reparse``（强制重新解析：
+从解析器整条重跑）是**两个动作**，不是同一个的两个名字——前者便宜，后者可能要花
+云端解析额度。合成一个会让"改完切分参数整库重跑"顺手把整库都重新解析一遍。
+"""
 
 BATCH_ALL_LIMIT = 2000
 """``all=True`` 一次最多覆盖多少篇。
@@ -146,6 +151,11 @@ class DocumentBatchService:
             # 补生成分段问题（v24）：只有已索引的文档收得下，非索引进来的那条
             # 会抛 ConflictError，被 run() 记成这条的失败原因（部分失败是正常结果）
             self._documents.enqueue_questions(document_id)
+            return
+        if action == "reparse":
+            # 强制重新解析：先清产物、退回 uploaded，再从解析器跑一遍
+            # （并发闸与阶段校验都在 DocumentService.enqueue_ingest 里）
+            self._documents.enqueue_ingest(document_id, restart=True)
             return
         # 重跑：force=True 才允许对已索引的文档重新入队（见 DocumentService.enqueue_ingest）
         self._documents.enqueue_ingest(document_id, force=True)

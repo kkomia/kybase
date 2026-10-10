@@ -1,6 +1,6 @@
-"""按域切开的仓储**窄协议**（strangler 的第二步：183 个方法全部切开）。
+"""按域切开的仓储**窄协议**（strangler 的第二步：184 个方法全部切开）。
 
-`MetaStore` 有 183 个方法、实现三千多行。问题不在行数，而在**接口本身**：
+`MetaStore` 有 184 个方法、实现三千多行。问题不在行数，而在**接口本身**：
 ABC 与实现一对一，于是任何消费者都只能依赖"什么都有的那个接口"——
 "这个模块到底需要什么"在签名里读不出来，拆分也被接口锁死。
 
@@ -22,7 +22,7 @@ ABC 与实现一对一，于是任何消费者都只能依赖"什么都有的那
 阶段事件的读与清理分归两个域（读在文档、清理在维护）。
 
 ``tests/unit/storage/test_repositories.py`` 机械核对三件事：**每个方法恰好属于一个协议**、
-**183 个方法一个不漏**、**签名与 ABC 逐字一致**。
+**184 个方法一个不漏**、**签名与 ABC 逐字一致**。
 """
 
 from __future__ import annotations
@@ -389,6 +389,8 @@ class ParseResultRepo(Protocol):
     def save_parse_result(self, record: ParseResultRecord) -> None: ...
 
     def get_parse_result(self, document_id: str) -> ParseResultRecord | None: ...
+
+    def delete_parse_result(self, document_id: str) -> int: ...
 
     def parser_page_usage(self, parser_name: str, *, since: datetime) -> tuple[int, int]: ...
 

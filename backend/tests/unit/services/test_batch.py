@@ -176,3 +176,33 @@ def test_questions_action_queues_only_indexed_documents(
     assert [task.document_id for task in queued] == [indexed]
     # 出题不重置阶段：文档仍是 indexed（重新摄入那条路才会推回 CHUNKING）
     assert bundle.meta.get_document(indexed).stage is DocumentStage.INDEXED
+
+
+def test_reparse_action_restarts_ended_documents_from_the_parser(
+    bundle: StoreBundle, ingest_service: IngestService, seeded
+) -> None:
+    """``reparse`` 是**另一个动作**：退回 uploaded（从解析器重来），不是推回 chunking。
+
+    用真的 ``DocumentService``：阶段复位与"只收能回到 uploaded 的文档"这两条规则都在它身上。
+    """
+    from app.models.enums import TaskState
+    from app.services.documents import DocumentService
+
+    indexed, failed, running = seeded
+    # 跑在链路上、又没人给它的那份：状态机不允许它退回 uploaded（那由「重新处理」负责）
+    bundle.meta.update_document_stage(running, DocumentStage.PARSING)
+
+    items = _service(bundle, DocumentService(bundle, ingest=ingest_service)).run(
+        "kb_1", "reparse", [indexed, failed, running]
+    )
+    by_id = {item.document_id: item for item in items}
+
+    assert by_id[indexed].ok is True
+    assert by_id[failed].ok is True
+    # 跑到一半的逐条失败，且不带走其余两条
+    assert by_id[running].ok is False
+    assert "只有处理已结束" in (by_id[running].error or "")
+    assert bundle.meta.get_document(indexed).stage is DocumentStage.UPLOADED
+    assert bundle.meta.get_document(failed).stage is DocumentStage.UPLOADED
+    assert bundle.meta.get_document(running).stage is DocumentStage.PARSING
+    assert len(bundle.meta.list_tasks(TaskState.PENDING)) == 2

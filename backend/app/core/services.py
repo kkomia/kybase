@@ -430,7 +430,9 @@ def _build_graph(
     # 可观测性服务**先建**：文档列表的进度条要判"停滞"，而那个判据（租约还在不在续）
     # 与任务中心那一列必须是同一个结论，所以两处共用这一个实例
     observability = ObservabilityService(bundle, worker_lease_seconds=resolved.worker_lease_seconds)
-    documents_service = DocumentService(bundle, observability=observability)
+    # 文档服务要摄入服务来做「强制重新解析」的复位（清哪些产物是流水线的知识，
+    # 见 `IngestService.reset_for_reparse`）；上面那个实例先建，这里才能传进来
+    documents_service = DocumentService(bundle, observability=observability, ingest=ingest)
 
     # 数据源要往摄入队列里塞任务，所以依赖 DocumentService（入队）与
     # IngestService（登记）两者——它们分工不同，见 services/sources.py

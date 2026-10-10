@@ -8,7 +8,10 @@
 
 - **允许原地自转**（``X → X``）：断点续跑时任务可能重设同一状态，这不该算非法迁移；
 - **``failed`` 可以回到任意中间态**：实现"从失败的那一步续跑"，而不是整篇重来（架构 §4
-  "每步可重试、可断点续跑、失败定位到具体步骤"）。
+  "每步可重试、可断点续跑、失败定位到具体步骤"）；
+- **``indexed`` / ``failed`` / ``canceled`` 可以回到 ``uploaded``**：这是"强制重新解析"
+  ——从解析器开始整条流水线重跑一遍（退回的产物清理见
+  ``IngestService.reset_for_reparse``）。
 """
 
 from __future__ import annotations
@@ -59,21 +62,33 @@ ALLOWED_TRANSITIONS: dict[DocumentStage, frozenset[DocumentStage]] = {
     ),
     # 可选增强分支：从终态进入，默认关闭，失败不影响主链路（架构 §4、§11）
     #
-    # ``INDEXED → CHUNKING`` 是**"重新摄入"**：改完切分参数、或打开"分段出题"之后，
-    # 已入库的文档要重新切分 + 重新向量化才生效。回到 CHUNKING 而不是 UPLOADED——
-    # 后者会连解析一起重来，而解析可能是收费的云端服务（解析产物还在，
-    # `_reuse_parse_result` 会直接复用）。`_advance` 允许自转（CHUNKING → CHUNKING）。
+    # ``INDEXED → CHUNKING`` 是**"重新摄入"**（改完切分参数、或打开"分段出题"之后
+    # 要重新切分 + 重新向量化才生效），``INDEXED → UPLOADED`` 是**"重新解析"**
+    # （从解析器开始整条流水线重跑，见 ``IngestService.reset_for_reparse``）。
+    # 两者刻意分成两条路而不是一条：解析可能是收费的云端服务，所以"改了切分参数"
+    # 那种重跑默认不碰解析器——只有用户明确点「重新解析」时才回到 ``UPLOADED``。
+    # `_advance` 允许自转（CHUNKING → CHUNKING）。
     DocumentStage.INDEXED: frozenset(
-        {DocumentStage.CHUNKING, DocumentStage.ENRICHING, DocumentStage.FAILED}
+        {
+            DocumentStage.CHUNKING,
+            DocumentStage.UPLOADED,
+            DocumentStage.ENRICHING,
+            DocumentStage.FAILED,
+        }
     ),
     DocumentStage.ENRICHING: frozenset(
         {DocumentStage.ENRICHED, DocumentStage.FAILED, DocumentStage.CANCELED}
     ),
     DocumentStage.ENRICHED: frozenset({DocumentStage.FAILED}),
-    DocumentStage.FAILED: RETRYABLE_STAGES,
+    # ``UPLOADED`` 在可重试步骤之外：失败/取消后要让**解析器**重跑（而不是从
+    # 某一步续跑）时走这条（重新解析）。它也意味着旧产物必须先由调用方清干净——
+    # 阶段回到 ``uploaded`` 而 `parse_results` 还在，`_reuse_parse_result` 会跳过解析，
+    # 那就成了"点重新解析却没重新解析"。
+    DocumentStage.FAILED: RETRYABLE_STAGES | {DocumentStage.UPLOADED},
     # 取消后可以重新摄入：这不是"坏掉了"，只是"我不想让它继续了"。
-    # 允许直接回到四个可重试步骤，与 failed 同一条续跑语义。
-    DocumentStage.CANCELED: RETRYABLE_STAGES,
+    # 允许直接回到四个可重试步骤（与 failed 同一条续跑语义），或回到 ``uploaded``
+    # 从解析器重来。
+    DocumentStage.CANCELED: RETRYABLE_STAGES | {DocumentStage.UPLOADED},
 }
 """允许的迁移。
 

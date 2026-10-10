@@ -26,7 +26,7 @@ from app.models.enums import TERMINAL_STAGES, DataSourceKind, DocumentStage, Tas
 from app.parsers.base import ParseError, ParseResult, ParserProvider
 from app.parsers.media_direct import MediaDirectParser
 from app.parsers.probe import ProbeResult, probe, suffix_of
-from app.pipeline.state_machine import InvalidTransition, assert_transition
+from app.pipeline.state_machine import InvalidTransition, assert_transition, can_transition
 from app.services.chunking import ChunkingConfig, chunk_markdown, config_from_record
 from app.services.embedding.base import EmbeddingError, EmbeddingProvider
 from app.services.embedding.resolver import EmbeddingResolver
@@ -284,6 +284,57 @@ class IngestService:
         # 内容变了就是重新走一遍流水线：阶段推回 uploaded（走 update_document_stage
         # 而不是直接改列，这样时间线上会多一段"重新开始"的记录）
         self._stores.meta.update_document_stage(document_id, DocumentStage.UPLOADED)
+        return self._require_document(document_id)
+
+    # ------------------------------------------------------------------ 强制重新解析
+
+    def reset_for_reparse(self, document_id: str) -> DocumentRecord:
+        """把文档退回 ``uploaded`` 并清掉全部旧产物——「强制重新解析」的复位。
+
+        与 :meth:`replace` 的区别是**它不动原文**：这里复用的是同一份文件，
+        只是要求解析器重新跑一遍（换了引擎、上次解析结果不对、云端那次抽风了）。
+        所以原文对象**一个字节都不碰**（对象存储那份是内容 hash 寻址、跨库共享，
+        删它等于把别的库的文档一起弄坏），markdown 那份也不用删——下一轮解析同 key 覆写。
+
+        为什么要清产物：摄入是**按产物断点续跑**的（``_resume_stage`` +
+        ``_reuse_parse_result``）。留着 ``parse_results``，重解析入队后会被当成
+        "解析已完成"从切分开始——用户点了「重新解析」却什么都没重新解析。
+        每次清到与阶段一致：
+
+        - **向量 + 全文 + chunks**（``replace`` 那三件，缺一检索就会命中旧正文）；
+        - **子文件与 ``is_split``**：段数可能变少，旧段记录必须清（见
+          ``delete_document_parts`` 的说明）；
+        - **解析产物与摘要**：前者的存在会跳过解析，后者是旧正文的概括。
+
+        **有任务在跑时拒绝**：worker 正在旧产物上写东西，这时清掉会让新旧交叉
+        （它把刚算出来的块写回一个已经 reset 的文档）。与 ``replace`` 同一道闸。
+
+        **只从终态（已索引 / 失败 / 已取消）回得来**：还在跑的阶段不适用——
+        那由「重新处理」（``reprocess``，从切分续跑）负责；状态机里也只为
+        这三个阶段开了 ``→ uploaded``。
+        """
+        document = self._require_document(document_id)
+        if self._stores.meta.active_tasks_by_documents([document_id]):
+            raise ConflictError("这份文档正在处理中，请等它处理完再重新解析")
+        if not can_transition(document.stage, DocumentStage.UPLOADED):
+            raise ConflictError(
+                f"「{document.name}」当前处于 {document.stage.value}，"
+                "只有处理已结束（已索引 / 失败 / 已取消）的文档才能重新解析"
+            )
+
+        kb = self._require_kb(document.knowledge_base_id)
+        chunk_ids = [item.chunk_id for item in self._stores.meta.iter_chunks(document_id)]
+        if chunk_ids:
+            self._stores.vectors.delete_vectors(kb.id, chunk_ids=chunk_ids)
+            self._stores.fulltext.delete_chunks(chunk_ids)
+            self._stores.meta.replace_chunks(document_id, [])
+        self._stores.meta.delete_document_parts(document_id)
+        self._stores.meta.mark_document_split(document_id, False)
+        self._stores.meta.delete_parse_result(document_id)
+        self._stores.meta.update_document_summary(document_id, "")
+        # 阶段最后落：走 update_document_stage（时间线上多一段"重新开始"，与 replace 同一口径）
+        self._stores.meta.update_document_stage(document_id, DocumentStage.UPLOADED)
+        logger.info("文档 %s 已复位到 uploaded，等待重新解析", document_id)
         return self._require_document(document_id)
 
     # ------------------------------------------------------------------ 主链路

@@ -479,6 +479,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 强制重新解析（清掉产物，从解析器开始重跑）
+         * @description 把一份**已结束处理**的文档（已索引 / 失败 / 已取消）从解析器开始整条重跑。
+         *
+         *     与 ``/reprocess`` 的区别在于**要不要重调解析器**：
+         *
+         *     - ``/reprocess`` 推回 ``CHUNKING``——重切块 + 重向量，**复用**已有解析产物
+         *       （解析可能是收费的云端服务，改了切分参数不必重解析）；
+         *     - 这里退回 ``UPLOADED``，并**先清掉**切块 / 向量 / 全文索引 / 子文件 / 解析产物
+         *       / 摘要，所以这一趟真的会重新探测与解析（换了引擎、上次结果不对时用它）。
+         *       原文对象不动（内容 hash 寻址、跨库共享）。
+         *
+         *     **还在链路上跑的阶段不收**（探测 / 解析 / 切分 / 向量化）：那些由 ``/reprocess``
+         *     从当前阶段续跑，退回解析器既没必要、也会把别人正在写的产物清掉（409）。
+         *     登记了还没跑的（``uploaded``）收得下——对它来说这就是"开始处理"。
+         *
+         *     **有任务在跑时 409 而不是返回既有任务**：重解析会清产物，回一个既有任务 id
+         *     会让调用方以为"重新解析已经排上了"，而实际上什么都没发生。
+         */
+        post: operations["reparse_document_api_v1_documents__document_id__reparse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/preview": {
         parameters: {
             query?: never;
@@ -554,6 +589,58 @@ export interface paths {
          *     （踩过：详情页一打开就下载 PDF）。
          */
         get: operations["download_document_content_api_v1_documents__document_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按页范围取原文（解析文字 + 页图签名链接）
+         * @description 一次给出一段页范围的**文字**，以及（可选）这些页**原图的签名链接**。
+         *
+         *     ``images=false`` 时不签发任何链接（三个 image 字段都是 null）：页图要现场渲染，
+         *     不需要图的人不该为它买单。**超出文档总页数的页也不签**——签出来的链接必然 404。
+         *
+         *     **没有页码信息时不报错**：``page_text_available=false``，``pages`` 里每页的
+         *     ``text`` 是空串。界面据此如实显示"这份文档没有页码信息"，而不是显示一个错误。
+         */
+        get: operations["document_pages_api_v1_documents__document_id__pages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/pages/{page}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按签名取某一页的原图（PNG）
+         * @description 某一页的图。**刻意不挂 ``require_read``**：这个 URL 要能塞进 ``<img src>``，
+         *     而图片请求带不了 Authorization 头。授权凭据是 URL 里的签名，签名绑死了
+         *     "哪个文档的哪一页"（见 ``page_image_resource``）——这比"任何人都能按 id 取图"
+         *     窄得多，而后者就是"不签名"的代价。
+         *
+         *     用 ``Response`` 而不是 ``FileResponse``：内容是渲染进内存的字节，没有磁盘路径
+         *     可给（同 ``/content`` 那条：``FileResponse`` 只接受路径）。
+         */
+        get: operations["document_page_image_api_v1_documents__document_id__pages__page__image_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2034,7 +2121,8 @@ export interface components {
         };
         /**
          * DocumentBatchIn
-         * @description 批量动作：``delete``（进回收站）、``reprocess``（重新摄入）、``move``（移目录）、
+         * @description 批量动作：``delete``（进回收站）、``reprocess``（重新摄入）、``reparse``
+         *     （强制重新解析：连解析器一起重跑）、``move``（移目录）、
          *     ``enable`` / ``disable``（停用或恢复检索）或 ``questions``（为已索引文档补生成分段问题）。
          *
          *     ``document_ids`` 设上限而不是"随便多少"：一次勾几千篇会把请求体、逐条查询
@@ -2049,7 +2137,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "delete" | "reprocess" | "move" | "enable" | "disable" | "questions";
+            action: "delete" | "reprocess" | "reparse" | "move" | "enable" | "disable" | "questions";
             /** Document Ids */
             document_ids?: string[];
             /** Folder Id */
@@ -2214,6 +2302,79 @@ export interface components {
              *     ``GET /documents/{id}/timeline``。``None`` = 这条路径没算（老调用点）。
              */
             progress?: components["schemas"]["DocumentProgressOut"] | null;
+        };
+        /**
+         * DocumentPageOut
+         * @description 一段页范围里的一页。
+         *
+         *     ``image_*`` 三个字段是一组：要么都有，要么都是 ``None``。三种情况会给 ``None``：
+         *     请求里 ``images=false``、这份原件不能按页出图（Office / 纯文本 / SVG），
+         *     或者这一页已经超出文档总页数。分开判它们没有意义——``image_url`` 有而
+         *     ``image_kind`` 为 None 只会让界面不知道该拿它怎么办。
+         *
+         *     **这几个字段都不要默认值**（全部必填、可空）：生成的 TS 类型里它们就是
+         *     ``string | null`` 而不是 ``string | undefined``，界面不用再分"没给"与"给了个空"。
+         */
+        DocumentPageOut: {
+            /**
+             * Page
+             * @description 页码（从 1 开始）。与请求的范围一一对应，**没有正文的页也在列表里**。
+             */
+            page: number;
+            /**
+             * Text
+             * @description 这一页的解析文字（已去掉内部页标记）。空串表示这一页没有正文。
+             */
+            text: string;
+            /**
+             * Image Url
+             * @description 这一页原图的签名链接（相对路径，可直接塞进 ``<img src>``）。
+             */
+            image_url: string | null;
+            /**
+             * Image Expires At
+             * @description 上面那条链接的到期时间戳（Unix 秒）。
+             */
+            image_expires_at: number | null;
+            /**
+             * Image Kind
+             * @description 这张图的来源：``pdf``（原件是 PDF，服务端栅格化）或 ``image``（原件本身就是图）。
+             */
+            image_kind: string | null;
+        };
+        /**
+         * DocumentPagesOut
+         * @description 按页范围取原文的结果。
+         *
+         *     ``pages`` 的长度**恒等于**请求的页数（``to_page - from_page + 1``）：
+         *     界面按请求的页数铺格子，缺哪一页会让"第几页对不上"。
+         */
+        DocumentPagesOut: {
+            /** Document Id */
+            document_id: string;
+            /** From Page */
+            from_page: number;
+            /** To Page */
+            to_page: number;
+            /**
+             * Total Pages
+             * @description 文档总页数（探测阶段写入）。``None`` 表示探测没给出页数——不代表只有一页。
+             */
+            total_pages: number | null;
+            /**
+             * Page Text Available
+             * @description 这份文档的解析产物里有没有页码信息。``false`` 时每页 ``text`` 都是空串，
+             *     界面要如实说"这份文档没有页码信息"，而不是显示成文档是空的。
+             */
+            page_text_available: boolean;
+            /**
+             * Truncated
+             * @description 请求的页范围超出了文档总页数（``to_page > total_pages``）。多出来的那几页
+             *     注定是空的（也不会签图片链接），界面据此收住而不是一直往后翻。
+             */
+            truncated: boolean;
+            /** Pages */
+            pages: components["schemas"]["DocumentPageOut"][];
         };
         /** DocumentPartList */
         DocumentPartList: {
@@ -5495,6 +5656,39 @@ export interface operations {
             };
         };
     };
+    reparse_document_api_v1_documents__document_id__reparse_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_document_api_v1_documents__document_id__preview_get: {
         parameters: {
             query?: {
@@ -5593,6 +5787,83 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_pages_api_v1_documents__document_id__pages_get: {
+        parameters: {
+            query: {
+                /** @description 起始页（含）。从 1 开始 */
+                from_page?: number;
+                /** @description 结束页（含）。与起始页之间最多 50 页 */
+                to_page: number;
+                /** @description 是否一并签发这些页的原图链接 */
+                images?: boolean;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPagesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_page_image_api_v1_documents__document_id__pages__page__image_get: {
+        parameters: {
+            query: {
+                /** @description 签发时给出的到期时间戳 */
+                expires: number;
+                /** @description 签发时给出的签名 */
+                signature: string;
+            };
+            header?: never;
+            path: {
+                document_id: string;
+                page: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 该页的图片 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

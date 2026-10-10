@@ -342,7 +342,8 @@ class DocumentDisabledIn(BaseModel):
 
 
 class DocumentBatchIn(BaseModel):
-    """批量动作：``delete``（进回收站）、``reprocess``（重新摄入）、``move``（移目录）、
+    """批量动作：``delete``（进回收站）、``reprocess``（重新摄入）、``reparse``
+    （强制重新解析：连解析器一起重跑）、``move``（移目录）、
     ``enable`` / ``disable``（停用或恢复检索）或 ``questions``（为已索引文档补生成分段问题）。
 
     ``document_ids`` 设上限而不是"随便多少"：一次勾几千篇会把请求体、逐条查询
@@ -353,7 +354,7 @@ class DocumentBatchIn(BaseModel):
     界面不必先翻页取 id 再回传（那个列表接口一次回全量，本身就是瓶颈）。
     """
 
-    action: Literal["delete", "reprocess", "move", "enable", "disable", "questions"]
+    action: Literal["delete", "reprocess", "reparse", "move", "enable", "disable", "questions"]
     document_ids: list[str] = Field(default_factory=list, max_length=500)
     folder_id: str | None = None
     """``move`` 的目标目录；``None`` 表示移回根目录。其它动作忽略此字段。"""
@@ -395,6 +396,56 @@ class DocumentPartOut(BaseModel):
 
 class DocumentPartList(BaseModel):
     items: list[DocumentPartOut]
+
+
+class DocumentPageOut(BaseModel):
+    """一段页范围里的一页。
+
+    ``image_*`` 三个字段是一组：要么都有，要么都是 ``None``。三种情况会给 ``None``：
+    请求里 ``images=false``、这份原件不能按页出图（Office / 纯文本 / SVG），
+    或者这一页已经超出文档总页数。分开判它们没有意义——``image_url`` 有而
+    ``image_kind`` 为 None 只会让界面不知道该拿它怎么办。
+
+    **这几个字段都不要默认值**（全部必填、可空）：生成的 TS 类型里它们就是
+    ``string | null`` 而不是 ``string | undefined``，界面不用再分"没给"与"给了个空"。
+    """
+
+    # 字段下面那几段说明要进 OpenAPI（进而进前端生成的类型）：客户端认的就是这份契约
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    page: int
+    """页码（从 1 开始）。与请求的范围一一对应，**没有正文的页也在列表里**。"""
+    text: str
+    """这一页的解析文字（已去掉内部页标记）。空串表示这一页没有正文。"""
+    image_url: str | None
+    """这一页原图的签名链接（相对路径，可直接塞进 ``<img src>``）。"""
+    image_expires_at: int | None
+    """上面那条链接的到期时间戳（Unix 秒）。"""
+    image_kind: str | None
+    """这张图的来源：``pdf``（原件是 PDF，服务端栅格化）或 ``image``（原件本身就是图）。"""
+
+
+class DocumentPagesOut(BaseModel):
+    """按页范围取原文的结果。
+
+    ``pages`` 的长度**恒等于**请求的页数（``to_page - from_page + 1``）：
+    界面按请求的页数铺格子，缺哪一页会让"第几页对不上"。
+    """
+
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    document_id: str
+    from_page: int
+    to_page: int
+    total_pages: int | None
+    """文档总页数（探测阶段写入）。``None`` 表示探测没给出页数——不代表只有一页。"""
+    page_text_available: bool
+    """这份文档的解析产物里有没有页码信息。``false`` 时每页 ``text`` 都是空串，
+    界面要如实说"这份文档没有页码信息"，而不是显示成文档是空的。"""
+    truncated: bool
+    """请求的页范围超出了文档总页数（``to_page > total_pages``）。多出来的那几页
+    注定是空的（也不会签图片链接），界面据此收住而不是一直往后翻。"""
+    pages: list[DocumentPageOut]
 
 
 class ChunkOut(BaseModel):

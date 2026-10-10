@@ -554,6 +554,46 @@ def reprocess_document(
     )
 
 
+@router.post(
+    "/documents/{document_id}/reparse",
+    response_model=UploadAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="强制重新解析（清掉产物，从解析器开始重跑）",
+)
+def reparse_document(
+    document_id: str,
+    services: Services = Depends(get_services),
+    caller: Caller = Depends(require_write),
+) -> UploadAccepted:
+    """把一份**已结束处理**的文档（已索引 / 失败 / 已取消）从解析器开始整条重跑。
+
+    与 ``/reprocess`` 的区别在于**要不要重调解析器**：
+
+    - ``/reprocess`` 推回 ``CHUNKING``——重切块 + 重向量，**复用**已有解析产物
+      （解析可能是收费的云端服务，改了切分参数不必重解析）；
+    - 这里退回 ``UPLOADED``，并**先清掉**切块 / 向量 / 全文索引 / 子文件 / 解析产物
+      / 摘要，所以这一趟真的会重新探测与解析（换了引擎、上次结果不对时用它）。
+      原文对象不动（内容 hash 寻址、跨库共享）。
+
+    **还在链路上跑的阶段不收**（探测 / 解析 / 切分 / 向量化）：那些由 ``/reprocess``
+    从当前阶段续跑，退回解析器既没必要、也会把别人正在写的产物清掉（409）。
+    登记了还没跑的（``uploaded``）收得下——对它来说这就是"开始处理"。
+
+    **有任务在跑时 409 而不是返回既有任务**：重解析会清产物，回一个既有任务 id
+    会让调用方以为"重新解析已经排上了"，而实际上什么都没发生。
+    """
+    _guard_document(services, caller, document_id, need=WRITE)
+    task = services.documents.enqueue_ingest(document_id, restart=True)
+    # 与 /reprocess 同理：复位已经把阶段推回 uploaded，拿入队前那份快照回给前端
+    # 会显示成"还是 indexed"，用户会以为点了没反应
+    document = services.documents.get(document_id)
+    return UploadAccepted(
+        document=document_out(services, document),
+        is_duplicate=False,
+        task_id=task.id,
+    )
+
+
 # --------------------------------------------------------------------- 下载与阅读（T4.5 / G2）
 
 

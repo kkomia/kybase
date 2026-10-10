@@ -35,6 +35,7 @@ from app.api.v1 import (
     lifecycle,
     maintenance,
     model_registry,
+    pages,
     provider,
     search,
     shares,
@@ -54,6 +55,9 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
 api_router.include_router(knowledge_bases.router)
 api_router.include_router(documents.router)
+# 按页取原文（文字 + 页图）：列表要鉴权，页图本体只认签名——`<img src>` 带不了
+# Authorization 头，与 `/documents/{id}/content` 同一个理由（见 api/v1/pages.py）
+api_router.include_router(pages.router)
 api_router.include_router(folders.router)
 api_router.include_router(search.router)
 # 知识库提供者握手（M3 阶段 1）：这个服务**就是**提供者，所以这一族是它的家。

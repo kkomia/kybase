@@ -23,6 +23,7 @@ from app.core.page_markers import strip_page_markers
 from app.core.signing import DEFAULT_TTL_SECONDS, sign_resource
 from app.models.enums import DocumentStage, TaskKind, TaskState
 from app.pipeline.state_machine import can_transition
+from app.services.ingest import IngestService
 from app.services.observability import ObservabilityService
 from app.services.timeline import DocumentProgress, DocumentTimeline, build_timeline, progress_of
 from app.storage.base import (
@@ -141,12 +142,17 @@ class DocumentService:
         stores: StoreBundle,
         *,
         observability: ObservabilityService | None = None,
+        ingest: IngestService | None = None,
     ) -> None:
         self._stores = stores
         # "停滞"这一档必须与任务中心用**同一个判据**（租约还在不在续），所以注入
         # 可观测性服务而不是自己比时间戳——两套阈值就是同一件事有两种说法。
         # 不给（手工构造的测试）就退化成"不判停滞"，其余字段照常。
         self._observability = observability
+        #: 摄入服务（可选）。只在「强制重新解析」那条路上用到：复位（清产物 + 退回
+        #: uploaded）是摄入流水线的知识，"清哪些东西"住在 ``IngestService`` 里，
+        #: 这里只负责"复位之后再入队"这个顺序。不给时那条路明确报错，其余照常。
+        self._ingest = ingest
 
     # ------------------------------------------------------------------ 文档
 
@@ -531,7 +537,12 @@ class DocumentService:
     # ------------------------------------------------------------------ 任务
 
     def enqueue_ingest(
-        self, document_id: str, *, kind: TaskKind = TaskKind.PARSE, force: bool = False
+        self,
+        document_id: str,
+        *,
+        kind: TaskKind = TaskKind.PARSE,
+        force: bool = False,
+        restart: bool = False,
     ) -> TaskRecord:
         """把文档排进摄入队列。
 
@@ -547,9 +558,25 @@ class DocumentService:
 
         回到 ``CHUNKING``（而不是 ``UPLOADED``）：重新切分 + 重新向量化，
         **不重新解析**——解析可能是收费的云端服务，而解析产物还在库里。
+
+        ``restart=True`` 是**强制重新解析**：把产物清空、阶段退回 ``UPLOADED``
+        （见 ``IngestService.reset_for_reparse``），于是这一趟从**解析器**开始。
+        **与 ``force`` 的两点不同**：
+
+        - 它用在**已结束**的文档上（已索引 / 失败 / 已取消），所以不做
+          ``indexed 必须带 force`` 那道拦阻；
+        - 有任务在跑时**不返回既有任务，而是抛冲突**：重解析会清产物，
+          静默返回一个既有任务等于告诉调用方"已经给你重解析了"——而什么都没发生。
         """
         document = self.get(document_id)
-        if document.stage is DocumentStage.INDEXED and not force:
+        if restart:
+            # 复位（含并发闸 + 阶段推回 uploaded）**必须在入队之前**：worker 那边
+            # 只按阶段跑，入队后才发现"还没复位"就晚了（它会当成一次普通续跑）。
+            if self._ingest is None:
+                raise RuntimeError("摄入服务未接线，无法强制重新解析")
+            self._ingest.reset_for_reparse(document_id)
+            document = self.get(document_id)
+        elif document.stage is DocumentStage.INDEXED and not force:
             raise ConflictError(f"文档 {document_id} 已索引完成；如需重跑请带 force=true")
 
         existing = self._find_active_task(document_id, kind)

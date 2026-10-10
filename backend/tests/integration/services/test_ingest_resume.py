@@ -2,16 +2,17 @@
 
 import pytest
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.models.enums import DataSourceKind, DocumentStage
-from app.parsers.base import ParseError
+from app.parsers.base import ParseError, ParseResult
 from app.parsers.plain_text import PlainTextParser
 from app.services.chunking import ChunkingConfig
+from app.services.documents import DocumentService
 from app.services.embedding.deterministic import DeterministicEmbedder
 from app.services.ingest import IngestError, IngestService, _before
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.parser_router import ParserRouter
-from app.storage.base import DocumentRecord, StoreBundle
+from app.storage.base import DocumentPartRecord, DocumentRecord, StoreBundle
 
 DIM = 16
 CONTENT = "# 标题\n\n一段足够长的正文，用于产生至少一个 chunk。\n"
@@ -181,3 +182,191 @@ def test_ingest_error_carries_document_and_stage(ingest_service: IngestService, 
     error = excinfo.value
     assert getattr(error, "document_id", None) == outcome.document.id
     assert getattr(error, "stage", None) == "parsing"
+
+
+# --------------------------------------------------------------- 强制重新解析
+
+
+class _CountingParser(PlainTextParser):
+    """记着"被调用了几次"的直通解析器，并把次数写进产物。
+
+    计数比"有没有换过 markdown"更直接：只要解析器没被再调一次，次数就不动。
+    次数写进 markdown 是为了顺带证明**产物真的被重写了**（覆写同一份
+    ``markdown/{id}.md``），而不只是"阶段来回走了一趟"。
+    """
+
+    name = "CountingParser"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def parse(self, *, content, filename, mime_type=None, probe=None):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        inner = super().parse(content=content, filename=filename, mime_type=mime_type, probe=probe)
+        return ParseResult(
+            markdown=f"{inner.markdown}\n第 {self.calls} 次解析。\n",
+            parser_name=self.name,
+            page_count=inner.page_count,
+            probe=probe,
+        )
+
+
+@pytest.fixture
+def counting_parser() -> _CountingParser:
+    return _CountingParser()
+
+
+@pytest.fixture
+def counting_service(
+    bundle: StoreBundle, embedder: DeterministicEmbedder, counting_parser: _CountingParser
+) -> IngestService:
+    return IngestService(
+        bundle,
+        router=ParserRouter([counting_parser]),
+        embedder=embedder,
+        chunk_config=ChunkingConfig(size=64, overlap=8),
+    )
+
+
+def _parse_markdown(bundle: StoreBundle, document_id: str) -> str:
+    parsed = bundle.meta.get_parse_result(document_id)
+    assert parsed is not None
+    return bundle.objects.read(parsed.markdown_path).decode("utf-8")
+
+
+def test_reparse_really_calls_the_parser_again(
+    bundle: StoreBundle, counting_service: IngestService, counting_parser: _CountingParser, kb
+) -> None:
+    """**重新解析必须真的重调解析器**——这正是它与「重新摄入」的分界。
+
+    修之前那条路（force）只把阶段推回 CHUNKING，`_reuse_parse_result` 看到
+    `parse_results` 还在就直接复用——换了引擎再点一次，解析结果一个字节都不会变。
+    """
+    outcome = counting_service.submit(
+        knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode()
+    )
+    document_id = outcome.document.id
+    counting_service.ingest(document_id)
+    assert counting_parser.calls == 1
+    assert "第 1 次解析" in _parse_markdown(bundle, document_id)
+
+    documents = DocumentService(bundle, ingest=counting_service)
+    documents.enqueue_ingest(document_id, restart=True)
+    # 复位落在入队之前：worker 只看阶段，阶段没退回去就只是一次普通续跑
+    assert bundle.meta.get_document(document_id).stage is DocumentStage.UPLOADED
+
+    counting_service.ingest(document_id)
+
+    assert counting_parser.calls == 2, "重新解析没有重调解析器"
+    assert "第 2 次解析" in _parse_markdown(bundle, document_id)
+
+
+def test_reparse_clears_every_old_product(
+    bundle: StoreBundle, counting_service: IngestService, kb
+) -> None:
+    """旧产物必须**清干净**，否则重新索引完成之前检索会同时命中新旧两版。
+
+    清五处：向量（检索）、全文索引（检索）、chunks（抽屉与扩读读它）、
+    解析产物（留着它会跳过解析）、子文件与 is_split（段数可能变少）。
+    **原文不能删**：key 是内容 hash 寻址、跨库共享，删它等于弄坏别人的文档。
+    """
+    outcome = counting_service.submit(
+        knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode()
+    )
+    document_id = outcome.document.id
+    counting_service.ingest(document_id)
+
+    # 纯文本不会产生子文件树，这两样手工造出来（它们同样是"旧产物"）
+    bundle.meta.create_document_parts(
+        [
+            DocumentPartRecord(
+                id=f"{document_id}#part000",
+                document_id=document_id,
+                part_index=0,
+                page_start=1,
+                page_end=10,
+                stage=DocumentStage.PARSING,
+            )
+        ]
+    )
+    bundle.meta.mark_document_split(document_id)
+    bundle.meta.update_document_summary(document_id, "旧正文的概括")
+    original_path = bundle.meta.get_setting(f"document.{document_id}.original_path")
+    query_vector = DeterministicEmbedder(dim=DIM).embed(["标题"])[0]
+
+    # 前置：这些产物现在真的都在（否则下面的断言等于在测空气）
+    assert bundle.meta.count_chunks(document_id) > 0
+    assert bundle.fulltext.search(query="正文", top_k=5, kb_id=kb.id)
+    assert bundle.vectors.search(kb.id, query_vector=query_vector, top_k=5)
+    assert bundle.meta.get_parse_result(document_id) is not None
+    assert bundle.meta.list_document_parts(document_id)
+    assert bundle.meta.get_document(document_id).is_split is True
+
+    counting_service.reset_for_reparse(document_id)
+
+    assert bundle.meta.count_chunks(document_id) == 0
+    assert list(bundle.meta.iter_chunks(document_id)) == []
+    assert bundle.fulltext.search(query="正文", top_k=5, kb_id=kb.id) == []
+    assert bundle.vectors.search(kb.id, query_vector=query_vector, top_k=5) == []
+    assert bundle.meta.get_parse_result(document_id) is None
+    assert bundle.meta.list_document_parts(document_id) == []
+    reset = bundle.meta.get_document(document_id)
+    assert reset.is_split is False
+    assert reset.summary == ""
+    assert reset.stage is DocumentStage.UPLOADED
+    assert reset.error is None
+    # 原文原封不动：接下来的解析读的就是它
+    assert bundle.meta.get_setting(f"document.{document_id}.original_path") == original_path
+    assert bundle.objects.read(original_path) == CONTENT.encode()
+
+
+def test_reparse_then_ingest_reaches_indexed_and_is_searchable_again(
+    bundle: StoreBundle, counting_service: IngestService, kb
+) -> None:
+    """重解析之后整条链路要能再走一遍，并且重新可检索——阶段回到 uploaded 只是开始。"""
+    outcome = counting_service.submit(
+        knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode()
+    )
+    document_id = outcome.document.id
+    counting_service.ingest(document_id)
+
+    DocumentService(bundle, ingest=counting_service).enqueue_ingest(document_id, restart=True)
+    result = counting_service.ingest(document_id)
+
+    assert result.document.stage is DocumentStage.INDEXED
+    assert result.chunk_count > 0
+    assert bundle.meta.get_parse_result(document_id) is not None
+    assert bundle.vectors.search(
+        kb.id, query_vector=DeterministicEmbedder(dim=DIM).embed(["标题"])[0], top_k=5
+    )
+    assert bundle.fulltext.search(query="正文", top_k=5, kb_id=kb.id)
+
+
+def test_reparse_refuses_while_a_task_is_still_queued(
+    bundle: StoreBundle, counting_service: IngestService, kb
+) -> None:
+    """有任务在跑时必须拒绝，**不能返回既有任务**：复位会清产物，静默返回就是撒谎。"""
+    outcome = counting_service.submit(
+        knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode()
+    )
+    document_id = outcome.document.id
+    documents = DocumentService(bundle, ingest=counting_service)
+    documents.enqueue_ingest(document_id)  # 排队中的摄入任务（测试里没有 worker 领它）
+
+    with pytest.raises(ConflictError, match="处理中"):
+        documents.enqueue_ingest(document_id, restart=True)
+
+
+def test_reparse_is_refused_from_a_stage_that_is_still_in_flight(
+    bundle: StoreBundle, counting_service: IngestService, kb
+) -> None:
+    """跑到一半的阶段不适用「重新解析」（那由「重新处理」负责从切分续跑）。"""
+    outcome = counting_service.submit(
+        knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode()
+    )
+    document_id = outcome.document.id
+    counting_service._probe_and_parse(bundle.meta.get_document(document_id))
+    assert bundle.meta.get_document(document_id).stage is DocumentStage.PARSED
+
+    with pytest.raises(ConflictError, match="只有处理已结束"):
+        counting_service.reset_for_reparse(document_id)
