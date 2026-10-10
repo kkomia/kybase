@@ -91,6 +91,8 @@ _PARAMS: dict[str, tuple[str, ...]] = {
     "list_documents": ("knowledge_base_id", "query", "limit"),
     "get_document_status": ("document_id",),
     "get_document_content": ("document_id", "format"),
+    "get_document_pages": ("document_id", "from_page", "to_page"),
+    "reparse_document": ("document_id",),
     "delete_document": ("document_id",),
 }
 

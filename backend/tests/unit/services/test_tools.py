@@ -893,6 +893,7 @@ def test_every_tool_has_catalog_metadata() -> None:
         "create_knowledge_base",
         "upload_document",
         "add_data_source",
+        "reparse_document",
         "delete_document",
     }
 
@@ -932,6 +933,345 @@ def test_delete_unknown_document_raises(services: Services, admin: Caller) -> No
         call_tool(services, "delete_document", {"document_id": "doc_不存在"}, caller=admin)
 
 
+# ------------------------------------------- 按页取原文 / 强制重新解析（v0.64）
+
+
+#: 带页标记的解析产物（形状与真实产物一致：标记独占一行，第 3 页是空的）
+PAGED_MARKDOWN = """<!-- page:1 -->
+# 眼轴共识
+
+第一页正文。
+
+<!-- page:2 -->
+## 测量
+
+第二页正文。
+
+<!-- page:3 -->
+
+<!-- page:4 -->
+第四页正文。
+"""
+
+
+def _attach_parsed_markdown(
+    services: Services, document_id: str, markdown: str, *, page_count: int | None
+) -> None:
+    """把一份解析产物挂到文档上（测试与 app 同进程，直达存储造状态）。
+
+    走真实摄入链路造不出"第 3 页是空的""产物里没有标记"这些输入，而它们正是
+    "按页取原文"要回答的边界（同 ``tests/integration/api/test_pages_api.py``）。
+    """
+    from app.storage.base import ParseResultRecord
+
+    stores = services.auth._stores
+    path = stores.objects.write(f"markdown/{document_id}.md", markdown.encode("utf-8"))
+    stores.meta.save_parse_result(
+        ParseResultRecord(
+            document_id=document_id,
+            part_id=None,
+            parser_name="fake-parser",
+            markdown_path=path,
+        )
+    )
+    if page_count is not None:
+        stores.meta.update_document_page_count(document_id, page_count)
+
+
+def _paged_document(services: Services, kb: str, *, filename: str = "指南.pdf") -> str:
+    """一份四页、带页标记的文档（第 3 页没有正文）。"""
+    document_id = _upload_markdown(services, kb, filename=filename)
+    _attach_parsed_markdown(services, document_id, PAGED_MARKDOWN, page_count=4)
+    return document_id
+
+
+def test_get_document_pages_slices_the_requested_range(services: Services, kb: str) -> None:
+    """要哪几页给哪几页，且**内部页标记不漏出去**（与 ``/preview`` 同一条口径）。"""
+    document_id = _paged_document(services, kb)
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "from_page": 1, "to_page": 2},
+        caller=Caller(is_admin=True),
+    )
+
+    assert result["document_id"] == document_id
+    assert result["name"] == "指南.pdf"
+    assert (result["from_page"], result["to_page"]) == (1, 2)
+    assert result["total_pages"] == 4
+    assert result["page_text_available"] is True
+    assert [item["page"] for item in result["pages"]] == [1, 2]
+    assert "第一页正文" in result["pages"][0]["text"]
+    assert "第二页正文" not in result["pages"][0]["text"]
+    assert "第二页正文" in result["pages"][1]["text"]
+    assert all("<!--" not in item["text"] for item in result["pages"])
+    # 没超总页数就不该有 truncated 这个键（与 get_document_content 同一条取舍：
+    # 它出现本身就是"这一段是残的"的信号）
+    assert "truncated" not in result
+    assert "note" not in result
+
+
+def test_an_empty_page_in_the_middle_is_listed(services: Services, kb: str) -> None:
+    """第 3 页在两个标记之间什么都没有：仍然出条目、文字为空串。
+
+    "这一页没有正文"与"这一页不存在"是两件事——少一条会让页码对不上。
+    """
+    document_id = _paged_document(services, kb)
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "from_page": 3, "to_page": 4},
+        caller=Caller(is_admin=True),
+    )
+
+    assert [item["page"] for item in result["pages"]] == [3, 4]
+    assert result["pages"][0]["text"] == ""
+    assert "第四页正文" in result["pages"][1]["text"]
+
+
+def test_from_page_defaults_to_page_one(services: Services, kb: str) -> None:
+    """``from_page`` 是可选的那一个：只说"到第 2 页"时从第 1 页起（与 REST 同口径）。"""
+    document_id = _paged_document(services, kb)
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "to_page": 2},
+        caller=Caller(is_admin=True),
+    )
+
+    assert result["from_page"] == 1
+    assert [item["page"] for item in result["pages"]] == [1, 2]
+
+
+def test_a_range_beyond_the_document_is_flagged(services: Services, kb: str) -> None:
+    """超出总页数：条目照给（按请求的页数铺格子），但要标出这是被截住的。"""
+    document_id = _paged_document(services, kb)
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "from_page": 1, "to_page": 9},
+        caller=Caller(is_admin=True),
+    )
+
+    assert len(result["pages"]) == 9
+    assert result["truncated"] is True
+    assert [item["text"] for item in result["pages"][4:]] == ["", "", "", "", ""]
+
+
+def test_without_page_markers_it_says_so_instead_of_failing(services: Services, kb: str) -> None:
+    """**没有页码信息不是错误**：``page_text_available=false`` + 一句说明。
+
+    纯文本类文档（.md / .txt）本来就没有页——报错会把"界面该说明的事"变成
+    "像是后端坏了"，而空文字不加说明又像是"这份文档是空的"。
+    """
+    document_id = _upload_markdown(services, kb, filename="说明.md")
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "from_page": 1, "to_page": 2},
+        caller=Caller(is_admin=True),
+    )
+
+    assert result["page_text_available"] is False
+    assert result["total_pages"] is None
+    assert [item["page"] for item in result["pages"]] == [1, 2]
+    assert [item["text"] for item in result["pages"]] == ["", ""]
+    assert "没有页码信息" in result["note"]
+
+
+@pytest.mark.parametrize(
+    ("from_page", "to_page", "expected"),
+    [
+        (0, 2, "从 1 开始"),
+        (5, 3, "不能小于起始页"),
+        (1, 51, "50"),
+    ],
+)
+def test_an_impossible_page_range_is_rejected_in_chinese(
+    services: Services, kb: str, from_page: int, to_page: int, expected: str
+) -> None:
+    """范围给错要**说清哪一条不对**（中文报错来自服务层的那三条规则，这里不另写一套）。"""
+    document_id = _paged_document(services, kb)
+
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(
+            services,
+            "get_document_pages",
+            {"document_id": document_id, "from_page": from_page, "to_page": to_page},
+            caller=Caller(is_admin=True),
+        )
+
+    assert expected in str(excinfo.value)
+
+
+def test_get_document_pages_respects_kb_scope(services: Services, kb: str, key_for) -> None:  # type: ignore[no-untyped-def]
+    """别的库里的文档，页文字也够不到——与读正文同一个闸（``_document_or_403``）。"""
+    document_id = _paged_document(services, kb)
+    other = services.knowledge_bases.create(
+        kb_id=f"kb_{uuid.uuid4().hex[:12]}", name="别人的库"
+    ).id
+
+    with pytest.raises(ForbiddenError):
+        call_tool(
+            services,
+            "get_document_pages",
+            {"document_id": document_id, "to_page": 1},
+            caller=key_for(kb_ids=[other]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("base_url", "secret", "expected"),
+    [
+        ("http://192.168.31.18:8081", "sign-me", True),
+        ("http://192.168.31.18:8081", "", False),
+        ("", "sign-me", False),
+    ],
+)
+def test_page_image_url_needs_both_a_secret_and_a_public_base(
+    services: Services,
+    kb: str,
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+    secret: str,
+    expected: bool,
+) -> None:
+    """页图链接同样**两个条件缺一不可**（有签名密钥、且知道对外基址）。
+
+    与 ``download_url`` 那条的区别只在缺了给什么：那里整份内容都不给，这里**文字照给**、
+    只是少一个可选的 ``image_url``——一个可选的一半不该让整次调用失败。
+    """
+    from app.core.config import get_settings
+
+    document_id = _paged_document(services, kb)
+    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", base_url)
+    monkeypatch.setenv("KYLAB_URL_SIGNING_SECRET", secret)
+    get_settings.cache_clear()
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "to_page": 1},
+        caller=Caller(is_admin=True),
+    )
+
+    if not expected:
+        assert "image_url" not in result["pages"][0]
+        assert "image_kind" not in result
+        assert result["pages"][0]["text"], "图给不出来不该把文字也一起丢掉"
+        return
+
+    # 拼出来的必须是**真能用**的那一条：绝对地址 + 页图端点 + 一组能过验签的参数。
+    # 只断言"字符串里有 signature=" 的话，一条拿错密钥、或把页号签错的链接照样能过。
+    from urllib.parse import parse_qs, urlparse
+
+    from app.core.signing import verify_resource
+    from app.services.document_pages import page_image_resource
+
+    parsed = urlparse(result["pages"][0]["image_url"])
+    query = parse_qs(parsed.query)
+    assert parsed.netloc == urlparse(base_url).netloc
+    assert parsed.path == f"/api/v1/documents/{document_id}/pages/1/image"
+    assert result["image_kind"] == "pdf"
+    verify_resource(
+        page_image_resource(document_id, 1),
+        query["signature"][0],
+        int(query["expires"][0]),
+        secret,
+    )
+
+
+def test_a_document_without_real_pages_gets_no_image_url(
+    services: Services, kb: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """纯文本 / Office 没有"页"可切：**不签链接**（否则调用方会去取一片必然失败的图）。"""
+    from app.core.config import get_settings
+
+    document_id = _upload_markdown(services, kb, filename="说明.md")
+    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", "http://192.168.31.18:8081")
+    monkeypatch.setenv("KYLAB_URL_SIGNING_SECRET", "sign-me")
+    get_settings.cache_clear()
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "to_page": 1},
+        caller=Caller(is_admin=True),
+    )
+
+    assert "image_url" not in result["pages"][0]
+    assert "image_kind" not in result
+
+
+def _indexed_document(services: Services, kb: str) -> str:
+    """一份**已索引、且队列里没有任务**的文档。
+
+    刻意不走 MCP 的 ``upload_document``：它会排一个摄入任务，而测试里没有 worker 领它
+    ——那个任务会让"有任务在跑"那道闸把重新解析挡下来（用例要的是成功那条路）。
+    """
+    outcome = services.ingest.submit(
+        knowledge_base_id=kb, filename="待重解析.md", content=MARKDOWN.encode()
+    )
+    services.ingest.ingest(outcome.document.id)
+    return outcome.document.id
+
+
+def test_reparse_document_resets_the_stage_and_enqueues(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """重新解析 = 清产物 + 退回 uploaded + 排一个新任务，三件事一次做完。"""
+    document_id = _indexed_document(services, kb)
+    assert services.documents.get(document_id).stage.value == "indexed"
+
+    result = call_tool(services, "reparse_document", {"document_id": document_id}, caller=admin)
+
+    assert result["document_id"] == document_id
+    assert result["name"] == "待重解析.md"
+    # **阶段是复位之后的那一个**：拿入队前的快照回给调用方会显示成"还是 indexed"，
+    # 看起来像什么都没发生
+    assert result["stage"] == "uploaded"
+    assert result["task_id"].startswith("task_")
+    assert "已排入队列" in result["note"]
+    # 产物清干净了：留着它们，这一趟会被当成"解析已完成"从切分开始，
+    # 而检索还会命中旧正文
+    assert services.documents.chunk_count(document_id) == 0
+    assert services.auth._stores.meta.get_parse_result(document_id) is None
+
+
+def test_readonly_key_cannot_reparse(services: Services, kb: str, key_for) -> None:  # type: ignore[no-untyped-def]
+    """重新解析会清产物、会真调解析器（可能花云端额度）：只读档**不该做得成**。"""
+    document_id = _indexed_document(services, kb)
+
+    with pytest.raises(ForbiddenError):
+        call_tool(
+            services,
+            "reparse_document",
+            {"document_id": document_id},
+            caller=key_for(kb_ids=[kb]),
+        )
+
+    # 被拒之后什么都没动过（权限判定必须在复位之前）
+    assert services.documents.chunk_count(document_id) > 0
+
+
+def test_reparse_is_refused_while_a_task_is_still_queued(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """有任务在跑时**按失败报**（而不是回一个"已排入队列"）：复位会清产物，
+    而那时 worker 正在旧产物上写东西——说什么都没发生才是假消息。"""
+    from app.core.exceptions import ConflictError
+
+    document_id = _upload_markdown(services, kb)  # 上传会排一个摄入任务，测试里没人领它
+
+    with pytest.raises(ConflictError, match="处理中"):
+        call_tool(services, "reparse_document", {"document_id": document_id}, caller=admin)
+
+
 # --------------------------------------------------------------------- 参数校验
 
 
@@ -943,6 +1283,8 @@ def test_delete_unknown_document_raises(services: Services, admin: Caller) -> No
         ("add_data_source", {"knowledge_base_id": "kb_1", "kind": "rss"}),
         ("search", {}),
         ("get_document_status", {}),
+        ("get_document_pages", {"document_id": "doc_1"}),
+        ("reparse_document", {}),
         ("delete_document", {}),
     ],
 )
@@ -1337,7 +1679,14 @@ def test_min_score_says_it_only_cuts_the_vector_channel() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["search", "get_document_content", "list_documents", "get_document_status"]
+    "name",
+    [
+        "search",
+        "get_document_content",
+        "get_document_pages",
+        "list_documents",
+        "get_document_status",
+    ],
 )
 def test_tools_that_return_document_text_declare_it_untrusted(name: str) -> None:
     """会回原文/文档名的工具必须声明**不可信内容**：那些字是用户文档里的，不是指令。

@@ -44,6 +44,8 @@ KB_TOOL_NAMES = (
     "list_documents",
     "get_document_status",
     "get_document_content",
+    "get_document_pages",
+    "reparse_document",
     "delete_document",
 )
 
