@@ -33,6 +33,7 @@ import {
 } from '@/api/documents'
 import { FilePreview, PreviewUnavailable, failureText, loadFailure } from '@/features/preview'
 import { SkeletonRows, StatusTag } from '@/features/knowledge/composites'
+import { DocumentPages } from '@/features/knowledge/DocumentPages'
 import { ProcessingTimeline } from '@/features/knowledge/ProcessingTimeline'
 import { messageOf, notify } from '@/features/knowledge/store'
 import { documentSourceLabel, documentStageView } from '@/features/knowledge/status'
@@ -73,6 +74,25 @@ const SOURCE_TABS = [
   { key: 'parsed' as const, label: '解析文本' },
 ]
 
+/**
+ * 「阅读」视角里能看的三种内容。
+ *
+ * `pages` 与前两种**不是一回事**：那两个是"整份文件的一种渲染"，它按页取
+ * （`GET /documents/{id}/pages`）——所以在下面单独分派，不走 `FilePreview`。
+ */
+type ReadSource = 'original' | 'parsed' | 'pages'
+
+/**
+ * 原件本身是不是逐页的——只有这两种能按页出图（`DocumentPageOut.image_kind` 就这两个取值）。
+ *
+ * 判据只看原件类型，**不看页数**：`page_count` 是探测阶段给的，Office / Markdown 来源也可能
+ * 报一个页数，而它们的解析产物里没有页码信息（`page_text_available=false`）——拿页数当
+ * "有页可看"会给出一个点开只有空态的入口。
+ */
+function originalHasPages(document: DocumentSummary | null): boolean {
+  return document?.original_kind === 'pdf' || document?.original_kind === 'image'
+}
+
 /** 收起动画时长。与样式里的 `transition` 保持一致——对不上的话会"滑一半就消失"。 */
 const LEAVE_MS = 180
 
@@ -111,8 +131,8 @@ export function DocumentDrawer({
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState<DownloadFormat | null>(null)
   const [view, setView] = useState<DrawerView>(initialTab ?? 'read')
-  /** 「阅读」里的两个来源：原件版式 / 解析文本。默认看原件（用户想看的就是那个文件）。 */
-  const [previewSource, setPreviewSource] = useState<'original' | 'parsed'>('parsed')
+  /** 「阅读」里的三个来源：原件版式 / 解析文本 / 按页。默认看原件（用户想看的就是那个文件）。 */
+  const [previewSource, setPreviewSource] = useState<ReadSource>('parsed')
   const previewCache = useRef<Record<'original' | 'parsed', DocumentPreview | null>>({
     original: null,
     parsed: null,
@@ -154,6 +174,20 @@ export function DocumentDrawer({
   const canRenderOriginal = document !== null && RENDERABLE_KINDS.includes(document.original_kind)
   /** 原件能渲染 + 有解析产物 → 两个视角都成立，才给切换（否则切过去是空的）。 */
   const canSwitchSource = canRenderOriginal && (document?.chunk_count ?? 0) > 0
+  /** 原件本身是不是逐页的（服务端只给这两种按页出图，见 `DocumentPageOut.image_kind`）。 */
+  const canPageImages = originalHasPages(document)
+  /**
+   * 能不能「按页」看：原件逐页 **且** 这份文档已经能读（与上面两档同一个判据）。
+   *
+   * 与那两档共用 `canSwitchSource` 是有意的：原件不可渲染、或还没有切块时，
+   * 按页取回来的多半是一叠空页——那正是这份文件一直在避免的"点开是空的入口"。
+   */
+  const canReadPages = canSwitchSource && canPageImages
+  /** 这一档给哪几个来源：能不能渲染原件、原件是不是逐页，各判各的。 */
+  const readTabs: { key: ReadSource; label: string }[] = [
+    ...(canSwitchSource ? SOURCE_TABS : []),
+    ...(canReadPages ? [{ key: 'pages' as const, label: '按页' }] : []),
+  ]
 
   const loadChunks = useCallback(async () => {
     try {
@@ -461,9 +495,9 @@ export function DocumentDrawer({
 
               {view === 'read' ? (
                 <>
-                  {canSwitchSource && !previewLoading ? (
+                  {readTabs.length > 0 && !previewLoading ? (
                     <div className="kb-source-switch" role="tablist" aria-label="内容来源">
-                      {SOURCE_TABS.map((option) => (
+                      {readTabs.map((option) => (
                         <button
                           key={option.key}
                           type="button"
@@ -478,7 +512,8 @@ export function DocumentDrawer({
                           onClick={() => {
                             if (previewSource === option.key) return
                             setPreviewSource(option.key)
-                            void loadReadingView(option.key)
+                            // 「按页」自己那套请求由 <DocumentPages/> 发，不走整份预览这条缓存
+                            if (option.key !== 'pages') void loadReadingView(option.key)
                           }}
                         >
                           {option.label}
@@ -487,25 +522,42 @@ export function DocumentDrawer({
                     </div>
                   ) : null}
 
-                  {previewLoading ? <p className="kb-muted">正在加载原文…</p> : null}
-                  {/*
-                    预览交给 `@/features/preview` 的 <FilePreview/>（P3 起它已就绪）：
-                    按 `preview.kind` 分派到 Markdown / 等宽文本 / 图片 / PDF（iframe，
-                    页内跳页）/ Office 三件套（docx-preview 等，按需动态加载）。
-                    本页只负责"取哪一份"（原件版式 vs 解析文本）与页码。
-                  */}
-                  {!previewLoading && readError ? (
-                    // 「阅读视角」这一路自己的失败态：与 PDF / Office / 文本分支**同一套**
-                    // （同一个 `PreviewUnavailable`），重试就地重取这一份
-                    <PreviewUnavailable
+                  {previewSource === 'pages' ? (
+                    /*
+                      「按页」与上面两种来源**不是一回事**：那两个是把整份文件交给一个渲染器
+                      （PDF 走 iframe，浏览器自带阅读器没有按页取图的能力），它按页取文字与页图。
+                      `key` 绑在文档 id 上：换一份文档要连输入框一起重置。
+                    */
+                    <DocumentPages
+                      key={documentId}
+                      documentId={documentId}
                       name={document.name}
-                      reason={loadFailure(readError)}
-                      onRetry={() => void loadReadingView(previewSource)}
+                      pageCount={document.page_count}
+                      canPageImages={canPageImages}
                     />
-                  ) : null}
-                  {!previewLoading && !readError && preview ? (
-                    <FilePreview preview={preview} page={page} />
-                  ) : null}
+                  ) : (
+                    <>
+                      {previewLoading ? <p className="kb-muted">正在加载原文…</p> : null}
+                      {/*
+                        预览交给 `@/features/preview` 的 <FilePreview/>（P3 起它已就绪）：
+                        按 `preview.kind` 分派到 Markdown / 等宽文本 / 图片 / PDF（iframe，
+                        页内跳页）/ Office 三件套（docx-preview 等，按需动态加载）。
+                        本页只负责"取哪一份"（原件版式 vs 解析文本）与页码。
+                      */}
+                      {!previewLoading && readError ? (
+                        // 「阅读视角」这一路自己的失败态：与 PDF / Office / 文本分支**同一套**
+                        // （同一个 `PreviewUnavailable`），重试就地重取这一份
+                        <PreviewUnavailable
+                          name={document.name}
+                          reason={loadFailure(readError)}
+                          onRetry={() => void loadReadingView(previewSource)}
+                        />
+                      ) : null}
+                      {!previewLoading && !readError && preview ? (
+                        <FilePreview preview={preview} page={page} />
+                      ) : null}
+                    </>
+                  )}
                 </>
               ) : null}
 

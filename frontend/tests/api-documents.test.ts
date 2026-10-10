@@ -9,8 +9,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RENDERABLE_KINDS,
   batchDocuments,
+  getDocumentPages,
   getDocumentPreview,
   listDocuments,
+  reparseDocument,
 } from '@/api/documents'
 
 function ok(): Response {
@@ -107,5 +109,42 @@ describe('batchDocuments', () => {
       action: 'questions',
       document_ids: ['doc_1', 'doc_2'],
     })
+  })
+})
+
+describe('reparseDocument', () => {
+  it('POST 到 reparse：与 reprocess 是两条不同的地址', async () => {
+    const fetchMock = fetchStub()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await reparseDocument('doc_1')
+
+    const [url, init] = fetchMock.mock.calls.at(-1) ?? []
+    expect(String(url)).toContain('/documents/doc_1/reparse')
+    expect(init?.method).toBe('POST')
+  })
+})
+
+describe('getDocumentPages', () => {
+  it('页范围与 images 一起下推：这三个是必给的那一段', async () => {
+    const fetchMock = fetchStub()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDocumentPages('doc_1', { from_page: 3, to_page: 5, images: true })
+
+    const url = String(fetchMock.mock.calls.at(-1)?.[0])
+    expect(url).toContain('/documents/doc_1/pages')
+    expect(url).toContain('from_page=3')
+    expect(url).toContain('to_page=5')
+    expect(url).toContain('images=true')
+  })
+
+  it('不点名要页图时显式送 images=false（不是省略）：省掉一次没必要的签发', async () => {
+    const fetchMock = fetchStub()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDocumentPages('doc_1', { from_page: 1, to_page: 1 })
+
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain('images=false')
   })
 })

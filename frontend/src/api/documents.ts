@@ -293,6 +293,20 @@ export function reprocessDocument(documentId: string): Promise<UploadAccepted> {
   return request(`/documents/${documentId}/reprocess`, { method: 'POST' })
 }
 
+/**
+ * 重新解析：**从解析器开始**把整条流水线重跑。
+ *
+ * 与 `reprocessDocument`（重新摄入）是两件事，界面上不能共用一句文案：
+ * - 重新摄入只重切块、重向量，**解析产物照旧复用**（改了切分参数走它）；
+ * - 重新解析要**先重新解析原件**，切块与向量都跟着这次解析结果重做（换了解析器、
+ *   或解析结果本身不对时走它）。
+ *
+ * 已有活跃任务时后端回 409（前端只把后端那句话显示出来，不预判）。
+ */
+export function reparseDocument(documentId: string): Promise<UploadAccepted> {
+  return request(`/documents/${documentId}/reparse`, { method: 'POST' })
+}
+
 /** 下载格式：原文件（默认）或解析产物 Markdown。 */
 export type DownloadFormat = 'original' | 'markdown'
 
@@ -339,6 +353,51 @@ export function getDocumentPreview(
 ): Promise<DocumentPreview> {
   const query = source === 'original' ? '?source=original' : ''
   return request(`/documents/${documentId}/preview${query}`)
+}
+
+/**
+ * 单次能看的页数上限——**与后端同一条约束**（超了回 422）。界面拿它夹住输入，
+ * 免得让人白等一趟注定被拒的请求。
+ */
+export const PAGE_RANGE_MAX = 50
+
+/** 按页取原文时的一页（契约来自后端 schema，见 `./schema.d.ts` 的字段说明）。 */
+export type DocumentPage = Required<components['schemas']['DocumentPageOut']>
+
+/**
+ * 一段页范围的解析文字（可选连同每页的原图链接）。
+ *
+ * `pages` 的长度**恒等于**请求的页数：后端把缺内容的那几页也一并返回（`text` 为
+ * 空串 / `image_url` 为 null），界面按请求的页数铺格子，缺一页就会"第几页对不上"。
+ */
+export type DocumentPages = Required<components['schemas']['DocumentPagesOut']>
+
+export interface DocumentPagesQuery {
+  /** 起始页（含，从 1 开始）。 */
+  from_page: number
+  /** 结束页（含）。与起始页之间最多 `PAGE_RANGE_MAX` 页。 */
+  to_page: number
+  /** 要不要一并签发每页的原图链接；不要时那三个 `image_*` 字段都是 null。 */
+  images?: boolean
+}
+
+/**
+ * 取一段页范围的解析文字（`GET /documents/{id}/pages`）。
+ *
+ * `image_url` 是**相对路径**的签名链接（形如 `/api/v1/documents/…/pages/3/image?expires=…
+ * &signature=…`），与 `DocumentPreview.url` 同一种东西：浏览器按本站 origin 解析，
+ * 直接塞进 `<img src>` 就行——**不要自己拼 base**，对外域名只有部署时才知道。
+ */
+export function getDocumentPages(
+  documentId: string,
+  query: DocumentPagesQuery,
+): Promise<DocumentPages> {
+  const params = new URLSearchParams({
+    from_page: String(query.from_page),
+    to_page: String(query.to_page),
+    images: query.images ? 'true' : 'false',
+  })
+  return request(`/documents/${documentId}/pages?${params.toString()}`)
 }
 
 export interface DownloadUrl {

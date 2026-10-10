@@ -1494,6 +1494,92 @@
     box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
   }
 
+  /* ------------------------------------------------------------ 按页看原文 */
+
+  .kb-pages {
+    margin-top: var(--space-4);
+  }
+
+  .kb-pages-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .kb-pages-range {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  /* 页码是两位数：给一个够放下 "50" 的窄框，别让它吃掉半行 */
+  .kb-pages-input {
+    width: 64px;
+  }
+
+  /* 工具栏里的那一枚「图片 / 文字」贴着输入框，不再自带顶边距 */
+  .kb-pages-bar .kb-source-switch {
+    margin-top: 0;
+  }
+
+  .kb-pages-total {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-page-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kb-page {
+    padding: var(--space-4);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .kb-page + .kb-page {
+    margin-top: var(--space-3);
+  }
+
+  .kb-page-head {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-page-image {
+    display: block;
+    max-width: 100%;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+  }
+
+  /* 一页的正文可能很长：框内自己滚，免得把整条抽屉拉成一条长带 */
+  .kb-page-text {
+    margin: 0;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-meta-size);
+    line-height: var(--line-prose);
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .kb-page-empty {
+    margin: 0;
+    font-size: var(--text-meta-size);
+    color: var(--text-tertiary);
+  }
+
   /* 原文渲染（`kb-reader*` 三条）已随预览交给 `@/features/preview` 而删除：
    那三条在换原语之前就没有调用方了（本次一并清掉，免得看着像还有第二个阅读器）。 */
 

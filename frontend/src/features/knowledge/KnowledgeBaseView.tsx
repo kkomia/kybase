@@ -20,6 +20,7 @@ import {
   ChevronRight,
   CircleHelp,
   Download,
+  FileSearch,
   Folder as FolderIcon,
   Inbox,
   Library,
@@ -44,6 +45,7 @@ import {
   listDocuments,
   moveDocument,
   renameDocument,
+  reparseDocument,
   reprocessDocument,
   setDocumentDisabled,
   DOCUMENT_PAGE_SIZE,
@@ -63,6 +65,7 @@ import { KbSearchPanel } from '@/features/knowledge/KbSearchPanel'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { ShareDialog } from '@/features/knowledge/ShareDialog'
 import { messageOf, notify, useKnowledgeBases, usePolling } from '@/features/knowledge/store'
+import { ConfirmDialog } from '@/features/misc/shared/composites'
 import { useOperatorStore } from '@/lib/operator'
 import {
   documentSourceLabel,
@@ -237,6 +240,8 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<DocumentSummary | null>(null)
   const [canceling, setCanceling] = useState('')
+  const [reparseTarget, setReparseTarget] = useState<DocumentSummary | null>(null)
+  const [reparsing, setReparsing] = useState(false)
 
   /* ------------------------------------------------------------ 抽屉（状态在 URL） */
 
@@ -556,6 +561,31 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
       await loadDocuments()
     } catch (cause) {
       notify.error(messageOf(cause, '重跑失败'))
+    }
+  }
+
+  /**
+   * 重新解析：**从解析器开始**重跑整条流水线（与上面那条「重新摄入」不是一件事，
+   * 所以两者从菜单文案到确认弹窗都不共用一句话）。
+   *
+   * 它会替换掉这份文档已有的解析产物、切块与向量——代价不小，所以先过一道确认；
+   * 文档还在跑时后端回 409，那句话原样显示出来（不在这里预判状态）。
+   */
+  async function confirmReparse(): Promise<void> {
+    const target = reparseTarget
+    if (!target || reparsing) return
+    setReparsing(true)
+    try {
+      await reparseDocument(target.id)
+      setReparseTarget(null)
+      notify.success(`已重新解析「${target.name}」，处理完成后列表会自动刷新`)
+      // 文档列表 + 目录计数一起刷（与删除/移动那条路同一个 `refreshAll`）：
+      // 重新排队后这份文档的进度与阶段都在列表行上，2 秒的轮询会接着把它们刷新下去
+      await refreshAll()
+    } catch (cause) {
+      notify.error(messageOf(cause, '重新解析失败'))
+    } finally {
+      setReparsing(false)
     }
   }
 
@@ -1422,6 +1452,15 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
                                     <RefreshCw aria-hidden="true" />
                                     重新摄入
                                   </DropdownMenuItem>
+                                  {/*
+                                    与上面那条只差一个字，所以图标与确认弹窗都要说清差别：
+                                    这条**从头重新解析原件**（解析产物、切块、向量都重做），
+                                    上面那条只重切块与重向量、解析产物照旧复用。
+                                  */}
+                                  <DropdownMenuItem onSelect={() => setReparseTarget(document)}>
+                                    <FileSearch aria-hidden="true" />
+                                    重新解析
+                                  </DropdownMenuItem>
                                   {/* 补生成分段问题：只对已索引的文档有意义 */}
                                   {document.stage === 'indexed' ? (
                                     <DropdownMenuItem
@@ -1826,6 +1865,21 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/*
+        重新解析要二次确认：它会替换掉这份文档已有的解析产物、切块与向量，
+        点错了代价是"整份重跑"。文案必须让人分得清它与「重新摄入」（那条只重切块）。
+      */}
+      <ConfirmDialog
+        open={reparseTarget !== null}
+        title="重新解析文档"
+        lead={`重新解析「${reparseTarget?.name ?? ''}」？`}
+        note="会从原件重新解析一遍，切块与向量都按这次的结果重做；有任务正在跑时不能发起。"
+        confirmLabel="重新解析"
+        busy={reparsing}
+        onCancel={() => setReparseTarget(null)}
+        onConfirm={() => void confirmReparse()}
+      />
     </div>
   )
 }
