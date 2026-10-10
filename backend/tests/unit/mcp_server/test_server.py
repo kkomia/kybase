@@ -610,6 +610,73 @@ async def test_a_paging_offset_survives_the_protocol_layer(
     assert payload["summary"], "判定照旧在——它说的是那批候选，与翻到哪儿无关"
 
 
+def test_the_search_tool_advertises_and_accepts_filters() -> None:
+    """``filters`` 必须**既在广告里、也在白名单里**（同 ``offset`` 那条的理由）。
+
+    广告里漏了：模型压根不知道能"只查某本书某章"，只能把整库的命中捞出来再自己翻
+    ——那正是用户抱怨的那件事；白名单里漏了：它传了会被安静丢掉，筛了跟没筛一样。
+    """
+    from app.mcp_server.server import _PARAMS
+
+    server = build_server()
+    tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "search")
+    schema = tool.parameters["properties"]["filters"]
+
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False, "认不出的字段要报错，不能被安静丢掉"
+    assert set(schema["properties"]) == {
+        "document_ids",
+        "source_kinds",
+        "created_after",
+        "created_before",
+        "page_from",
+        "page_to",
+        "heading_contains",
+    }
+    assert schema["properties"]["page_from"]["minimum"] == 1, "页码从 1 起"
+    assert "filters" in _PARAMS["search"], "看得见却传不进来，比看不见更糟"
+
+
+async def test_search_filters_survive_the_protocol_layer(
+    services, as_key  # type: ignore[no-untyped-def]
+) -> None:
+    """``filters`` 走一次**真实 MCP 调用**：筛到一个不存在的文档，命中必须是空的。
+
+    直接 ``call_tool`` 是绕开 ``_PARAMS`` 的，而"参数被丢掉"的表现正是"筛了没生效"
+    （照样回那一段命中）——所以这一条必须走客户端。同一个查询：不带 ``filters`` 有命中、
+    带了就一条不剩，这一对差就是"它真的到了服务层"的证据。
+    """
+    from app.models.enums import ApiKeyPermission
+
+    as_key(permission=ApiKeyPermission.READWRITE)
+    kb_id = _new_kb(services)
+    uploaded = await _call(
+        "upload_document",
+        {
+            "knowledge_base_id": kb_id,
+            "filename": "过滤.md",
+            "content_base64": base64.b64encode(MARKDOWN.encode()).decode(),
+        },
+    )
+    services.ingest.ingest(json.loads(uploaded.content[0].text)["document_id"])
+
+    plain = await _call("search", {"query": "眼轴长度", "knowledge_base_ids": [kb_id]})
+    filtered = await _call(
+        "search",
+        {
+            "query": "眼轴长度",
+            "knowledge_base_ids": [kb_id],
+            "filters": {"document_ids": ["doc_不存在的"]},
+        },
+    )
+    payload = json.loads(filtered.content[0].text)
+
+    assert json.loads(plain.content[0].text)["hits"], "不带过滤时这份文档本来就该有命中"
+    assert filtered.is_error is False, "筛到空不是错"
+    assert payload["hits"] == [], "过滤条件被白名单丢掉的话，这里会回那段命中"
+    assert payload["summary"], "判定照旧在——它说的是这一范围里的候选"
+
+
 def _new_kb(services) -> str:  # type: ignore[no-untyped-def]
     return services.knowledge_bases.create(
         kb_id=f"kb_{uuid.uuid4().hex[:12]}", name="协议用例库"

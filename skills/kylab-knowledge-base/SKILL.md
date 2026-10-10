@@ -19,7 +19,10 @@ the evidence, and a summary is not.
    the material will return nothing no matter how good the query is.
 2. Call `search` with a natural-language query and the relevant `knowledge_base_ids`.
    Leave `knowledge_base_ids` empty only when the user genuinely wants to search
-   everything.
+   everything. When the user has scoped the material themselves — a named document, a
+   chapter, a page range, a time window, one kind of source — pass it as **`filters`**
+   (see the tool table) instead of sifting the returned hits afterwards: the conditions
+   narrow the candidate pool, so the verdict and the passages both describe that scope.
 3. **Read the verdict before the passages.** Every `search` result leads with
    `summary` (a one-line verdict) and `distribution`; `hits` comes after them — that key
    order *is* the reading order. `distribution.fit` says whether this material actually
@@ -63,7 +66,7 @@ the evidence, and a summary is not.
 | Tool | Use it when | Do not |
 | --- | --- | --- |
 | `list_knowledge_bases` | Always, at the start; and again after the user adds documents | Assume a library id — they are generated and opaque |
-| `search` | The default action for answering anything. When the user wants a topic covered **thoroughly** rather than answered, page through it (step 6) | Use it as a substitute for reading the returned text; the passages are the answer's basis. Also: read `summary` / `distribution.fit` **first** — `fit="none"` means these passages do not answer the question, and a hit count is not evidence of fit |
+| `search` | The default action for answering anything. When the user wants a topic covered **thoroughly** rather than answered, page through it (step 6). When the user scopes the question themselves — "只查某本书", one chapter, a page range, material added in a given period, or one kind of source — pass **`filters`** (`document_ids` / `page_from` / `page_to` / `heading_contains` / `created_after` / `created_before` / `source_kinds`) instead of sifting the returned hits yourself: the conditions narrow the candidate pool before ranking, so the verdict describes that scope. **Mind the page trade-off**: documents whose parsed copy has no page numbering (`.md` / Office sources) are excluded outright by `page_from` / `page_to` — use `heading_contains` when you want "only in this chapter". A misspelled filter field or a bad value is an error, not a silently ignored condition | Use it as a substitute for reading the returned text; the passages are the answer's basis. Also: read `summary` / `distribution.fit` **first** — `fit="none"` means these passages do not answer the question, and a hit count is not evidence of fit |
 | `list_documents` | The user asks what a library contains, or you need to check whether a document finished processing | Use `search` to survey a library — it only returns passages related to a query, never the full inventory |
 | `get_document_status` | After an upload, or when search finds nothing | Go by the `searchable` flag it returns (computed from what is actually in store: chunks present and not disabled) rather than by the stage name — a document can still be at `embedding` and already be searchable |
 | `get_document_content` | You need the document itself rather than the passages one query matched — `search` answers "what does the base say about X", this answers "what does this document say". `format="markdown"` (default) returns the parsed body text; `format="original"` returns the original file as base64 with its `filename` / `media_type` / `size_bytes` | Use it as a substitute for `search` — a whole document in the context is rarely necessary and long ones are not readable. Markdown over 200 000 characters comes back cut off with `truncated=true`: **that is not the whole document**, so never conclude something is absent from what the cut copy omits. An original file over 32 MB is refused outright (the error points at the REST download endpoint) instead of truncated |

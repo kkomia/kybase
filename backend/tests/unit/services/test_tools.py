@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -612,6 +613,202 @@ def test_a_garbage_offset_degrades_to_the_first_page(
         degraded = call_tool(services, "search", {**query, "offset": garbage}, caller=admin)
         assert degraded["offset"] == 0, f"{garbage!r} 该折成 0"
         assert degraded["hits"] == first["hits"], f"{garbage!r} 该退回第一页"
+
+
+# --------------------------------------------------------------------- 过滤（v0.65）
+
+
+def _captured_query(services: Services, monkeypatch: pytest.MonkeyPatch) -> list:  # type: ignore[type-arg]
+    """把检索请求截下来（**不真跑检索**），返回按调用顺序攒下的那个列表。
+
+    过滤条件必须在这一层被钉住：解析错了或没传下去，表现都是"筛了却拿到范围外的结果"
+    ——而那种结果与正常结果长得一模一样（同样的字段、同样的出处）。
+    """
+    from app.services.retrieval import RetrievalResponse
+
+    seen: list = []
+
+    def fake_search(request, **kwargs):  # type: ignore[no-untyped-def]
+        seen.append(request)
+        return RetrievalResponse(hits=[], mode=request.mode, reranked=False)
+
+    monkeypatch.setattr(services.retrieval, "search", fake_search)
+    return seen
+
+
+def test_search_builds_a_metadata_filter_from_the_filters_argument(
+    services: Services, kb: str, admin: Caller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``filters`` 要**逐字段解析成 ``MetadataFilter``** 再交给检索层（与 REST 同源）。
+
+    与 REST 的 ``MetadataFilterIn`` 同名同义是刻意的：两条路各有一套说法的话，
+    同一次查询在两个入口会给出两种结果。
+    """
+    from app.models.enums import DataSourceKind
+    from app.services.retrieval import MetadataFilter
+
+    seen = _captured_query(services, monkeypatch)
+
+    call_tool(
+        services,
+        "search",
+        {
+            "query": "眼轴",
+            "knowledge_base_ids": [kb],
+            "filters": {
+                "document_ids": ["doc_1"],
+                # 大小写不该成为门槛（REST 那边由枚举收口，这里也要收）
+                "source_kinds": ["UPLOAD"],
+                "created_after": "2026-01-02T03:04:05Z",
+                "created_before": "2026-02-03",
+            },
+        },
+        caller=admin,
+    )
+
+    filters = seen[0].filters
+    assert isinstance(filters, MetadataFilter)
+    assert list(filters.document_ids) == ["doc_1"]
+    assert list(filters.source_kinds) == [DataSourceKind.UPLOAD]
+    assert filters.created_after == datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert filters.created_before == datetime(2026, 2, 3)
+    assert not filters.is_empty()
+
+
+def test_the_page_and_heading_filters_are_passed_through(
+    services: Services, kb: str, admin: Caller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``page_from`` / ``page_to`` / ``heading_contains`` 原样透传（整数、去空白）。
+
+    三者都是**块级**条件：页码与章节标题在检索层被下推到召回通道
+    （``services/retrieval`` 那条线），所以工具面这一侧只要把它们解析对、传下去即可
+    ——字段名写错或值没去空白，表现就是"筛了没生效"。
+    """
+    seen = _captured_query(services, monkeypatch)
+
+    call_tool(
+        services,
+        "search",
+        {
+            "query": "眼轴",
+            "knowledge_base_ids": [kb],
+            "filters": {"page_from": 3, "page_to": 5, "heading_contains": "  第三章  "},
+        },
+        caller=admin,
+    )
+
+    filters = seen[0].filters
+    assert filters.page_from == 3
+    assert filters.page_to == 5
+    assert filters.heading_contains == "第三章"
+
+
+def test_search_without_filters_passes_no_filter(
+    services: Services, kb: str, admin: Caller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """不提 ``filters`` 就是"不筛"（``None``）：别拿一个空筛子占着那个位置。"""
+    seen = _captured_query(services, monkeypatch)
+
+    call_tool(
+        services, "search", {"query": "眼轴", "knowledge_base_ids": [kb]}, caller=admin
+    )
+
+    assert seen[0].filters is None
+
+
+def test_search_filters_narrow_the_results_before_ranking(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """**先筛后排**：给了 ``document_ids`` 就只该拿到那几份文档的命中。
+
+    这正是"只查某本书某章做不到、只能事后筛"那件事的正面答案——条件在检索层就生效，
+    不必先捞一整库的命中再自己挑（分布与判定说的也是这一范围内的命中）。
+    """
+    wanted = _ingest_text(
+        services, kb, "眼轴甲.md", "# 眼轴甲\n\n眼轴长度的测量方法：甲说用 A 法。\n"
+    )
+    _ingest_text(services, kb, "眼轴乙.md", "# 眼轴乙\n\n眼轴长度的测量方法：乙说用 B 法。\n")
+
+    result = call_tool(
+        services,
+        "search",
+        {
+            "query": "眼轴长度的测量方法",
+            "knowledge_base_ids": [kb],
+            "filters": {"document_ids": [wanted]},
+        },
+        caller=admin,
+    )
+
+    assert result["hits"], "这一份文档里明明有这个词，筛没了说明筛错了"
+    assert {hit["document_id"] for hit in result["hits"]} == {wanted}
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected"),
+    [
+        ([], "需要一个对象"),
+        ({"document_ids": []}, "不能是空的"),
+        ({"source_kinds": ["telegram"]}, "不认得的取值"),
+        ({"source_kinds": [1]}, "需要一个字符串数组"),
+        ({"created_after": "2026-13-45"}, "ISO 8601"),
+        ({"page_from": 0}, "从 1 起"),
+        ({"page_to": "第三页"}, "从 1 起"),
+        ({"page_from": 5, "page_to": 3}, "不能小于"),
+        ({"heading_contains": "   "}, "不能是空白"),
+        ({"document_id": ["doc_1"]}, "不认得的字段"),
+    ],
+)
+def test_a_bad_filter_is_rejected_in_chinese(
+    services: Services,
+    kb: str,
+    admin: Caller,
+    filters: object,
+    expected: str,
+) -> None:
+    """``filters`` 给错要报**中文错**（不是栈、也不是安静地不筛）。
+
+    与 ``top_k`` / ``keep`` / ``offset`` 那几个调节量的取舍刻意相反：那些给错只是少要几条，
+    过滤条件给错是**查错了范围**——而"筛过了却拿到范围外的结果"看着完全正常。
+    """
+    with pytest.raises(InvalidRequestError) as excinfo:
+        call_tool(
+            services,
+            "search",
+            {"query": "眼轴", "knowledge_base_ids": [kb], "filters": filters},
+            caller=admin,
+        )
+
+    assert expected in str(excinfo.value)
+
+
+def test_the_filters_description_states_what_it_is_for_and_what_it_costs() -> None:
+    """描述必须说清"什么时候用它"，尤其是**页码过滤的代价**。
+
+    不写的话，模型给 ``page_from`` 拿到空结果时只会得出"这本书里没有"这一个结论——
+    而真相是"这份文档本来就没有页"（`.md` / Office 来源）。用户抱怨的正是这件事
+    （"只查某本书某章做不到"），所以描述本身也是这次改动的一部分。
+    """
+    search = next(item for item in tool_definitions() if item["name"] == "search")
+    description = search["description"]
+    properties = search["inputSchema"]["properties"]["filters"]["properties"]
+
+    assert set(properties) == {
+        "document_ids",
+        "source_kinds",
+        "created_after",
+        "created_before",
+        "page_from",
+        "page_to",
+        "heading_contains",
+    }
+    assert search["inputSchema"]["properties"]["filters"]["additionalProperties"] is False
+    assert "document_ids" in description, "要写出「只查某几本书」这条路"
+    assert "先筛后排" in description, "说明它在候选池上生效，而不是拿到结果再挑"
+    assert "整体排除" in description, "页码过滤的代价必须如实写明"
+    assert "heading_contains" in description, "说清「只在某一章里找」比页码可靠"
+    assert "created_after" in description, "说清「只要某段时间入库的」"
+    assert "source_kinds" in description
 
 
 # --------------------------------------------------------------------- 文档状态
