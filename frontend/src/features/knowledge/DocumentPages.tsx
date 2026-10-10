@@ -15,6 +15,11 @@
  *    **不挂破图**；
  * 3. `pages` 的长度恒等于请求的页数，所以按返回的顺序铺格子就行，不在这里补齐。
  *
+ * 外加一条 2026-10 补的：`pages_reliable=false` 说的是**产物里有页码，但它与文档自称的
+ * 总页数对不上**（存量切分文档里 `<!-- page:1 -->` 反复出现就是这样）——文字照铺，
+ * 但要说清"别拿它当第几页的引用"。`true` / `null` 都不显示这句：`null` 是"没有页码信息"，
+ * 那是上面第 1 条的事，两种说法不能混。
+ *
  * 单次跨度上限由后端定（`PAGE_RANGE_MAX`）：输入在这里就夹住，别让人白等一趟 422。
  */
 import { useEffect, useId, useState } from 'react'
@@ -113,6 +118,13 @@ export function DocumentPages({ documentId, name, pageCount, canPageImages }: Do
   const pages = result?.pages ?? []
   /** 这份文档的解析产物里没有页码信息——文字档没有内容可铺。 */
   const textMissing = result !== null && !result.page_text_available
+  /**
+   * 产物里有页码，但它与文档自称的总页数对不上（`null` = 没有页码信息，不是这一档）。
+   *
+   * 文字**照样铺**：它是这份文档的真实内容，只是不能说成"第 N 页"——标着第 1 页的那一段
+   * 可能横跨很多页（存量切分文档就是这样，见后端 `services/document_pages.py` 的模块头）。
+   */
+  const pageNumbersUntrustworthy = result !== null && result.pages_reliable === false
 
   return (
     <div className="kb-pages">
@@ -189,6 +201,15 @@ export function DocumentPages({ documentId, name, pageCount, canPageImages }: Do
 
       {!loading && !error && result && result.total_pages !== null ? (
         <p className="kb-pages-total">文档共 {formatCount(result.total_pages)} 页</p>
+      ) : null}
+      {!loading && !error && result && pageNumbersUntrustworthy ? (
+        // 与上下两行同一种"关于这份文档"的小字（`.kb-pages-total` 就在旁边）：
+        // 说清两个数、说清"别当页码引用"、给出出路（重新解析让产物重算页码）
+        <p className="kb-pages-total">
+          页码不可信：解析产物里只定位到 {formatCount(result.pages_located)} 个页号，文档自称{' '}
+          {formatCount(result.total_pages)} 页——「第 N 页」里的文字可能横跨很多页，
+          别当页码引用；可以「重新解析」让它重算页码。
+        </p>
       ) : null}
       {!loading && !error && result?.truncated ? (
         <p className="kb-pages-total">超出的部分没有内容。</p>

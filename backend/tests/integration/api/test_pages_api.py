@@ -8,6 +8,10 @@
    URL 里的签名——而签名必须绑死"哪个文档、哪一页"（换一页或换一份文档都不行）；
 3. **范围闸照旧**：别的成员够不到不属于他的库里的文档，页文字与页图都够不到。
 
+外加一条 2026-10 补的：**页码可信度如实回**（``pages_reliable`` 三值）。
+产物里有页码不等于页码是对的——存量切分文档里 ``<!-- page:1 -->`` 反复出现，
+读侧只能照着把后面的正文全标成第 1 页；那种产物要能在这里被认出来。
+
 页图是**从原始 PDF 现场栅格化**的，所以这里上传的是真 PDF（pymupdf 现写），
 而不是 ``%PDF-1.7 fake`` 那种字符串——假的渲染不出来，测出来的"绿"没有意义。
 """
@@ -130,6 +134,18 @@ def _attach_markdown(document_id: str, markdown: str, *, page_count: int | None)
         stores.meta.update_document_page_count(document_id, page_count)
 
 
+def _merged_product_markdown() -> str:
+    """一份"总页数很大、产物里只有零星几个页号"的产物（Wills 那份的形状）。
+
+    19 个不同页号、最大 200、``<!-- page:1 -->`` 反复出现——存量切分文档合并时
+    "把各段的相对页码抬成绝对页码"还没修好留下的样子（见 ``document_pages.py`` 模块头）。
+    """
+    return "\n\n".join(
+        f"<!-- page:{page} -->\n第 {page} 页的正文。"
+        for page in [1] * 20 + list(range(2, 19)) + [200]
+    )
+
+
 def _sign(
     document_id: str, page: int, *, ttl_seconds: int = 600, now: int | None = None
 ) -> tuple[str, int]:
@@ -231,6 +247,9 @@ def test_text_is_sliced_by_the_requested_range(client: TestClient, marked_docume
     assert (body["from_page"], body["to_page"]) == (1, 2)
     assert body["total_pages"] == 4
     assert body["page_text_available"] is True
+    # 4 页 4 个页号：与总页数自洽，所以页码可信
+    assert body["pages_reliable"] is True
+    assert body["pages_located"] == 4
     assert body["truncated"] is False
     assert [item["page"] for item in body["pages"]] == [1, 2]
     assert "第一页正文" in body["pages"][0]["text"]
@@ -287,9 +306,37 @@ def test_a_document_without_page_markers_says_so(client: TestClient) -> None:
     assert body["page_text_available"] is False
     assert body["total_pages"] is None
     assert body["truncated"] is False
+    # **没有页码信息 ≠ 页码不可信**：拿不到页码时回 null，界面该说"没有页码信息"，
+    # 说成"页码不可信"就是冤枉它（见 DocumentPagesOut.pages_reliable 那条说明）
+    assert body["pages_reliable"] is None
+    assert body["pages_located"] is None
     # 条目仍然在（每页一条），只是文字为空
     assert [item["page"] for item in body["pages"]] == [1, 2]
     assert [item["text"] for item in body["pages"]] == ["", ""]
+
+
+def test_a_document_whose_page_numbers_do_not_match_its_page_count_says_so(
+    client: TestClient,
+) -> None:
+    """**页码不可信要如实回**（``pages_reliable=false`` + ``pages_located``）。
+
+    形状照实测的 ``doc_a5e837b84bac``（Wills 眼科手册第 7 版，619 页）复刻：产物里
+    ``<!-- page:1 -->`` 在合并点反复出现，不同页号只有 19 个——读侧只能照着把后面的
+    正文全标成第 1 页，于是"第 1 页"那一段横跨十几章。**文字照给**（它是真实内容），
+    但要把"别当页码引用"这件事说在字段里，界面才有机会提示。
+    """
+    _, document_id = _upload(client, "手册.pdf", b"%PDF-1.7 fake", "application/pdf")
+    _attach_markdown(document_id, _merged_product_markdown(), page_count=619)
+
+    body = client.get(
+        f"/api/v1/documents/{document_id}/pages", params={"from_page": 1, "to_page": 2}
+    ).json()
+
+    assert body["page_text_available"] is True
+    assert body["pages_located"] == 19
+    assert body["pages_reliable"] is False
+    # 文字照样给：不可信的是"它是第几页"，不是"它是不是这份文档的内容"
+    assert "第 1 页的正文" in body["pages"][0]["text"]
 
 
 def test_a_document_that_is_not_parsed_yet_says_so(client: TestClient) -> None:
@@ -301,6 +348,7 @@ def test_a_document_that_is_not_parsed_yet_says_so(client: TestClient) -> None:
     ).json()
 
     assert body["page_text_available"] is False
+    assert body["pages_reliable"] is None
     assert body["pages"][0]["text"] == ""
 
 

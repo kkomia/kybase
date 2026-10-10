@@ -1151,6 +1151,19 @@ PAGED_MARKDOWN = """<!-- page:1 -->
 """
 
 
+def _merged_product_markdown() -> str:
+    """一份"总页数很大、产物里只有零星几个页号"的产物（Wills 那份的形状）。
+
+    19 个不同页号、最大 200、``<!-- page:1 -->`` 反复出现——存量切分文档合并时
+    "把各段的相对页码抬成绝对页码"还没修好留下的样子（见 ``document_pages.py`` 模块头）。
+    最大页号没超过总页数，所以它只栽在"定位到的页数"那半截判据上。
+    """
+    return "\n\n".join(
+        f"<!-- page:{page} -->\n第 {page} 页的正文。"
+        for page in [1] * 20 + list(range(2, 19)) + [200]
+    )
+
+
 def _attach_parsed_markdown(
     services: Services, document_id: str, markdown: str, *, page_count: int | None
 ) -> None:
@@ -1182,6 +1195,13 @@ def _paged_document(services: Services, kb: str, *, filename: str = "指南.pdf"
     return document_id
 
 
+def _merged_page_document(services: Services, kb: str) -> str:
+    """一份"自称 619 页、产物里只有 19 个页号"的文档（现存坏数据的形状）。"""
+    document_id = _upload_markdown(services, kb, filename="手册.pdf")
+    _attach_parsed_markdown(services, document_id, _merged_product_markdown(), page_count=619)
+    return document_id
+
+
 def test_get_document_pages_slices_the_requested_range(services: Services, kb: str) -> None:
     """要哪几页给哪几页，且**内部页标记不漏出去**（与 ``/preview`` 同一条口径）。"""
     document_id = _paged_document(services, kb)
@@ -1198,6 +1218,9 @@ def test_get_document_pages_slices_the_requested_range(services: Services, kb: s
     assert (result["from_page"], result["to_page"]) == (1, 2)
     assert result["total_pages"] == 4
     assert result["page_text_available"] is True
+    # 4 页 4 个页号：与总页数自洽，所以页码可信，不该多出一句"页码不可信"
+    assert result["pages_reliable"] is True
+    assert result["pages_located"] == 4
     assert [item["page"] for item in result["pages"]] == [1, 2]
     assert "第一页正文" in result["pages"][0]["text"]
     assert "第二页正文" not in result["pages"][0]["text"]
@@ -1279,6 +1302,37 @@ def test_without_page_markers_it_says_so_instead_of_failing(services: Services, 
     assert [item["page"] for item in result["pages"]] == [1, 2]
     assert [item["text"] for item in result["pages"]] == ["", ""]
     assert "没有页码信息" in result["note"]
+    # **没有页码信息 ≠ 页码不可信**：这一档回 null，note 也只能是上面那一句
+    # （两条 note 逻辑上互斥，同时出现会让模型以为"页码是错的"）
+    assert result["pages_reliable"] is None
+    assert result["pages_located"] is None
+    assert "页码不可信" not in result["note"]
+
+
+def test_unreliable_page_numbers_are_flagged_in_the_note(services: Services, kb: str) -> None:
+    """**页码不可信要明说**：产物里只定位到 19 个页号、文档自称 619 页。
+
+    不说的话模型会把"标着第 1 页"的那一段当第 1 页引用——而它横跨十几章。
+    note 里要说清两个数、说清"别当页码引用"、并给出补救手段（重新解析）。
+    """
+    document_id = _merged_page_document(services, kb)
+
+    result = call_tool(
+        services,
+        "get_document_pages",
+        {"document_id": document_id, "from_page": 1, "to_page": 2},
+        caller=Caller(is_admin=True),
+    )
+
+    assert result["page_text_available"] is True
+    assert result["pages_reliable"] is False
+    assert result["pages_located"] == 19
+    assert result["total_pages"] == 619
+    assert "19" in result["note"] and "619" in result["note"]
+    assert "别拿它当" in result["note"]
+    assert "reparse_document" in result["note"]
+    # 文字照给：不可信的是"它是第几页"，不是"它是不是这份文档的内容"
+    assert "第 1 页的正文" in result["pages"][0]["text"]
 
 
 @pytest.mark.parametrize(
@@ -1742,7 +1796,11 @@ def test_only_the_tools_with_an_output_schema_have_a_builder() -> None:
 
 
 def test_search_structured_content_keeps_the_verdict_keys() -> None:
-    """压缩后的对象必须**每个键都在**：``outputSchema`` 声明了几个，缺一个就是硬报错。"""
+    """搬过去的那一份必须**每个键都在**：``outputSchema`` 声明了几个，缺一个就是硬报错。
+
+    而且它是**同一批数据的另一种读法**，不是摘要——判定与成果（``query`` / ``hits``）
+    一起过来。
+    """
     from app.services.tools import (
         SEARCH_OUTPUT_SCHEMA,
         search_structured_content,
@@ -1772,6 +1830,9 @@ def test_search_structured_content_keeps_the_verdict_keys() -> None:
     # 翻页的两项照搬：按 schema 读的调用方也要能自己接着翻，不必去文本里找那一行
     assert structured["offset"] == 3
     assert structured["next_offset"] == 6
+    # **成果照搬**：机器那份不是摘要，问题与原文必须逐条过来
+    assert structured["query"] == payload["query"] == "眼轴"
+    assert structured["hits"] == payload["hits"]
     assert structured["surface_fingerprint"] == surface_fingerprint()
 
 
@@ -1800,7 +1861,37 @@ def test_search_structured_content_survives_the_empty_early_return() -> None:
     assert structured["returned"] == 0
     assert structured["offset"] == 0
     assert structured["next_offset"] is None, "空页不能回一个数——那是把调用方送进死循环"
+    # 空库那一路：问题照回显、原文是空数组（不是 None——schema 说 hits 是 array）
+    assert structured["query"] == "随便问问"
+    assert structured["hits"] == []
     assert str(structured["surface_fingerprint"])
+
+
+def test_search_structured_hits_align_with_the_schema_key_by_key(
+    services: Services, kb: str, admin: Caller
+) -> None:
+    """真跑一次检索：结构化那份的 ``query`` / ``hits`` 与文本那份**逐条相等**，一条不裁。
+
+    这条钉的是那个真实的坑：机器那份只搬了判定与计数、把 ``hits`` 丢了，于是按
+    ``outputSchema`` 读的客户端看到 ``returned: 3`` 却一条片段都拿不到。
+    """
+    from app.services.tools import SEARCH_OUTPUT_SCHEMA, search_structured_content
+
+    _parsed_document(services, kb)
+
+    payload = call_tool(
+        services, "search", {"query": "眼轴长度", "knowledge_base_ids": [kb]}, caller=admin
+    )
+    structured = search_structured_content(payload)
+
+    assert structured["query"] == payload["query"]
+    assert structured["hits"] == payload["hits"]
+    assert structured["hits"], "库里刚灌进一份命中率极高的文档"
+    # 每条的键集合与 schema 里声明的逐键对齐（多一个少一个都会让按 schema 读的调用方失手）
+    item_schema = SEARCH_OUTPUT_SCHEMA["properties"]["hits"]["items"]
+    assert item_schema["additionalProperties"] is False
+    assert set(item_schema["required"]) == set(payload["hits"][0])
+    assert set(item_schema["properties"]) == set(item_schema["required"])
 
 
 # --------------------------------------------------------- 判定字段的形状（v0.62）

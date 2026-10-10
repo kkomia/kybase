@@ -22,6 +22,10 @@
   这个取值**。窗口还必须放宽到统计下沿（``_relevance_floors``），因为"报出契合程度"
   的前提是那批噪声也在窗口里；这两件事是一体的，拆开就只剩"答案那一小撮"可比；
 - **rerank 失败降级为不重排**：日志告警即可，绝不因此让整次检索失败（架构 §5 把它定义为可选增强）；
+- **一个库的嵌入服务坏掉，只降级那个库**（v0.65，见 ``_vector_channel``）：它的向量通道
+  这次用不了就跳过（全文通道照旧参与召回），并把"哪个库、为什么"记进
+  ``decision.embedding_unavailable_kbs``——跨库检索因此不会因为其中**一个**库的嵌入端点
+  连不上而整体失败（实测：7 个库里只有 1 个用 WeMM，那个连不上时整次检索全灭）；
 - **翻页只切"返回哪一段"**（v0.63）：``keep`` 是**一页几条**、``top_k`` 是**能翻到的总量**，
   返回的是 ``幸存者[offset : offset + 解析后的 keep]``。窗口、``summarize``、三个收敛旋钮
   一律作用在同一批候选上，于是同一 pool 的判定在任何一页上**逐字相同**——判定若随翻页
@@ -35,7 +39,11 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 
-from app.services.embedding.base import EmbeddingNotConfiguredError, EmbeddingProvider
+from app.services.embedding.base import (
+    EmbeddingError,
+    EmbeddingNotConfiguredError,
+    EmbeddingProvider,
+)
 from app.services.embedding.resolver import EmbeddingResolver
 from app.services.retrieval.coverage import content_terms, term_coverage
 from app.services.retrieval.distribution import (
@@ -319,6 +327,11 @@ class RetrievalService:
         raw: dict[str, dict[str, float]] = {}
         ordered: list[tuple[str, Sequence[str]]] = []
         stats: list[ChannelStat] = []
+        # **这次检索里向量通道用不了的库**（`{kb_id: 一句原因}`）：由 `_vector_channel`
+        # 逐个库判出来，返回前并进 ``decision``（见下面那一段）。它是**这次调用的局部量**
+        # 而不是实例状态——`RetrievalService` 是进程级单例，记在 `self` 上会让下一次检索
+        # 读到上一次的降级名单。
+        embedding_unavailable: dict[str, str] = {}
         # 这次检索里"每个库用哪个嵌入实现"只解析一次：向量通道要它本身，
         # 相关度下限要它的身份（模型 id → 标定表）。各解析一次会让每个库多一次
         # resolver 往返（用例 `test_vector_channel_resolves_an_embedder_per_knowledge_base`
@@ -331,7 +344,7 @@ class RetrievalService:
 
         if request.mode in (RetrievalMode.HYBRID, RetrievalMode.VECTOR):
             started = time.perf_counter()
-            vector_ranked, vector_scores = self._vector_channel(
+            vector_ranked, vector_scores, embedding_unavailable = self._vector_channel(
                 request, query_vector, embedders, store_filter
             )
             raw[VECTOR_CHANNEL] = vector_scores
@@ -370,6 +383,20 @@ class RetrievalService:
             hits, request, embedders, stats_floor
         )
         filtered_out += dropped
+
+        # **降级名单并进 ``decision``**（v0.65）：调用方与模型都该知道"这次哪些库的
+        # 向量通道用不了"——不说的话，"跨库检索少了一路召回"在载荷里毫无痕迹。
+        #
+        # 为什么放 ``decision``：它已经是 ``dict | None``，**REST 与 MCP 两条路都原样
+        # 透传**（``api/v1/search.py`` 与 ``tools._search`` 各是一个键，MCP 的
+        # ``structuredContent`` 也是同一份），调用方本来就在读它（``decided_by`` /
+        # ``unscored_kept``）。改一处，两条路都看得见，也不必动 ``tools.py`` 的载荷形状
+        # 与 ``outputSchema``。
+        #
+        # **全部库都正常时不出这个键**：一个恒在的空映射会让每个调用方多写一次
+        # "它是不是空的"，而且"这次每个库都正常"与"这次压根没走到向量通道"会长得一样。
+        if embedding_unavailable:
+            decision["embedding_unavailable_kbs"] = embedding_unavailable
 
         # —— 翻页（v0.63）：判定与收敛已经落定，这里只决定"交出哪一段" ——
         # 顺序是刻意的：窗口、``summarize``、三个收敛旋钮全在 `_apply_distribution` 里跑完，
@@ -659,8 +686,22 @@ class RetrievalService:
         query_vector: Sequence[float] | None,
         embedders: dict[str, EmbeddingProvider] | None = None,
         store_filter: SearchFilter | None = None,
-    ) -> tuple[list[str], dict[str, float]]:
+    ) -> tuple[list[str], dict[str, float], dict[str, str]]:
+        """向量通道的召回（**逐库**）。
+
+        返回的第三项是**这次检索里向量通道用不了的库**（``{kb_id: 一句原因}``）：
+        它空着就是"每个库都算出了查询向量"。交给 ``search`` 并进 ``decision``——
+        调用方据此知道"这次少了一路召回、少在哪个库"。
+
+        为什么是**返回值**而不是 ``self`` 上的一位：``RetrievalService`` 是进程级单例
+        （``core/services.py`` 一张图只建一次），把"这次哪几个库坏了"记在实例上，
+        下一次检索就会读到上一次的降级名单——那是"上一次的告警出现在这一次载荷里"
+        这类最难查的错。（``_unconfigured_warned`` 是唯一住在 ``self`` 上的那位，
+        它的语义本来就跨调用：同一条日志只打一次。）
+        """
         best: dict[str, float] = {}
+        # 这次用不了向量通道的库（见方法说明）
+        unavailable: dict[str, str] = {}
         recall_factor = 2 if self._stores.meta.any_disabled_documents(request.kb_ids) else 1
         # **查询向量按模型缓存**：跨库检索时"每个库各算一次查询向量"是浪费——
         # 而多库共用同一个嵌入模型恰恰是常态（默认配置就是这样），
@@ -686,10 +727,33 @@ class RetrievalService:
                     except EmbeddingNotConfiguredError:
                         # 没配嵌入模型不是"调用失败"，是"这个通道现在用不了"：跳过它，
                         # 全文通道照常返回——库里已有内容仍可检索，界面也能如实说明
-                        # "当前只做了关键词检索"（v0.8 取消哈希兜底）
+                        # "当前只做了关键词检索"（v0.8 取消哈希兜底）。
+                        #
+                        # **不记进 `unavailable`**：那是**配置状态**（没选模型），不是
+                        # "这个库这次坏了"——把它混进 `decision` 的降级名单，会让
+                        # "去设置里选个模型"与"去修那个嵌入端点"这两件完全不同的事
+                        # 长得一模一样。告警也照旧只打一次（见 `_unconfigured_warned`）。
                         if not self._unconfigured_warned:
                             logger.warning("未配置嵌入模型，检索跳过向量通道，只做全文检索")
                             self._unconfigured_warned = True
+                        continue
+                    except EmbeddingError as exc:
+                        # **一个库的嵌入服务坏掉，不该把整次跨库检索带走**（v0.65）：
+                        # 超时 / 5xx / 凭据不对都是**这个库的向量通道这次用不了**，
+                        # 而它的全文通道照旧参与召回、跨库融合照旧——那一路本来就不
+                        # 依赖嵌入服务。实测的现场：7 个库里只有 1 个用 WeMM，它连不上
+                        # 时整次检索全灭（调用方连"别的库查得到"这部分也拿不到）。
+                        #
+                        # 子类必须排在前面判（`EmbeddingNotConfiguredError` 是
+                        # `EmbeddingError` 的子类）：两件事的处置不同，见上一条。
+                        #
+                        # 告警**带 kb_id**（不带就不知道去修哪个库）、**带原因**，
+                        # 但**不打查询文本**——查的是用户自己的内容。
+                        reason = str(exc).strip() or "嵌入服务调用失败"
+                        unavailable[kb_id] = reason
+                        logger.warning(
+                            "知识库 %s 的嵌入服务不可用，跳过它的向量通道：%s", kb_id, reason
+                        )
                         continue
                     embedded[id(embedder)] = vector
             # 有停用文档的库才 2 倍超采：KNN 扫描时没法按"文档是否停用"过滤，
@@ -710,9 +774,8 @@ class RetrievalService:
                     best[match.chunk_id] = match.distance
 
         ranked = sorted(best.items(), key=lambda pair: (pair[1], pair[0]))
-        return [chunk_id for chunk_id, _ in ranked], {
-            chunk_id: similarity_from_distance(distance) for chunk_id, distance in ranked
-        }
+        scores = {chunk_id: similarity_from_distance(distance) for chunk_id, distance in ranked}
+        return [chunk_id for chunk_id, _ in ranked], scores, unavailable
 
     def _embedder_for(self, kb_id: str) -> EmbeddingProvider:
         """这个库该用哪个嵌入实现：显式选了模型就用它，否则全局默认。"""

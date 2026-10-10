@@ -474,8 +474,10 @@ async def test_server_info_carries_the_surface_fingerprint() -> None:
 async def test_search_returns_structured_content_that_matches_the_text(
     services, as_key  # type: ignore[no-untyped-def]
 ) -> None:
-    """``search`` 的判定要同时给两种读法：文本那份**原样不动**，结构化那份给机器读。
+    """``search`` 的判定要同时给两种读法：文本那份**原样不动**，结构化那份搬同一批数据。
 
+    两份是**同一批数据的两种读法**（同一批判定 + 同一批命中原文），不是"摘要 + 全文"：
+    结构化那份要是少了 ``hits``，按 ``outputSchema`` 读的调用方就什么都拿不到。
     客户端会照 ``outputSchema`` 校验 ``structuredContent``（缺字段或不合规直接报错），
     所以这条用例本身就是一次"结构对不对"的实测——而且挂在**协议层**，
     与 Codex 那种客户端看到的是同一条路。
@@ -509,6 +511,8 @@ async def test_search_returns_structured_content_that_matches_the_text(
         "filtered_out",
         "offset",
         "next_offset",
+        "query",
+        "hits",
         "surface_fingerprint",
     }
     assert structured["surface_fingerprint"] == surface_fingerprint()
@@ -530,6 +534,11 @@ async def test_search_returns_structured_content_that_matches_the_text(
     assert structured["fit"] == payload["distribution"]["fit"]
     assert payload["offset"] == structured["offset"] == 0
     assert payload["next_offset"] == structured["next_offset"]
+    # 机器那份**不能只剩判定**：这次的成果（问题与原文片段）必须逐条搬过去，
+    # 否则按 outputSchema 读的客户端看到 returned: 3 却一条都拿不到
+    assert structured["query"] == payload["query"] == "眼轴长度"
+    assert structured["hits"] == payload["hits"]
+    assert structured["hits"], "库里刚灌进一份命中率极高的文档"
 
 
 async def test_search_carries_the_verdict_for_a_caller_with_no_library(
@@ -554,6 +563,9 @@ async def test_search_carries_the_verdict_for_a_caller_with_no_library(
     assert result.structured_content["returned"] == 0
     assert result.structured_content["offset"] == 0
     assert result.structured_content["next_offset"] is None, "空页不说「还有下一页」"
+    # 空库不是"少两个键"：问题照回显，原文那一条本来就是空的（不能是 null——schema 说它是 array）
+    assert result.structured_content["query"] == "随便问问"
+    assert result.structured_content["hits"] == []
     assert json.loads(result.content[0].text)["note"] == "没有任何知识库"
 
 

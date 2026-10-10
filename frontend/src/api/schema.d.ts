@@ -613,6 +613,12 @@ export interface paths {
          *
          *     **没有页码信息时不报错**：``page_text_available=false``，``pages`` 里每页的
          *     ``text`` 是空串。界面据此如实显示"这份文档没有页码信息"，而不是显示一个错误。
+         *
+         *     **产物里有页标记也不等于页码是对的**：``pages_reliable=false`` 说的是"产物里的
+         *     页码与文档自称的总页数对不上"（存量数据里有一批切分文档就是这样，见
+         *     ``services/document_pages.py`` 模块头）。这时 ``pages`` 里的文字照样给出去——
+         *     它是这份文档的真实内容，只是**不能当成"第 N 页"引用**；界面据此提示"页码不可信、
+         *     可重新解析"，而 ``pages_reliable`` 是 ``null``（没有页码信息）时不该这么说。
          */
         get: operations["document_pages_api_v1_documents__document_id__pages_get"];
         put?: never;
@@ -2367,6 +2373,25 @@ export interface components {
              *     界面要如实说"这份文档没有页码信息"，而不是显示成文档是空的。
              */
             page_text_available: boolean;
+            /**
+             * Pages Reliable
+             * @description 产物里的页码**可不可信**（三值）。
+             *
+             *     - ``null``：产物里没有页标记（``page_text_available=false`` 同一件事）——没有页码
+             *       可判，**不是"页码错了"**，界面的说法是"没有页码信息"而不是"页码不可信"；
+             *     - ``true``：有页标记，且与 ``total_pages`` 自洽（最大页号不超过总页数、定位到的页数
+             *       不少于总页数的一半）；``total_pages`` 拿不到时也回 ``true``（没有依据就不喊狼来了）；
+             *     - ``false``：有页标记但与 ``total_pages`` 对不上（定位到的页数远少于总页数，或者
+             *       出现了超过总页数的页号）——**按页读到的这一段不能当成"第 N 页"引用**，它可能
+             *       横跨很多页；要修就用重新解析让产物重算页码。
+             */
+            pages_reliable: boolean | null;
+            /**
+             * Pages Located
+             * @description 解析产物里**定位到的不同页号个数**（不是块数）。``null`` = 产物里没有页码信息，
+             *     此时 ``pages_reliable`` 也是 ``null``。
+             */
+            pages_located: number | null;
             /**
              * Truncated
              * @description 请求的页范围超出了文档总页数（``to_page > total_pages``）。多出来的那几页

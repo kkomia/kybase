@@ -17,6 +17,13 @@
 
 **没有页码信息时如实说"没有"，不报错**：纯文本类文档（.md / .txt）本来就只有一页，
 却也不带标记；一个 500 会把"界面该说明的事"变成"像是后端坏了"。
+
+**有页码信息也不等于页码是对的**：标记是上游解析器写进产物的，而它写错过。
+存量数据里有一批切分文档（2026-09-15..28 入库，那时"大文件切分后把各段的相对
+页码抬成绝对页码"还没修好），合并产物里 ``<!-- page:1 -->`` 反复出现——读侧只能
+照着把后面的正文全标成第 1 页，于是"第 1 页"那一段会横跨十几章、几百页的文档
+只定位得到十几个页号。这类产物**不该被当成事实交出去**，判据见
+:class:`PageReading` 与 :func:`read_pages`。
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ __all__ = [
     "MAX_PAGES_PER_REQUEST",
     "PAGE_IMAGE_DPI",
     "PAGE_IMAGE_PREFIX",
+    "PageReading",
     "PageSlice",
     "check_page_range",
     "page_image",
@@ -43,7 +51,9 @@ __all__ = [
     "page_image_kind",
     "page_image_resource",
     "page_image_url",
+    "page_marker_stats",
     "page_text",
+    "read_pages",
     "slice_pages",
 ]
 
@@ -89,7 +99,67 @@ class PageSlice:
     text: str
 
 
+@dataclass(frozen=True, slots=True)
+class PageReading:
+    """按页读一份解析产物的结果：各页文字 **+ 这份产物的页码可不可信**。
+
+    光有文字是不够的：产物里的页码是上游解析器写下的，它可能写错。把"标着第 1 页"
+    的那一段当第 1 页交出去，调用方就会拿它当"第 1 页"引用——**宁可先说清页码不可信**。
+
+    三个字段一起构成那个判断的依据，缺一个都判不了：文档自称的总页数（``page_count``）、
+    产物里**定位到的不同页数**（``pages_located``）、**最大页号**（``max_page``）。
+    """
+
+    pages: list[PageSlice]
+    """``[from_page, to_page]`` 的各页文字（长度恒等于请求的页数，见 :func:`slice_pages`）。"""
+
+    text_available: bool
+    """产物里有没有页码信息。``False`` 时 ``pages_located`` / ``max_page`` / ``reliable``
+    都是 ``None``——没有页码可判，不是"页码错了"。"""
+
+    page_count: int | None
+    """文档自称的总页数（``documents.page_count``，探测阶段写入）。``None`` = 探测没给出页数。"""
+
+    pages_located: int | None
+    """产物里**定位到的不同页号个数**（不是块数）。``None`` = 产物里没有页标记。"""
+
+    max_page: int | None
+    """产物里出现过的最大页号。``None`` = 产物里没有页标记。"""
+
+    reliable: bool | None
+    """产物里的页码可不可信（三值，**宁缺勿错**）。
+
+    - ``None``：产物里没有页标记——没有页码可判，**不是"页码错了"**（纯文本来源
+      的文档就落在这里，界面该说"没有页码信息"而不是"页码不可信"）；
+    - ``True``：有页标记，且与文档自称的总页数**自洽**：``max_page <= page_count``
+      且 ``pages_located * 2 >= page_count``。``page_count`` 拿不到（``None``）时
+      判不了，也回 ``True``——**没有依据就不喊狼来了**；``page_count <= 1`` 的文档
+      更没有"页码错位"这回事，同样回 ``True``；
+    - ``False``：有页标记但与总页数对不上（定位到的页数远少于总页数，比如 619 页
+      只定位到 19 个页号；或者出现了超过总页数的页号）——**按页读到的那一段不能
+      当成"第 N 页"引用**，那是一整段没有页码意义的正文。
+    """
+
+
 # --------------------------------------------------------------------- 取文字
+
+
+def page_marker_stats(markdown: str) -> tuple[int, int]:
+    """产物里页标记的统计：``(不同页号数, 最大页号)``；一个标记都没有时是 ``(0, 0)``。
+
+    只读、**只扫一遍**，不切页、不改任何东西。它是"这份产物的页码可信吗"那个判断的
+    输入（见 :func:`read_pages`）——数与数的比较，不掺正文进来。
+
+    **刻意与 :func:`slice_pages` 分开**：那个函数回答"第 N 页的正文是什么"，返回契约
+    被一整套用例与老调用方钉着；这里回答"产物总共写了些什么页码"，两者要的东西不同，
+    合并只会让其中一个将就另一个。
+    """
+    located: set[int] = set()
+    for line in markdown.splitlines():
+        match = PAGE_MARKER_RE.match(line.strip())
+        if match is not None:
+            located.add(int(match.group(1)))
+    return len(located), max(located, default=0)
 
 
 def slice_pages(
@@ -145,22 +215,75 @@ def slice_pages(
     return pages, True
 
 
+def read_pages(
+    markdown: str, *, from_page: int, to_page: int, page_count: int | None
+) -> PageReading:
+    """把一份解析产物读成 :class:`PageReading`：各页文字 + 页码可信度。
+
+    切页交给 :func:`slice_pages`，页码统计交给 :func:`page_marker_stats`，这里只把
+    两半收拢，并按下面这套判据给出 ``reliable``（**三值、宁缺勿错**，逐条写在
+    :attr:`PageReading.reliable` 上）：
+
+    - 没有页标记 → ``None``（没有页码可判，不是"页码错了"）；
+    - 有页标记，``page_count`` 拿不到或 ``<= 1`` → ``True``（**没有依据就不喊狼来了**）；
+    - 有页标记，``max_page <= page_count`` 且 ``pages_located * 2 >= page_count``
+      → ``True``（自洽）；
+    - 其余 → ``False``（页码与总页数对不上，**别拿那一段当"第 N 页"引用**）。
+
+    那个 ``* 2`` 是"宽进严出"的取舍点：页码与总页数允许差一倍（插标记时漏掉几页
+    是常事，不该为它喊狼来了），差得比这更远就不是"漏了几页"而是"页码根本没对上"
+    ——实测的坏数据是 619 页只定位到 19 个页号、682 页定位到 16 个。整数比较，
+    不引入浮点。
+    """
+    pages, text_available = slice_pages(markdown, from_page=from_page, to_page=to_page)
+    if not text_available:
+        return PageReading(
+            pages=pages,
+            text_available=False,
+            page_count=page_count,
+            pages_located=None,
+            max_page=None,
+            reliable=None,
+        )
+
+    located, max_page = page_marker_stats(markdown)
+    return PageReading(
+        pages=pages,
+        text_available=True,
+        page_count=page_count,
+        pages_located=located,
+        max_page=max_page,
+        reliable=_pages_reliable(page_count, pages_located=located, max_page=max_page),
+    )
+
+
 def page_text(
     services: Services, document_id: str, from_page: int, to_page: int
-) -> tuple[list[PageSlice], bool]:
-    """取某份文档在 ``[from_page, to_page]`` 里的各页文字。
+) -> PageReading:
+    """取某份文档在 ``[from_page, to_page]`` 里的各页文字，并判出页码可不可信。
 
-    没有解析产物（还没解析完 / 已失败）与产物里没有页标记，都回 ``([], False)``：
-    对调用方来说这是同一件事——**现在没有页码信息可用**，而那说法对两者都成立。
+    没有解析产物（还没解析完 / 已失败）与产物里没有页标记，都得到
+    ``text_available=False``：对调用方来说这是同一件事——**现在没有页码信息可用**，
+    而那说法对两者都成立。
+
+    **文档自称的总页数在这里一并读进来**（``documents.page_count``）：判"页码可信吗"
+    必须拿它当参照，判据在 :func:`read_pages`。
     """
     check_page_range(from_page, to_page)
-    services.documents.get(document_id)  # 文档不存在 → 404，与范围判定同一个顺序
+    record = services.documents.get(document_id)  # 文档不存在 → 404，与范围判定同一个顺序
     stores = _stores(services)
     parsed = stores.meta.get_parse_result(document_id)
     if parsed is None:
-        return [], False
+        return PageReading(
+            pages=[],
+            text_available=False,
+            page_count=record.page_count,
+            pages_located=None,
+            max_page=None,
+            reliable=None,
+        )
     markdown = stores.objects.read(parsed.markdown_path).decode("utf-8", errors="replace")
-    return slice_pages(markdown, from_page=from_page, to_page=to_page)
+    return read_pages(markdown, from_page=from_page, to_page=to_page, page_count=record.page_count)
 
 
 # --------------------------------------------------------------------- 取图片
@@ -265,6 +388,19 @@ def page_image_url(
 
 
 # --------------------------------------------------------------------- 内部
+
+
+def _pages_reliable(page_count: int | None, *, pages_located: int, max_page: int) -> bool:
+    """页码与文档自称的总页数自洽吗（**只给"有页标记"的产物用**）。
+
+    判据与理由见 :func:`read_pages`。这里刻意不返回三值：``None`` 那一档是"没有页码
+    可判"，由调用方在"有没有页标记"上判掉——两种"不可信"混成一个值，界面就会把
+    "这份文档没有页码信息"错说成"它的页码是错的"。
+    """
+    if page_count is None or page_count <= 1:
+        # 拿不到总页数 = 没有判据可比；只有一页的文档也没有"页码错位"这回事
+        return True
+    return max_page <= page_count and pages_located * 2 >= page_count
 
 
 def check_page_range(from_page: int, to_page: int) -> None:

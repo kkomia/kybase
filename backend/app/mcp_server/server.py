@@ -27,7 +27,10 @@
    抛异常那条路走不通——``Tool.run`` 会把 ``ToolError`` 重写成
    ``"Error executing tool xxx: …"``（消息其实留得住，但前面多一句英文），
    而**其它异常一律被压成没有细节的** ``"Error executing tool xxx"``
-   （那句英文前缀与本项目的文案口径也不搭）；
+   （那句英文前缀与本项目的文案口径也不搭）。**认下的领域异常有两个家族**
+   （``KylabError`` 与刻意独立成一支的 ``EmbeddingError``）：只认前者的话，
+   "某个库的嵌入服务连不上"会被压成上面那句没有细节的英文——见 ``make_handler``
+   里 ``except`` 那一处的说明；
 2. **参数校验归我们**：SDK 从函数签名推参数模型，缺参数时它先抛 pydantic 的英文
    ``ValidationError``（客户端看到的是 ``document_id Field required``），我们那句
    ``缺少参数：document_id`` 根本没机会说出口（实测确认）。所以签名做成"什么都能收"
@@ -141,7 +144,7 @@ def build_server():  # type: ignore[no-untyped-def]
     from mcp.types import CallToolResult, TextContent
 
     from app.core.config import get_settings
-    from app.core.exceptions import KylabError
+    from app.core.exceptions import EmbeddingError, KylabError
     from app.core.services import get_services
     from app.mcp_server.auth import CallerMiddleware, current_caller
     from app.services.tools import STRUCTURED_CONTENT, tool_definitions
@@ -237,7 +240,7 @@ def build_server():  # type: ignore[no-untyped-def]
                 result = await asyncio.to_thread(
                     call_tool, get_services(), tool_name, payload, caller=caller
                 )
-            except KylabError as exc:
+            except (KylabError, EmbeddingError) as exc:
                 # **业务失败必须是 isError 的结果，不是成功的结果**（v0.62）。
                 # 从前这里 return 一段 JSON 文本，SDK 就把它当成"工具执行成功"——
                 # 只读 Key 被拒、文档不存在、缺参数这些**领域失败**全都以
@@ -250,6 +253,16 @@ def build_server():  # type: ignore[no-untyped-def]
                 # "Error executing tool xxx: …"（多一句英文前缀），而其它异常被压成
                 # 没有细节的 "Error executing tool xxx"——两种都不是我们要给模型看的。
                 # 返回 CallToolResult 才是 SDK 支持的直通（见模块头第 1 条）。
+                #
+                # **认下的领域异常是两支，不是一支**（v0.65）：`core/exceptions.py` 里
+                # 只有两个"领域异常"家族——`KylabError` 与**刻意**独立成一支的
+                # `EmbeddingError`（见那个类的注释：它由嵌入提供方抛出、被 ingest /
+                # retrieval / queue_worker 就地捕获并改写成任务失败状态，所以不并进
+                # `KylabError`）。**但它同样是"调用方该被告知的领域失败"**：只认前者的
+                # 后果实测过——嵌入端点连不上时异常从这里逃出去，mcp SDK 把它压成一句
+                # 没有细节的英文 `Error executing tool search`，压掉的恰恰是最该说出口的
+                # 那一句（哪个库的嵌入服务不可用）。领域失败一律以我们的中文原因回
+                # `isError` 才是这条契约的形状，与它继承谁无关。
                 return CallToolResult(
                     content=[
                         TextContent(

@@ -1,9 +1,14 @@
-"""按页取原文的纯函数：切片与范围校验（``app/services/document_pages.py``）。
+"""按页取原文的纯函数：切片、范围校验、页码可信度（``app/services/document_pages.py``）。
 
-这一半**不碰存储**：切片只吃一段 markdown，范围校验只看两个整数，所以整份用例标
+这一半**不碰存储**：切片只吃一段 markdown，范围校验只看两个整数，页码可信度只比
+几个数，所以整份用例标
 ``local``——没有 PG 的机器上也该能跑。它们管的是"最容易被当成小事"的那几处：
 缺页、超出总页数、没有页码信息。那几种情况下**如实给空**比报错重要，因为界面要
 照着它说话（"这份文档没有页码信息"）。
+
+**页码可信度那一节是 2026-10 补的**：产物里的页码由上游解析器写下，而它写错过
+（存量切分文档里 ``<!-- page:1 -->`` 反复出现）。读侧不能把"标着第 1 页"的那一段
+当第 1 页交出去——本文件要钉住的就是那个判据的三值，尤其是**不可信那一档**。
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ from app.services.document_pages import (
     MAX_PAGES_PER_REQUEST,
     check_page_range,
     page_image_kind,
+    page_marker_stats,
+    read_pages,
     slice_pages,
 )
 
@@ -155,6 +162,128 @@ def test_crlf_markers_are_recognized() -> None:
     assert available is True
     assert "第一页正文" in pages[0].text
     assert "第二页正文" in pages[1].text
+
+
+# --------------------------------------------------------------------- 页码统计
+
+
+def test_stats_count_distinct_page_numbers_not_markers() -> None:
+    """统计的是**不同页号**与**最大页号**，不是标记出现的次数。
+
+    同一页号标了两次只算一个页号——"这份产物写了几个页号"才是判断页码可信度的
+    那个数（重复标记恰恰是坏产物的症状，见下面那条复现式用例）。
+    """
+    markdown = "<!-- page:1 -->\n甲\n\n<!-- page:1 -->\n乙\n\n<!-- page:7 -->\n丙\n"
+
+    assert page_marker_stats(markdown) == (2, 7)
+
+
+def test_stats_of_a_product_without_markers_are_zero() -> None:
+    assert page_marker_stats("# 说明\n\n正文。\n") == (0, 0)
+
+
+# --------------------------------------------------------------------- 页码可信度
+
+#: "总页数很大、产物里却只有零星几个页号"的产物：619 页只定位到 19 个页号。
+#: 存量数据里那批切分文档就是这个形状（见下面那条复现式用例）。
+SPARSE = "\n\n".join(f"<!-- page:{page} -->\n正文。" for page in [1, *range(2, 19), 200])
+
+
+def test_pages_are_reliable_when_they_agree_with_the_page_count() -> None:
+    """有页标记、且与文档自称的总页数自洽（最大页号不超、定位到的页数够多）→ 可信。"""
+    reading = read_pages(MARKED, from_page=1, to_page=2, page_count=4)
+
+    assert reading.text_available is True
+    assert reading.pages_located == 4
+    assert reading.max_page == 4
+    assert reading.reliable is True
+    assert [item.page for item in reading.pages] == [1, 2]
+    assert "第一页正文" in reading.pages[0].text
+
+
+def test_far_fewer_pages_than_the_page_count_is_unreliable() -> None:
+    """619 页的文档、产物里只定位到 19 个页号：**页码不可信**。
+
+    这就是要防的那件事：不判的话，"第 1 页"那一段会被当成第 1 页交出去，
+    而它实际横跨十几章。
+    """
+    reading = read_pages(SPARSE, from_page=1, to_page=2, page_count=619)
+
+    assert reading.text_available is True
+    assert reading.pages_located == 19
+    assert reading.reliable is False
+
+
+def test_without_markers_the_reliability_is_unknown() -> None:
+    """没有页标记时是 ``None``：**没有页码可判，不是"页码错了"**。
+
+    这一档必须与 ``False`` 分开——纯文本来源的文档落在这里，界面该说"没有页码信息"，
+    说成"页码不可信"就是冤枉它（见 ``PageReading.reliable`` 那条三值说明）。
+    """
+    reading = read_pages("# 说明\n\n正文。\n", from_page=1, to_page=2, page_count=619)
+
+    assert reading.text_available is False
+    assert reading.pages_located is None
+    assert reading.max_page is None
+    assert reading.reliable is None
+
+
+def test_a_page_number_beyond_the_page_count_is_unreliable() -> None:
+    """产物里出现超过总页数的页号：对不上，不可信。
+
+    这份产物只差在最大页号上（4 页的标记 vs 自称 3 页），所以这条钉的是判据的
+    前半截（``max_page <= page_count``），与上面那条"页数远少于总页数"互补。
+    """
+    reading = read_pages(MARKED, from_page=1, to_page=2, page_count=3)
+
+    assert reading.max_page == 4
+    assert reading.reliable is False
+
+
+def test_a_missing_page_count_is_not_a_reason_to_cry_wolf() -> None:
+    """总页数拿不到（``None``）时判不了，回 ``True``：**没有依据就不喊狼来了**。"""
+    reading = read_pages(MARKED, from_page=1, to_page=2, page_count=None)
+
+    assert reading.page_count is None
+    assert reading.reliable is True
+
+
+def test_a_one_page_document_is_not_called_unreliable() -> None:
+    """``page_count <= 1`` 的文档**没有"页码错位"这回事**，别判成不可信。
+
+    1 页的文档上，"定位到的页数远少于总页数"与"页号超过总页数"两条判据都没有意义；
+    用户能做的补救（重新解析）也不会让结果有任何不同。
+    """
+    markdown = "<!-- page:1 -->\n只有一页的正文。\n"
+
+    for page_count in (0, 1):
+        reading = read_pages(markdown, from_page=1, to_page=1, page_count=page_count)
+        assert reading.reliable is True
+
+
+def test_a_merged_product_with_a_repeated_page_one_is_unreliable() -> None:
+    """**复现式回归**：Wills 那份产物的形状（同一页号反复出现、总页数很大）判成不可信。
+
+    形状照实测的 ``doc_a5e837b84bac``（Wills 眼科手册第 7 版）复刻：文档自称 619 页，
+    产物里 ``<!-- page:1 -->`` 在合并点反复出现（342 块里有 118 块标在 ``page=1``），
+    不同页号只有 19 个、最大 200。来路是**存量数据的毛病**：2026-09-15..28 入库的那批
+    切分文档合并时"把各段的相对页码抬成绝对页码"还没修好，读侧只能照着把后面的正文
+    全标成第 1 页。
+
+    这份产物的最大页号（200）**没超过**总页数，所以它只可能栽在"定位到的页数"那半截
+    判据上——把判据去掉，这条用例必须变红。
+    """
+    markdown = "\n\n".join(
+        f"<!-- page:{page} -->\n第 {page} 页的正文。"
+        for page in [1] * 100 + list(range(2, 19)) + [200]
+    )
+    reading = read_pages(markdown, from_page=1, to_page=2, page_count=619)
+
+    assert reading.pages_located == 19
+    assert reading.max_page == 200
+    assert reading.reliable is False, "这一页的文字横跨十几章，不能当成「第 1 页」交出去"
+    # 文字本身照给：它是文档的真实内容，只是**不能当页码引用**（这条口径也钉一下）
+    assert "第 1 页的正文" in reading.pages[0].text
 
 
 # --------------------------------------------------------------------- 范围校验

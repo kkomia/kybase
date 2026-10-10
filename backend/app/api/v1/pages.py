@@ -58,12 +58,18 @@ def document_pages(
 
     **没有页码信息时不报错**：``page_text_available=false``，``pages`` 里每页的
     ``text`` 是空串。界面据此如实显示"这份文档没有页码信息"，而不是显示一个错误。
+
+    **产物里有页标记也不等于页码是对的**：``pages_reliable=false`` 说的是"产物里的
+    页码与文档自称的总页数对不上"（存量数据里有一批切分文档就是这样，见
+    ``services/document_pages.py`` 模块头）。这时 ``pages`` 里的文字照样给出去——
+    它是这份文档的真实内容，只是**不能当成"第 N 页"引用**；界面据此提示"页码不可信、
+    可重新解析"，而 ``pages_reliable`` 是 ``null``（没有页码信息）时不该这么说。
     """
     record = _guard_document(services, caller, document_id)
     total_pages = record.page_count
 
-    slices, text_available = page_text(services, document_id, from_page, to_page)
-    available_text = {item.page: item.text for item in slices}
+    reading = page_text(services, document_id, from_page, to_page)
+    available_text = {item.page: item.text for item in reading.pages}
     # 能出图的种类才签链接：对一份 .txt 签一堆必然 409 的链接，界面只会多一片加载失败的图
     kind = page_image_kind(record.name) if images else None
     # 没有签名密钥时**发不了链接但不报错**（同 preview 那条）：文字仍然给出去，
@@ -94,7 +100,11 @@ def document_pages(
         from_page=from_page,
         to_page=to_page,
         total_pages=total_pages,
-        page_text_available=text_available,
+        page_text_available=reading.text_available,
+        # 三值直接透传（``null`` = 没有页码信息，``false`` = 有页码但对不上）。
+        # 服务层判完就完了，协议层不再叠一层自己的判据
+        pages_reliable=reading.reliable,
+        pages_located=reading.pages_located,
         # 只有"要的页超出了文档总页数"才算截断：那些页注定是空的，界面据此收住
         truncated=total_pages is not None and to_page > total_pages,
         pages=pages,

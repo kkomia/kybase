@@ -1,13 +1,15 @@
 /**
  * 「按页」视角（`DocumentPages`，挂在文档抽屉的「阅读」档下）的用例。
  *
- * 钉住四件事（都对着后端 `GET /documents/{id}/pages` 的契约）：
+ * 钉住五件事（都对着后端 `GET /documents/{id}/pages` 的契约）：
  * 1. **默认档与默认范围**：原件是 PDF 时默认看页图，范围是"整份"（这里 12 页）；
  * 2. **两种档各取各的**：图片档 `images=true`、文字档 `images=false`，页图用相对路径
  *    的签名链接直接 `<img src>`；
  * 3. **如实的两处空态**：`page_text_available=false` 是"没有页码信息"（不铺一叠空页），
  *    `image_url=null` 的那一页给一句空态（不挂破图）；
- * 4. **输入夹在单次上限内**（后端超了回 422，不该让用户白等一趟）。
+ * 4. **输入夹在单次上限内**（后端超了回 422，不该让用户白等一趟）；
+ * 5. **页码不可信只说在该说的那一档**：`pages_reliable=false`（有页码但与总页数对不上）
+ *    给一句说明，`true` 与 `null`（没有页码信息，那是第 3 条的事）都不给。
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -91,6 +93,9 @@ function makePages(overrides: Partial<DocumentPagesResult> = {}): DocumentPagesR
     to_page: 2,
     total_pages: 12,
     page_text_available: true,
+    // 12 页的文档、产物里 12 个页号：自洽，所以默认这份夹具的页码是可信的
+    pages_reliable: true,
+    pages_located: 12,
     truncated: false,
     pages: [page(1), page(2)],
     ...overrides,
@@ -151,6 +156,8 @@ describe('按页看原文', () => {
       '/api/v1/documents/doc-1/pages/1/image?expires=1800000000&signature=sig',
     )
     expect(screen.getByText('文档共 12 页')).toBeInTheDocument()
+    // 页码与总页数自洽：不该出现"页码不可信"那句
+    expect(screen.queryByText(/页码不可信/)).toBeNull()
   })
 
   it('切到「文字」档改按解析文字取（images=false），一页一段正文', async () => {
@@ -220,6 +227,9 @@ describe('按页看原文', () => {
     pagesMock.mockResolvedValue(
       makePages({
         page_text_available: false,
+        // 没有页码信息时后端回 null（不是 false）：那是"没有页码可判"，不是"页码错了"
+        pages_reliable: null,
+        pages_located: null,
         pages: [page(1, { text: '' }), page(2, { text: '' })],
       }),
     )
@@ -230,8 +240,27 @@ describe('按页看原文', () => {
 
     expect(await screen.findByText('这份文档没有页码信息。')).toBeInTheDocument()
     expect(screen.getByText('切到「图片」档可以看原件。')).toBeInTheDocument()
+    // "没有页码信息"不等于"页码不可信"：这两种说法不能混（后者说的是"页码是错的"）
+    expect(screen.queryByText(/页码不可信/)).toBeNull()
     // "没有页码信息"不等于"文档是空的"：一页都不该铺出来
     expect(screen.queryByText('第 1 页')).toBeNull()
+  })
+
+  it('页码不可信：说清只定位到几页 / 自称几页，并指出可以重新解析', async () => {
+    // 形状照实测的 Wills 那份（doc_a5e837b84bac，619 页）：产物里 `<!-- page:1 -->`
+    // 反复出现，读侧只能把后面的正文全标成第 1 页
+    pagesMock.mockResolvedValue(
+      makePages({ total_pages: 619, pages_reliable: false, pages_located: 19 }),
+    )
+    const user = userEvent.setup()
+    await openPages(user)
+
+    const hint = await screen.findByText(/页码不可信/)
+    expect(hint).toHaveTextContent('只定位到 19 个页号')
+    expect(hint).toHaveTextContent('自称 619 页')
+    expect(hint).toHaveTextContent('重新解析')
+    // 文字照样铺：不可信的是"它是第几页"，不是"它是不是这份文档的内容"
+    expect(screen.getByText('第 1 页')).toBeInTheDocument()
   })
 
   it('范围超出总页数：说清超出部分没有内容，空出来的那页给空态而不是破图', async () => {
