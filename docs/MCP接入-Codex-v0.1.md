@@ -24,7 +24,9 @@
 | `search` | 混合检索，**返回带出处的原文片段**（不是生成的答案）。结果的**第一行是判定**（`summary` / `fit`），先读它再读片段 |
 | `list_documents` / `get_document_status` | 文档列表 / 处理进度 |
 | `get_document_content` | 取一份文档的全文：`format="markdown"`（默认）回解析后的正文，`format="original"` 回原文件 base64；正文超 20 万字符只回前一段并标 `truncated`，原文件超 32 MB 直接拒（改用 REST 下载） |
+| `get_document_pages` | 取一份文档**某几页**的原文（`from_page` / `to_page`，一次最多 50 页）：每页一条 `page` / `text`；PDF 与图片类还给这一页原图的 `image_url`。没有页码信息（`.md` / Office 类来源）的文档回 `page_text_available=false`、每页 `text` 是空串 |
 | `create_knowledge_base` / `upload_document` / `add_data_source` | 建库 / 上传 / 登记数据源（**写操作，需要读写档 Key**） |
+| `reparse_document` | **强制重新解析**一份文档：清掉切块 / 向量 / 解析产物，从解析器整条重跑（**写操作，需要读写档 Key**）。只有处理已结束的文档收得下，有任务在跑时被拒；会真调解析器、可能消耗云端解析额度 |
 | `delete_document` | 删文档（原文进回收站 7 天，**向量立即清除**） |
 
 ## 先认指纹：怎么知道服务端换过契约
@@ -182,7 +184,7 @@ curl -sS -X POST 'http://192.168.31.18:8081/api/v1/api-keys' \
 | `search` 回了一批 `similarity` 为空的行，看着像分数没算出来 | **不是坏了**：那些命中的 `basis` 是 `fulltext`，来自词面通道，**本来就没有余弦** | 高 `min_score` 管不到它们（条数在后端的 `decision.unscored_kept` 里）；要更严就自己按 `lexical_score` 筛 |
 | 工具调用返回成功，但内容是一个 `{"error": …}` | **这次其实是失败的**——看协议层的 `isError`，领域失败为 `true` | 读 `error` 里的中文改参数；别把 `{"error": …}` 当正常数据往下传 |
 | 参数名或行为与本文对不上 | 服务端在这期间换过契约：**发版号可能没动**，得看工具面指纹 | 比对 `serverInfo.version` 的 `+mcp.<指纹>`（或 `--list-tools` 最后一行 / `GET /api/v1/tools`），变了就按新契约重读本文与工具描述 |
-| 想关写操作 / 只放开一部分工具 | **在服务端收窄**，不要靠客户端配置：建 Key 时勾「工具范围」 | 只读档 Key 天然没有写权限；要更细就建一把工具范围的 Key——只勾 `search`、`list_knowledge_bases`、`list_documents`、`get_document_status`、`get_document_content` 这类只读工具，它连 `create_knowledge_base` / `upload_document` / `add_data_source` / `delete_document` 都调不动 |
+| 想关写操作 / 只放开一部分工具 | **在服务端收窄**，不要靠客户端配置：建 Key 时勾「工具范围」 | 只读档 Key 天然没有写权限；要更细就建一把工具范围的 Key——只勾 `search`、`list_knowledge_bases`、`list_documents`、`get_document_status`、`get_document_content`、`get_document_pages` 这类只读工具，它连 `create_knowledge_base` / `upload_document` / `add_data_source` / `reparse_document` / `delete_document` 都调不动 |
 
 ## 使用口径（给模型也给人）
 

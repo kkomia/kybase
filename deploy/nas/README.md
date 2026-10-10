@@ -242,7 +242,9 @@ curl -fsS http://127.0.0.1:8081/api/v1/health
 docker compose exec -T mcp python -m app.mcp_server.server --list-tools
 #    期望：list_knowledge_bases / create_knowledge_base / upload_document /
 #         add_data_source / search / list_documents / get_document_status /
-#         get_document_content / delete_document
+#         get_document_content / get_document_pages / reparse_document /
+#         delete_document
+#    （以它实际打印的为准：工具面随版本增长，最后一行是 surface_fingerprint）
 ```
 
 > **2026-10-09 后端瘦身后的变化**：原先这两条检查打的是 `services/skills.py` 的技能清单与
