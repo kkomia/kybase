@@ -5,7 +5,7 @@
  *
  * ```
  * 品牌位（环行星标 + 折叠开关）
- * 主导航：所有知识库 / 概览 / 任务中心 / 工具 / API 密钥（**顶层**项，没有父分组）
+ * 主导航：所有知识库 / 概览 / 任务中心 / 工具 / 模型 / API 密钥（**顶层**项，没有父分组）
  * 页脚：账号（头像 + 名字 → 向上展开的菜单）
  * ```
  *
@@ -34,8 +34,8 @@
  *
  * 各项**无条件渲染**：连不上的处置在页面自己身上（页面进页时那条读会报它自己的错）。
  * 顺序：所有知识库（`/knowledge-bases`）/ 概览（`/`，exact）/ 任务中心（`/tasks`）/
- * 工具（`/tools`）/ API 密钥（`/api-keys`）；后两项是 2026-10-09 补的对外能力面
- * （见 `NAV_ITEMS` 那张表）。选中态**各算各的**（`isActive`），不再有"整组亮起来"那一条。
+ * 工具（`/tools`）/ 模型（`/models`）/ API 密钥（`/api-keys`）；后三项是 2026-10-09 补的
+ * 对外能力面（见 `NAV_ITEMS` 那张表）。选中态**各算各的**（`isActive`），不再有"整组亮起来"那一条。
  *
  * ## 图标：Remix Icon（与上游同一套）
  *
@@ -45,6 +45,7 @@
  * | 概览 | `dashboard-line` |
  * | 任务中心 | `task-line` |
  * | 工具 | `tools-line` |
+ * | 模型 | `cpu-line` |
  * | API 密钥 | `key-2-line` |
  * | 品牌标 | 环行星（`features/chat/ui/Logo.tsx` 的 `mark`） |
  * | 折叠开关 | 自绘（`./icons.tsx`，用户给的 iconfont 原稿） |
@@ -59,7 +60,14 @@
 import { Link, useLocation } from 'react-router'
 
 import { preloadPage } from '@/app/routes'
-import { RiBook2Line, RiDashboardLine, RiKey2Line, RiTaskLine, RiToolsLine } from '@remixicon/react'
+import {
+  RiBook2Line,
+  RiCpuLine,
+  RiDashboardLine,
+  RiKey2Line,
+  RiTaskLine,
+  RiToolsLine,
+} from '@remixicon/react'
 
 import { Logo } from '@/features/chat/ui/Logo'
 import { cn } from '@/lib/utils'
@@ -93,10 +101,12 @@ const NAV_ROW_COLLAPSED = 'gap-0 px-[14px]'
  * | 概览 | `/` | 驾驶舱，与上游同一落地页 |
  * | 任务中心 | `/tasks` | 流水线任务与运行负载 |
  * | 工具 | `/tools` | 这个服务对外提供了什么（工具 / MCP 地址 / 技能） |
+ * | 模型 | `/models` | 用途绑哪个模型（出题 / 摘要走「对话生成」那一格）+ 供应商与模型登记；写入口只认管理员 |
  * | API 密钥 | `/api-keys` | 管长期密钥；端点只认管理员，成员进去看到受限态 |
  *
- * 前三项是「知识库这个控制台」的日常面；后两项（工具与 API 密钥）是**对外能力**那一面，
- * 2026-10-09 补进来时排在后面：它们回答的是"外面怎么接进来"，与改库、看任务不同一件事。
+ * 前三项是「知识库这个控制台」的日常面；后三项（工具 / 模型 / API 密钥）是**对外能力**
+ * 那一面，2026-10-09 补进来时排在后面：它们回答的是"外面怎么接进来"与"模型从哪儿来"，
+ * 与改库、看任务不同一件事。
  * 「API 密钥」原来挂在账号菜单上（`AccountMenu`）——它够日常、又要有自己的地址栏入口，
  * 所以搬成这一页；账号菜单里只剩头像与主题（翻转那一项）。
  *
@@ -149,6 +159,14 @@ const NAV_ITEMS = [
     exact: false,
     motion: undefined,
     page: 'tools',
+  },
+  {
+    to: '/models',
+    label: '模型',
+    icon: RiCpuLine,
+    exact: false,
+    motion: undefined,
+    page: 'models',
   },
   {
     to: '/api-keys',

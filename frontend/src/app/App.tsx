@@ -44,6 +44,7 @@ const DocumentView = lazy(PAGES.document)
 const LoginPage = lazy(PAGES.login)
 const TasksPage = lazy(PAGES.tasks)
 const ToolsPage = lazy(PAGES.tools)
+const ModelsPage = lazy(PAGES.models)
 const ApiKeysPage = lazy(PAGES.apiKeys)
 const DashboardPage = lazy(PAGES.dashboard)
 const NotFoundPage = lazy(PAGES.notFound)
@@ -89,6 +90,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/documents\//, '文档详情'],
   [/^\/tasks/, '任务中心'],
   [/^\/tools/, '工具'],
+  [/^\/models/, '模型'],
   [/^\/api-keys/, 'API 密钥'],
 ]
 
@@ -236,6 +238,9 @@ export function App() {
                 <Route path="/tasks" element={<TasksPage />} />
                 {/* 对外能力：工具目录（含 MCP 地址与随附技能）——任何登录会话都读得到 */}
                 <Route path="/tools" element={<ToolsPage />} />
+                {/* 模型：用途绑定（出题 / 摘要走 chat 那一格）与供应商、模型登记；
+                    写端点只认管理员，成员进来看到的是页面自己的只读态 */}
+                <Route path="/models" element={<ModelsPage />} />
                 {/* API 密钥：端点只认管理员；成员进来看到的是页面自己的受限态 */}
                 <Route path="/api-keys" element={<ApiKeysPage />} />
                 {/* 旧地址保留成重定向，免得旧书签变 404（与上游同一处置） */}
