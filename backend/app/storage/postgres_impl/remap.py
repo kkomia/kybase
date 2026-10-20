@@ -257,30 +257,33 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {old:>2} -> {new:<2}  {_describe(new)}")
                 print(f"\n删掉的旧版本行（只属于 Agent 域）：{sorted(legacy_agent_versions())}")
                 print("\n这是 dry-run。确认无误后加 --apply 真正写入。")
-                return 0
-            missing = _missing_objects(db)
-            if missing:
-                print(
-                    "拒绝执行：这台库缺少下面这些 KB 对象，"
-                    "不能当成「已到 KB 头部」：",
-                    file=sys.stderr,
-                )
-                for item in missing:
-                    print(f"  - {item}", file=sys.stderr)
-                return 1
-            expected = set(legacy_remap_plan()) | set(legacy_agent_versions())
-            actual = {int(row["version"]) for row in rows}
-            if actual != expected:
-                print(
-                    "拒绝执行：schema_migrations 里的版本集合和旧序列对不上——"
-                    f"多出 {sorted(actual - expected) or '无'}，"
-                    f"缺少 {sorted(expected - actual) or '无'}。",
-                    file=sys.stderr,
-                )
-                return 1
-            _rewrite_versions(db, rows)
-            print(f"已重写版本号：{LEGACY_INTERLEAVED_HEAD} -> {SCHEMA_VERSION}")
-            print(f"现在版本：{current_version(db)}")
+                if not (args.drop_agent_tables or args.purge_legacy_tasks):
+                    return 0
+                print("（下面顺带列出可选清理动作的规模，同样只是 dry-run。）")
+            else:
+                missing = _missing_objects(db)
+                if missing:
+                    print(
+                        "拒绝执行：这台库缺少下面这些 KB 对象，"
+                        "不能当成「已到 KB 头部」：",
+                        file=sys.stderr,
+                    )
+                    for item in missing:
+                        print(f"  - {item}", file=sys.stderr)
+                    return 1
+                expected = set(legacy_remap_plan()) | set(legacy_agent_versions())
+                actual = {int(row["version"]) for row in rows}
+                if actual != expected:
+                    print(
+                        "拒绝执行：schema_migrations 里的版本集合和旧序列对不上——"
+                        f"多出 {sorted(actual - expected) or '无'}，"
+                        f"缺少 {sorted(expected - actual) or '无'}。",
+                        file=sys.stderr,
+                    )
+                    return 1
+                _rewrite_versions(db, rows)
+                print(f"已重写版本号：{LEGACY_INTERLEAVED_HEAD} -> {SCHEMA_VERSION}")
+                print(f"现在版本：{current_version(db)}")
         else:
             print(
                 f"拒绝执行：版本 {version} 既不是旧序列头 {LEGACY_INTERLEAVED_HEAD}，"
@@ -289,28 +292,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
-        # ---- 可选清理动作（都要 --apply + --yes）----
-        if args.drop_agent_tables:
-            if not args.apply:
-                print("\n--drop-agent-tables 需要同时给 --apply；dry-run 下只列行数：")
+        # ---- dry-run 的收尾：把可选清理动作的规模也列出来（不做任何写入）----
+        if not args.apply:
+            if args.drop_agent_tables:
+                print("\n--drop-agent-tables 需要 --apply；现在只列行数：")
                 for table in AGENT_TABLES:
                     count = _table_rows(db, table)
                     if count is not None:
                         print(f"  {table}: {count} 行")
-                return 0
+            if args.purge_legacy_tasks:
+                print(f"\n--purge-legacy-tasks 需要 --apply；待清 {_legacy_task_rows(db)} 行。")
+            return 0
+
+        # ---- 可选清理动作（都要 --apply + --yes）----
+        if args.drop_agent_tables:
             if not _confirm(args.yes, "drop 这 10 张 Agent 表"):
                 return 1
             _drop_agent_tables(db)
             print(f"已 drop {len(AGENT_TABLES)} 张 Agent 表。")
 
         if args.purge_legacy_tasks:
-            if not args.apply:
-                pending = _legacy_task_rows(db)
-                print(
-                    "\n--purge-legacy-tasks 需要同时给 --apply；"
-                    f"dry-run 下：待清 {pending} 行。"
-                )
-                return 0
             if not _confirm(args.yes, "清掉 tasks 里的历史 memory / scheduled 行"):
                 return 1
             _purge_legacy_tasks(db)
