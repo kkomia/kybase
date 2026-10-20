@@ -99,9 +99,11 @@ deploy/         compose：`deploy/docker-compose.yml`（干净机器一键起四
 docs/           本服务的文档：部署指南 / 外部接入指南 / 交接文档
 ```
 
-`backend/app/` 下的是**实现**（不是占位），`pytest tests` 能跑起来——**但还没全绿**：
-搬进来的是 `b0685e9` 那一刻的测试树，其中一批用例还没跟上 `KbServices` 拆分（kylab 在
-删除链里随后才改的），另一批要读仍留在 kylab 的《API 接口规范》等文档与另外 4 个技能。
+`backend/app/` 下的是**实现**（不是占位）。测试分两档：全量要一个带 pgvector 的 PostgreSQL
+（`KYLAB_TEST_DATABASE_URL`，测试会自己建一个临时库、跑完删掉；`check-backend` 缺它直接判红，
+因为「全跳过」的绿没有意义）；**没有 PG 的机器**跑 `pytest tests -m local`——进程内 / 文件系统
+那一半（2026-10-20 实测 76 passed / 1 skipped）。搬迁时登记的「测试树没跟上 `KbServices` 拆分」
+那批红，已在 2026-10-09 的两轮瘦身提交里跟着测试树一起收口（NAS 测试库上全量真跑）。
 
 ### frontend/（知识库管理台）
 
