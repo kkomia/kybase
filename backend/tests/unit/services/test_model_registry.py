@@ -8,21 +8,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-
 import httpx
 import pytest
 import respx
 
-from app.core.config import Settings
 from app.core.exceptions import (
     ConflictError,
     InvalidRequestError,
     NotFoundError,
     UpstreamError,
 )
-from app.core.storage import build_stores, reset_stores
 from app.services.model_registry import SLOTS, ModelRegistryService
 from app.services.runtime_config import mask_secret
 from app.services.secrets import InMemorySecretStore, model_provider_target
@@ -486,20 +481,13 @@ def test_embedding_target_rejects_a_missing_key(registry: ModelRegistryService) 
 
 # ------------------------------------------------------------ 凭据收进钥匙串（M5 阶段 6）
 #
-# 这一组**自带本机库**（带 `local` marker）：文件里其他用例跑在 PG 上，而"凭据的家是
-# 系统钥匙串"这件事只在本机档成立（R14：服务器档恒 NullSecretStore，它库里那份凭据不动）。
-#
 # 判据一句话：**API 形状零改动**（`ModelProviderRecord.api_key` 读得出真正的钥匙、
-# `/model-registry` 那两个字段照旧），变的只是"它从哪儿来"——DB 那一列在钥匙串档上恒空。
-
-
-@pytest.fixture
-def local_bundle(tmp_path: Path) -> Iterator[StoreBundle]:
-    stores = build_stores(
-        Settings(_env_file=None, deployment="local", data_dir=tmp_path / "data")  # type: ignore[call-arg]
-    )
-    yield stores
-    reset_stores()
+# `/model-registry` 那两个字段照旧），变的只是"它从哪儿来"——装配时传了钥匙串
+# （`secrets.use_keychain` 为真）就只落钥匙串、DB 那一列恒空；不传或钥匙串不可用
+# （服务器容器 / Linux / CI）时库那一列就是凭据的家，一条行为都不变。
+#
+# 这一组与文件里其他用例共用同一个 PG 元数据仓储夹具（`bundle`），不再自带本机库：
+# 瘦身之后本机档（SQLite）已整体拆除，只剩这一套存储形态。
 
 
 @pytest.fixture
@@ -508,14 +496,13 @@ def keychain() -> InMemorySecretStore:
 
 
 @pytest.fixture
-def keyed_registry(local_bundle: StoreBundle, keychain: InMemorySecretStore):
-    return ModelRegistryService(local_bundle, secrets=keychain)
+def keyed_registry(bundle: StoreBundle, keychain: InMemorySecretStore):  # type: ignore[no-untyped-def]
+    return ModelRegistryService(bundle, secrets=keychain)
 
 
-@pytest.mark.local
 def test_a_new_provider_keeps_its_key_in_the_keychain_only(
     keyed_registry: ModelRegistryService,
-    local_bundle: StoreBundle,
+    bundle: StoreBundle,
     keychain: InMemorySecretStore,
 ) -> None:
     """建档那次就把钥匙写进钥匙串；**DB 列是空的**，而返回的记录读得出真正的钥匙。"""
@@ -524,11 +511,10 @@ def test_a_new_provider_keeps_its_key_in_the_keychain_only(
     )
 
     assert keychain.get(model_provider_target(created.id)) == "sk-real-key"
-    assert local_bundle.meta.get_model_provider(created.id).api_key == "", "明文不进库"
+    assert bundle.meta.get_model_provider(created.id).api_key == "", "明文不进库"
     assert created.api_key == "sk-real-key", "API 形状不变：调用方照旧读得到它"
 
 
-@pytest.mark.local
 def test_reads_fill_the_key_from_the_keychain(
     keyed_registry: ModelRegistryService, keychain: InMemorySecretStore
 ) -> None:
@@ -557,17 +543,16 @@ def test_reads_fill_the_key_from_the_keychain(
         keyed_registry.chat_target(model.id)
 
 
-@pytest.mark.local
 def test_updating_the_key_lands_in_the_keychain_and_empty_clears_it(
     keyed_registry: ModelRegistryService,
-    local_bundle: StoreBundle,
+    bundle: StoreBundle,
     keychain: InMemorySecretStore,
 ) -> None:
     created = keyed_registry.create_provider(kind="llm", name="甲", api_key="sk-one")
 
     keyed_registry.update_provider(created.id, api_key="sk-two")
     assert keychain.get(model_provider_target(created.id)) == "sk-two"
-    assert local_bundle.meta.get_model_provider(created.id).api_key == ""
+    assert bundle.meta.get_model_provider(created.id).api_key == ""
 
     # None = 保持原值（前端不动那一栏时传的就是它）
     kept = keyed_registry.update_provider(created.id, name="改了名字")
@@ -578,7 +563,6 @@ def test_updating_the_key_lands_in_the_keychain_and_empty_clears_it(
     assert cleared.api_key == "" and keychain.get(model_provider_target(created.id)) is None
 
 
-@pytest.mark.local
 def test_a_masked_key_is_treated_as_unchanged(
     keyed_registry: ModelRegistryService, keychain: InMemorySecretStore
 ) -> None:
@@ -591,7 +575,6 @@ def test_a_masked_key_is_treated_as_unchanged(
     assert keychain.get(model_provider_target(created.id)) == "sk-abcdefghij"
 
 
-@pytest.mark.local
 def test_deleting_a_provider_takes_its_key_out_of_the_keychain(
     keyed_registry: ModelRegistryService, keychain: InMemorySecretStore
 ) -> None:
@@ -604,12 +587,11 @@ def test_deleting_a_provider_takes_its_key_out_of_the_keychain(
     assert keychain.names() == ()
 
 
-@pytest.mark.local
-def test_without_a_keychain_the_column_stays_the_home(local_bundle: StoreBundle) -> None:
-    """不传钥匙串（服务器档 / 手工装配）时**一条行为都不变**：库那一列就是凭据的家。"""
-    registry = ModelRegistryService(local_bundle)
+def test_without_a_keychain_the_column_stays_the_home(bundle: StoreBundle) -> None:
+    """不传钥匙串（服务器容器 / 手工装配）时**一条行为都不变**：库那一列就是凭据的家。"""
+    registry = ModelRegistryService(bundle)
 
     created = registry.create_provider(kind="llm", name="甲", api_key="sk-in-db")
 
-    assert local_bundle.meta.get_model_provider(created.id).api_key == "sk-in-db"
+    assert bundle.meta.get_model_provider(created.id).api_key == "sk-in-db"
     assert registry.get_provider(created.id).api_key == "sk-in-db"

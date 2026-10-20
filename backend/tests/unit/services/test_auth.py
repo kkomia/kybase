@@ -11,19 +11,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
-from app.core.config import Settings
 from app.core.exceptions import ConflictError, InvalidRequestError, UnauthorizedError
 from app.core.security import hash_token
-from app.core.storage import build_stores, reset_stores
 from app.models.enums import UserRole
 from app.services.auth import URL_SIGNING_SECRET_SETTING, AuthService, ensure_url_signing_secret
-from app.storage.base import ConversationRecord, KnowledgeBaseRecord, StoreBundle, UserRecord
+from app.storage.base import ConversationRecord, KnowledgeBaseRecord, UserRecord
 
 
 @pytest.fixture
@@ -247,60 +243,46 @@ def test_change_password_requires_correct_old_password(auth: AuthService) -> Non
         )
 
 
-# --------------------------------------------------- 下载签名密钥（本机档那次 401 修的）
+# ------------------------------------------------- 下载签名密钥（首次 setup 那一步）
 #
-# 这一组**自带本机库**（带 `local` marker）：文件里其他用例跑在 PG 上，而"谁在什么时候
-# 生成这条密钥"这件事两档不同——服务器档在 `setup` 里生成，本机档在组合根生成。
+# 钥匙从"首次初始化"来：`POST /auth/setup` 是唯一入口，与文件里其他用例共用同一个
+# PG 元数据仓储夹具（`bundle`）。这一组钉两件事——**幂等**（生成一次、之后一直是
+# 同一把；换一把等于把所有已经发出去的签名链接一起作废）与**同一个函数**
+# （setup 调的那一步与模块导出的那个走同一段代码）。
 
 
-@pytest.fixture
-def local_bundle(tmp_path: Path) -> Iterator[StoreBundle]:
-    stores = build_stores(
-        Settings(_env_file=None, deployment="local", data_dir=tmp_path / "data")  # type: ignore[call-arg]
-    )
-    yield stores
-    reset_stores()
-
-
-@pytest.mark.local
-def test_ensure_url_signing_secret_generates_once_and_keeps_it(
-    local_bundle: StoreBundle,
-) -> None:
+def test_ensure_url_signing_secret_generates_once_and_keeps_it(bundle) -> None:  # type: ignore[no-untyped-def]
     """生成一次、之后**一直是同一把**（幂等）。
 
     换一把的后果不是"库里多了一条"，而是"所有已经发出去的签名链接一起失效"——
     凭据会轮换，而签出去的链接不该跟着死（这条键独立存在的整个理由）。
     """
-    assert local_bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) is None
+    assert bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) is None
 
-    first = ensure_url_signing_secret(local_bundle.meta)
+    first = ensure_url_signing_secret(bundle.meta)
 
     assert first and len(first) >= 32, "token_urlsafe(32) 那一档的随机串"
-    assert local_bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) == first
-    assert ensure_url_signing_secret(local_bundle.meta) == first, "第二次不许换一把"
-    assert ensure_url_signing_secret(local_bundle.meta) == first
+    assert bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) == first
+    assert ensure_url_signing_secret(bundle.meta) == first, "第二次不许换一把"
+    assert ensure_url_signing_secret(bundle.meta) == first
 
 
-@pytest.mark.local
-def test_the_step_setup_calls_goes_through_the_same_function(
-    local_bundle: StoreBundle,
-) -> None:
-    """``setup`` 里那一步（``_ensure_signing_secret``）与组合根走**同一个函数**。
+def test_the_step_setup_calls_goes_through_the_same_function(bundle) -> None:  # type: ignore[no-untyped-def]
+    """``setup`` 里那一步（``_ensure_signing_secret``）与模块导出的是**同一个函数**。
 
-    为什么不在这里跑整条 ``setup``：那是**服务器档**的流程，它从头就要读 KB 域
-    （账号与认领都在那一侧），而本机档那一半没有数据源（``RemoteMetaStore`` 没挂
-    reader 就抛）——那也正是"本机档永远跑不到 setup"的原因。所以这一条只钉那个接缝：
-    `setup` 调的那一步与组合根调的是同一段代码（两处各写一遍 token_urlsafe 就是
-    两个"这把钥匙怎么来"的答案）。整条 ``setup`` 的判据在文件上面那些 PG 用例里。
+    为什么不在这里跑整条 ``setup``：整条流程（建管理员、认领老数据、发会话）的判据
+    在文件上面那些用例里，这一条只钉那个接缝——`setup` 调的那一步与
+    `ensure_url_signing_secret` 是同一段代码（两处各写一遍 token_urlsafe 就是
+    两个"这把钥匙怎么来"的答案）。
     """
-    auth = AuthService(local_bundle)
-    assert local_bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) is None
+    auth = AuthService(bundle)
+    assert bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) is None
 
     auth._ensure_signing_secret()
-    generated = local_bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING)
+    generated = bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING)
 
     assert generated and len(generated) >= 32
     auth._ensure_signing_secret()
-    assert local_bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) == generated, (
+    assert bundle.meta.get_setting(URL_SIGNING_SECRET_SETTING) == generated, (
         "同一条路再走一遍也不许换一把"
     )
