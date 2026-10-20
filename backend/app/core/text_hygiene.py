@@ -29,7 +29,7 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def recombine_surrogates(text: str) -> str:
-    """把成对的代理项合并回正常码位（``"\\ud83e\\udd16"`` → 一个 🤖）。
+    """把成对的代理项合并回正常码位（``"\\ud83e\\udd16"`` → 一个 机器人表情（U+1F916））。
 
     成对合起来就正常了——那是**转义写坏**，不是非法内容；只剩一个的才叫真非法。
     """

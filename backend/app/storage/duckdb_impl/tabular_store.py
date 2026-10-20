@@ -26,24 +26,24 @@ from typing import TYPE_CHECKING, Any
 from app.storage.base import SAFE_KEY_CHARS, TabularStore
 
 if TYPE_CHECKING:
-    # 只在注解里用到（``duckdb.DuckDBPyConnection`` ✓）：`from __future__ import annotations`
-    # 之下注解不求值 ✓，所以这一句**不进运行时**、也就不进客户端的导入闭包 ✓。
+    # 只在注解里用到（``duckdb.DuckDBPyConnection`` √）：`from __future__ import annotations`
+    # 之下注解不求值 √，所以这一句**不进运行时**、也就不进客户端的导入闭包 √。
     import duckdb
 
-#: 惰性拿到的 duckdb（**故意不是模块级导入** ✗）。
+#: 惰性拿到的 duckdb（**故意不是模块级导入** ×）。
 _DUCKDB: Any = None
 
 
 def _duckdb() -> Any:
-    """第一次建连接时才导入 duckdb（模块级导入会让**客户端运行时**凭空多背一份 ✗）。
+    """第一次建连接时才导入 duckdb（模块级导入会让**客户端运行时**凭空多背一份 ×）。
 
-    为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 ✓，而"表格副本"（DuckDB 文件）
-    只有**服务器**的导出/表格那条链会碰 ✓ —— 边车（客户端运行时）跑循环 + 工具 + 沙箱 ✓，
+    为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"表格副本"（DuckDB 文件）
+    只有**服务器**的导出/表格那条链会碰 √ —— 边车（客户端运行时）跑循环 + 工具 + 沙箱 √，
     从不落表格副本。模块级 ``import duckdb`` 的后果实测过（P4-3，2026-09-29）：
-    ``dist\\sidecar-runtime`` 里少一份 duckdb 就 ``ModuleNotFoundError`` ✗。
+    ``dist\\sidecar-runtime`` 里少一份 duckdb 就 ``ModuleNotFoundError`` ×。
 
-    **行为一个字没变** ✗：第一次调用时才导入 ✓，duckdb 真的不在时仍在**调用那一刻**
-    抛 ``ModuleNotFoundError`` ✓（只是从导入期挪到了调用期 ✓）。
+    **行为一个字没变** ×：第一次调用时才导入 √，duckdb 真的不在时仍在**调用那一刻**
+    抛 ``ModuleNotFoundError`` √（只是从导入期挪到了调用期 √）。
     """
     global _DUCKDB
     if _DUCKDB is None:

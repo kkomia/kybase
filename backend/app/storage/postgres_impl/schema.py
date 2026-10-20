@@ -17,18 +17,18 @@ from typing import Any
 
 from app.storage.postgres_impl.connection import Database
 
-#: 惰性拿到的 psycopg（**故意不是模块级导入** ✗）。
+#: 惰性拿到的 psycopg（**故意不是模块级导入** ×）。
 _PSYCOPG: Any = None
 
 
 def _psycopg() -> Any:
-    """第一次真用 psycopg 时才导入它（模块级导入会让**客户端运行时**凭空多背一份 ✗）。
+    """第一次真用 psycopg 时才导入它（模块级导入会让**客户端运行时**凭空多背一份 ×）。
 
-    为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 ✓，而"建库 / 加索引"只有
-    **服务器**启动那条路会做 ✓ —— 边车（客户端运行时）不碰 PostgreSQL 的 schema ✓。
+    为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"建库 / 加索引"只有
+    **服务器**启动那条路会做 √ —— 边车（客户端运行时）不碰 PostgreSQL 的 schema √。
 
-    **行为一个字没变** ✗：第一次调用时才导入 ✓，psycopg 真的不在时仍在**调用那一刻**
-    抛 ``ModuleNotFoundError`` ✓（只是从导入期挪到了调用期 ✓）。
+    **行为一个字没变** ×：第一次调用时才导入 √，psycopg 真的不在时仍在**调用那一刻**
+    抛 ``ModuleNotFoundError`` √（只是从导入期挪到了调用期 √）。
     """
     global _PSYCOPG
     if _PSYCOPG is None:

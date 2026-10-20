@@ -27,9 +27,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    # 只在注解里用到（``_declared_dim(conn: Connection, …)`` ✓）：`from __future__ import
-    # annotations` 之下注解不求值 ✓，所以这一句**不进运行时**、也就不进客户端的导入闭包 ✓
-    # （边车不连 PostgreSQL ✓）。
+    # 只在注解里用到（``_declared_dim(conn: Connection, …)`` √）：`from __future__ import
+    # annotations` 之下注解不求值 √，所以这一句**不进运行时**、也就不进客户端的导入闭包 √
+    # （边车不连 PostgreSQL √）。
     from psycopg import Connection
 
 from app.storage.base import SearchFilter, VectorDimensionMismatch, VectorMatch, VectorStore

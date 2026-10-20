@@ -5,7 +5,7 @@
 `httpx/__init__.py` 里有 ``from ._main import main``（httpx 自带的 CLI 入口）——
 于是**任何** ``import httpx`` 都会顺带把 ``click`` + ``pygments`` + ``rich`` 拉进来
 （实测约 5.5 MB）。而**客户端运行时（本地边车）**只需要 httpx"发请求"那一部分能力，
-不该为它背一套 CLI 依赖 ✗。
+不该为它背一套 CLI 依赖 ×。
 
 ## 怎么用
 
@@ -16,15 +16,15 @@ httpx.Client(...)                        # 第一次访问属性时才真正导�
 ```
 
 **调用点一个字都不用改**（属性名照旧），**行为不变**：
-- 第一次访问 ``httpx.X`` 时才导入 ✓；
-- httpx 真的不在时，仍在**第一次访问那一刻**抛 ``ModuleNotFoundError`` ✓
-  （原先在导入模块那一刻抛 ✓）；
-- ``except httpx.HTTPError`` / ``isinstance(exc, httpx.TimeoutException)`` 都照常工作 ✓
-  （取到的是真类 ✓）。
+- 第一次访问 ``httpx.X`` 时才导入 √；
+- httpx 真的不在时，仍在**第一次访问那一刻**抛 ``ModuleNotFoundError`` √
+  （原先在导入模块那一刻抛 √）；
+- ``except httpx.HTTPError`` / ``isinstance(exc, httpx.TimeoutException)`` 都照常工作 √
+  （取到的是真类 √）。
 
 ## 判据
 
-"看代码觉得不该有"不算判据 ✗ ——量一次真导入闭包：
+"看代码觉得不该有"不算判据 × ——量一次真导入闭包：
 
 ```sh
 python -c "import sys, app.core.http; print('click' in sys.modules, 'pygments' in sys.modules)"
@@ -55,5 +55,5 @@ class _LazyHttpx:
 
 
 #: 真属性（**不是**模块级 ``__getattr__``）：这样 ``from app.core.lazy_httpx import httpx``
-#: 拿到的是代理本身 ✓，不会在导入那一刻就把 httpx 拉进来 ✓。
+#: 拿到的是代理本身 √，不会在导入那一刻就把 httpx 拉进来 √。
 httpx = _LazyHttpx()

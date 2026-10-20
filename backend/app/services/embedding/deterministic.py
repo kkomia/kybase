@@ -22,7 +22,7 @@ DEFAULT_DEV_DIM = 256
 MAX_TOKENS_PER_TEXT = 512
 """截断上限：开发兜底不追求长文建模，避免超长文本拖慢测试。"""
 
-#: 惰性拿到的 jieba（**故意不是模块级导入** ✗）。
+#: 惰性拿到的 jieba（**故意不是模块级导入** ×）。
 _JIEBA: Any = None
 
 
@@ -51,14 +51,14 @@ def _jieba_cache_file() -> str | None:
 
 
 def _jieba() -> Any:
-    """第一次用到时才导入 jieba（模块级导入会让**客户端运行时**凭空多背 40.9 MB ✗）。
+    """第一次用到时才导入 jieba（模块级导入会让**客户端运行时**凭空多背 40.9 MB ×）。
 
     与 ``app/storage/text.py::_jieba``、``app/services/retrieval/coverage.py::_jieba`` 同一个
-    道理（P4-3，2026-09-29 实测）：这个模块挂在 ``app.services.embedding`` 的导入链上 ✓，
-    而"切词"只有**服务器**那条向量化链会用 ✓，边车从不切词 ✓。
+    道理（P4-3，2026-09-29 实测）：这个模块挂在 ``app.services.embedding`` 的导入链上 √，
+    而"切词"只有**服务器**那条向量化链会用 √，边车从不切词 √。
 
-    **行为一个字没变** ✗：第一次调用时才导入 ✓，jieba 真的不在时仍在**调用那一刻**
-    抛 ``ModuleNotFoundError`` ✓（只是从导入期挪到了调用期 ✓）。
+    **行为一个字没变** ×：第一次调用时才导入 √，jieba 真的不在时仍在**调用那一刻**
+    抛 ``ModuleNotFoundError`` √（只是从导入期挪到了调用期 √）。
     """
     global _JIEBA
     if _JIEBA is None:

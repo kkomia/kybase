@@ -44,9 +44,9 @@ __all__ = [
 # - `s3_impl` → **boto3 + botocore**（约 21.8 MB）
 # - `duckdb_impl` → **duckdb**（约 35.6 MB）
 #
-# 所以：**按需导入** ✓ —— 只有真正要装配后端时（`build_stores`，启动那条路 ✓）
+# 所以：**按需导入** √ —— 只有真正要装配后端时（`build_stores`，启动那条路 √）
 # 才 import 它们。**行为不变**：之前是"导入模块时"就会炸缺包，现在是"调用
-# build_stores 时"炸 —— 而唯一调用点就是启动时的组合根 ✓（失败时机一样 ✓）。
+# build_stores 时"炸 —— 而唯一调用点就是启动时的组合根 √（失败时机一样 √）。
 
 ORIGINALS_DIR = "originals"
 MARKDOWN_DIR = "markdown"
