@@ -1,3 +1,5 @@
+import { availableParallelism } from 'node:os'
+
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
@@ -57,5 +59,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     setupFiles: ['tests/setup.ts'],
     css: false,
+    // 并发上限：默认（≈ CPU 数）在 16 线程的开发机上会**同时起三十多个 jsdom 环境**，
+    // 互相抢 CPU，重用例随机撞上 5s 默认超时——同一批文件上一轮 8 红、下一轮全绿，
+    // 门禁因此不可信（2026-10-20 接手体检实测）。压到 8 之后反而**更快**：
+    // 整份 34 文件从 43s 降到 23s，连续两轮全绿。低核机器跟着核数降，不写死绝对值。
+    maxWorkers: Math.max(2, Math.min(8, availableParallelism() - 1)),
   },
 })

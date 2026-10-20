@@ -67,6 +67,15 @@ function apiKey(overrides: Partial<ApiKey> = {}): ApiKey {
 }
 
 /**
+ * 相对时间用例必须跟着"现在"走：`formatRelativeTime` 的三档口径是
+ * 分钟/小时/天，**7 天以上直接给绝对日期**。写死一个日期，用例在写下的那天是绿的，
+ * 一周后就变成"最近使用 2026-10-08 02:00"（没有"前"字），从此永远红。
+ */
+function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 3_600_000).toISOString()
+}
+
+/**
  * 工具目录。三把工具是有意挑的：一把只读带必填参数、一把只读无参数（覆盖"无参数"那一格）、
  * 一把要写权限（覆盖权限列的两档）。
  */
@@ -148,7 +157,7 @@ describe('列表', () => {
           permission: 'readwrite',
           knowledge_base_ids: ['kb-1', 'kb-404'],
           allowed_tool_names: ['search'],
-          last_used_at: '2026-10-08T02:00:00Z',
+          last_used_at: hoursAgo(2),
           prefix: 'kylab_sk_xy98…',
         }),
       ],
