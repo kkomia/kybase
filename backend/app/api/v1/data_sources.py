@@ -74,8 +74,9 @@ def create_data_source(
 ) -> DataSourceOut:
     """登记一个数据源。
 
-    **登记不等于拉取**：刚登记完不会立刻有文档，要么等定时任务，
-    要么显式点一次"拉取"。界面上要说清这一点，否则用户会以为登记完就有了。
+    **登记不等于拉取**：刚登记完不会立刻有文档，要显式点一次「立即拉取」。
+    （本服务没有定时拉取——定时任务是 Agent 侧的产品面，随数据分家拆除了。）
+    界面上要说清这一点，否则用户会以为登记完就有了。
     """
     check_kb_scope(services, caller, [kb_id], need=WRITE)
     from app.models.enums import DataSourceKind

@@ -157,7 +157,7 @@ class SourceService:
         if result.not_modified:
             outcome.not_modified = True
             # 304 也要记时间：否则界面上"上次拉取"会一直停在很久以前，
-            # 用户以为定时任务坏了
+            # 用户以为拉取坏了
             self._stores.meta.mark_data_source_pulled(source.id, etag=source.etag)
             return outcome
 

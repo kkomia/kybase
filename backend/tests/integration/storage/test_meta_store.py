@@ -25,9 +25,7 @@ from app.models.enums import (
 )
 from app.storage.base import (
     ApiKeyRecord,
-    ChatMessageRecord,
     ChunkRecord,
-    ConversationRecord,
     DataSourceRecord,
     DocumentPartRecord,
     DocumentRecord,
@@ -36,7 +34,6 @@ from app.storage.base import (
     MetaStore,
     ParseResultRecord,
     SearchEventRecord,
-    SessionEventRecord,
     SessionRecord,
     ShareRecord,
     TaskRecord,
@@ -741,22 +738,21 @@ def test_update_password_and_disable(store: MetaStore) -> None:
 
 
 def test_claim_legacy_ownership_only_touches_ownerless_rows(store: MetaStore, kb) -> None:
-    """认领只动 owner 为 NULL 的老数据；已有归属的行绝不能被改（否则 setup 会变成夺权）。"""
+    """认领只动 owner 为 NULL 的老数据；已有归属的行绝不能被改（否则 setup 会变成夺权）。
+
+    分家之后只认领知识库（会话/笔记那几张 Agent 表已删）。
+    """
     store.create_user(UserRecord(id="user_a", name="管理员", username="admin"))
     store.create_knowledge_base(
         KnowledgeBaseRecord(id="kb_2", name="已有主", embedding_model_id="m",
                             embedding_dim=768, owner_id="user_other")
     )
-    store.create_conversation(ConversationRecord(id="conv_1"))
 
-    counts = store.claim_legacy_ownership("user_a")
-
-    assert counts == {"knowledge_bases": 1, "conversations": 1}
+    assert store.claim_legacy_ownership("user_a") == 1
     assert store.get_knowledge_base("kb_1").owner_id == "user_a"  # type: ignore[union-attr]
     assert store.get_knowledge_base("kb_2").owner_id == "user_other"  # type: ignore[union-attr]
-    assert store.get_conversation("conv_1").owner_id == "user_a"  # type: ignore[union-attr]
     # 再认领一次是空操作：可重入，重复跑不会出错
-    assert store.claim_legacy_ownership("user_a") == {"knowledge_bases": 0, "conversations": 0}
+    assert store.claim_legacy_ownership("user_a") == 0
 
 
 # --------------------------------------------------------------------- 登录会话（v10）
@@ -821,7 +817,6 @@ def test_delete_user_clears_all_ownership_columns(store: MetaStore, kb, document
         KnowledgeBaseRecord(id="kb_2", name="他的库", embedding_model_id="m",
                             embedding_dim=768, owner_id="user_a")
     )
-    store.create_conversation(ConversationRecord(id="conv_1", owner_id="user_a"))
     store.create_api_key(
         ApiKeyRecord(id="key_1", name="集成", key_hash="h",
                      permission=ApiKeyPermission.READONLY, created_by="user_a")
@@ -837,7 +832,6 @@ def test_delete_user_clears_all_ownership_columns(store: MetaStore, kb, document
     store.delete_user("user_a")
 
     assert store.get_knowledge_base("kb_2").owner_id is None  # type: ignore[union-attr]
-    assert store.get_conversation("conv_1").owner_id is None  # type: ignore[union-attr]
     assert store.get_api_key_by_hash("h").created_by is None  # type: ignore[union-attr]
     # 文档保留（数据不丢），只有归属置空
     assert store.get_document("doc_2").uploaded_by is None  # type: ignore[union-attr]
@@ -1109,111 +1103,6 @@ def test_get_settings_batch_returns_only_stored_keys(store: MetaStore) -> None:
 
     assert got == {"mineru.token": "tk-1", "llm.temperature": "0.5"}
     assert store.get_settings([]) == {}
-
-
-# ---------------------------------------------------------------- 会话事件日志（P0-2）
-
-
-def _event(conversation_id: str, kind: str, payload: dict[str, object] | None = None):  # type: ignore[no-untyped-def]
-    return SessionEventRecord(
-        conversation_id=conversation_id, kind=kind, payload=dict(payload or {})
-    )
-
-
-def test_session_events_get_a_contiguous_seq_per_conversation(store: MetaStore) -> None:
-    """``seq`` 由**写那个事务**算，按会话各自从 1 起、逐条加一。
-
-    为什么不让调用方给：序号一旦由数据库之外的一方决定，并发写就会撞上唯一约束
-    （而那是"事件丢了"的样子，不是"重试一下就好"的样子）。
-    """
-    store.create_conversation(ConversationRecord(id="conv_1"))
-    store.create_conversation(ConversationRecord(id="conv_2"))
-
-    first = store.append_session_events(
-        [_event("conv_1", "turn/start"), _event("conv_1", "step"), _event("conv_1", "turn/end")]
-    )
-    assert [item.seq for item in first] == [1, 2, 3]
-    # 另一条会话的序号**互不影响**（seq 是会话内的，不是全局的）
-    other = store.append_session_events([_event("conv_2", "turn/start")])
-    assert [item.seq for item in other] == [1]
-    # 接着写：从上次的 max 继续
-    assert [item.seq for item in store.append_session_events([_event("conv_1", "thinking")])] == [4]
-
-
-def test_session_events_are_append_only(store: MetaStore) -> None:
-    """同一 ``seq`` 不会出现两条：唯一约束当场拒掉第二次写。
-
-    这是"只追加"的**机械保证**——不是靠"我们的代码不更新事件"这句话，
-    而是数据库不许。P0-2 的验收之一正是这一条。
-    """
-    store.create_conversation(ConversationRecord(id="conv_1"))
-    store.append_session_events([_event("conv_1", "turn/start")])
-
-    with (
-        store._db.session() as conn,  # type: ignore[attr-defined]
-        pytest.raises(Exception, match="uq_session_events_seq"),
-    ):
-        conn.execute(
-            "INSERT INTO session_events (conversation_id, seq, kind, payload)"
-            " VALUES (%s, %s, %s, %s)",
-            ("conv_1", 1, "step", "{}"),
-            )
-
-
-def test_list_session_events_returns_them_in_seq_order_and_filters(store: MetaStore) -> None:
-    """按 ``seq`` 正序读；``kinds`` 非空时只取那几种。"""
-    store.create_conversation(ConversationRecord(id="conv_1"))
-    store.append_session_events(
-        [
-            _event("conv_1", "turn/start", {"query": "问题"}),
-            _event("conv_1", "step", {"label": "组织回答"}),
-            _event("conv_1", "interrupted", {"reason": "用户停止"}),
-        ]
-    )
-
-    everything = store.list_session_events("conv_1")
-    assert [item.kind for item in everything] == ["turn/start", "step", "interrupted"]
-    assert everything[0].payload == {"query": "问题"}
-    assert everything[0].id is not None, "bigserial 主键入库时由数据库给"
-
-    filtered = store.list_session_events("conv_1", kinds=["interrupted", "turn/start"])
-    assert [item.kind for item in filtered] == ["turn/start", "interrupted"]
-
-
-def test_appending_a_turn_writes_messages_and_events_together(store: MetaStore) -> None:
-    """``append_turn`` 的**全部意义**：消息与事件要么都在、要么都不在。
-
-    曾经的窗口（"消息在、事件不在"）会让回看时看到一条没有过程记录的回答
-    ——而过程恰恰是 v0.25 起用户回来要找的东西。
-    """
-    store.create_conversation(ConversationRecord(id="conv_1"))
-    messages = (
-        ChatMessageRecord(id="m1", conversation_id="conv_1", role="user", content="问题"),
-        ChatMessageRecord(
-            id="m2",
-            conversation_id="conv_1",
-            role="assistant",
-            content="回答",
-            steps=({"phase": "answer", "label": "组织回答", "status": "done"},),
-        ),
-    )
-    store.append_turn(
-        messages=messages,
-        events=[_event("conv_1", "turn/start"), _event("conv_1", "turn/end")],
-    )
-
-    assert [item.id for item in store.list_messages("conv_1")] == ["m1", "m2"]
-    assert [item.kind for item in store.list_session_events("conv_1")] == ["turn/start", "turn/end"]
-
-
-def test_session_events_cascade_with_the_conversation(store: MetaStore) -> None:
-    """会话删了，它的事件跟着走（与消息同一规则）。"""
-    store.create_conversation(ConversationRecord(id="conv_1"))
-    store.append_session_events([_event("conv_1", "turn/start")])
-
-    store.delete_conversation("conv_1")
-
-    assert store.list_session_events("conv_1") == []
 
 
 # ---------------------------------------------------------------- 检索命中事件（v0.61）

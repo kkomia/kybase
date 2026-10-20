@@ -27,6 +27,7 @@ from psycopg import sql
 
 from app.storage.postgres_impl.connection import Database
 from app.storage.postgres_impl.schema import (
+    LEGACY_INTERLEAVED_HEAD,
     MIGRATIONS,
     SCHEMA_PATH,
     SCHEMA_VERSION,
@@ -136,6 +137,23 @@ def test_version_newer_than_schema_version_is_rejected(fresh_db: Database) -> No
         ensure_schema(fresh_db)
 
 
+def test_legacy_interleaved_head_is_rejected_with_an_ops_hint(fresh_db: Database) -> None:
+    """分家前那台库（交错序列头 v19）拒绝启动，并把一次性运维命令写进报错里。
+
+    这不是"版本太新"的同一句话：它是**已计划的一次升动作**，运维要跑的是
+    ``python -m app.storage.postgres_impl.remap --apply``，而不是去降级库。
+    """
+    prepare(fresh_db)
+    with fresh_db.session() as conn:
+        conn.execute(
+            "insert into schema_migrations (version, description) values (%s, %s)",
+            (LEGACY_INTERLEAVED_HEAD, "kylab 合体期的交错序列头"),
+        )
+
+    with pytest.raises(SchemaError, match=r"postgres_impl\.remap"):
+        ensure_schema(fresh_db)
+
+
 def test_migration_to_the_latest_version_runs_on_an_older_database(
     fresh_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -160,16 +178,8 @@ def test_migration_to_the_latest_version_runs_on_an_older_database(
     assert ensure_schema(fresh_db) == SCHEMA_VERSION, "升级应当只补缺的那几条"
 
     with fresh_db.read() as conn:
-        columns = conn.execute(
-            "select column_name, data_type from information_schema.columns"
-            " where table_name = 'session_events' order by ordinal_position"
-        ).fetchall()
-        unique = conn.execute(
-            "select conname from pg_constraint"
-            " where conrelid = 'session_events'::regclass and contype = 'u'"
-        ).fetchall()
-        # v19 的表也顺路核对一遍：这条用例是唯一一条**在旧库上升级**的路径，
-        # 基线与迁移写错了它才抓得住（空库那条路永远是"一次建完"）
+        # 最新那版（v8 检索命中事件）顺路核对一遍：这条用例是唯一一条
+        # **在旧库上升级**的路径，基线与迁移写错了它才抓得住（空库那条路永远是"一次建完"）
         search_columns = conn.execute(
             "select column_name from information_schema.columns"
             " where table_name = 'search_events' order by ordinal_position"
@@ -177,17 +187,6 @@ def test_migration_to_the_latest_version_runs_on_an_older_database(
         search_indexes = conn.execute(
             "select indexname from pg_indexes where tablename = 'search_events' order by indexname"
         ).fetchall()
-    assert [row["column_name"] for row in columns] == [
-        "id",
-        "conversation_id",
-        "seq",
-        "kind",
-        "payload",
-        "created_at",
-    ]
-    assert [row["conname"] for row in unique] == ["uq_session_events_seq"], (
-        "会话内 seq 的唯一约束是「只追加」的机械保证"
-    )
     assert [row["column_name"] for row in search_columns] == [
         "id",
         "kb_id",

@@ -1119,7 +1119,7 @@ def _add_data_source(services: Services, args: dict[str, Any], *, caller: Caller
     return {
         "id": record.id,
         "name": record.name,
-        "note": "已登记。内容不会立刻抓取——等定时任务，或在控制台点「立即拉取」",
+        "note": "已登记。内容不会立刻抓取——在控制台点「立即拉取」（本服务没有定时拉取）",
     }
 
 

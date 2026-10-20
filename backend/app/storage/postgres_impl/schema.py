@@ -44,8 +44,13 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 BASELINE_VERSION = 1
 """``schema.sql`` 对应的版本号，与文件末尾写入 schema_migrations 的值一致。"""
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 8
 """应用期望的 schema 版本：基线 v1 + ``MIGRATIONS`` 里已追加的增量。
+
+**这是一条独立的 KB 连号序列**（2..8）。2026-10-20 的数据分家之前，它和 Agent
+侧的迁移交错编号到 19——那台存量库要先跑一次运维动作（``remap --apply``）
+把 ``schema_migrations`` 重写完，否则本版本会以 ``LEGACY_INTERLEAVED_HEAD``
+明确拒绝启动。
 
 **启动时会对不上就自动补**：低于它就按序应用缺的那些迁移，高于它才报错
 （库被更新版应用升过级）。这与"库比基线还旧"是两码事——后者要人工处理。"""
@@ -53,16 +58,25 @@ SCHEMA_VERSION = 19
 
 @dataclass(frozen=True, slots=True)
 class Migration:
-    """一条增量迁移。**只增不改**：已经发布的条目一律不许改字面量。"""
+    """一条增量迁移。**只增不改**：已经发布的条目一律不许改字面量。
+
+    ``legacy_version`` 是 kylab 合体期那条**交错序列**里的旧编号（KB 迁移与
+    Agent 迁移连在一起编号，本服务瘦身前的线上库停在 v19）。2026-10-20 的
+    数据分家把 Agent 迁移整体删掉、KB 迁移重编成 2..8 的独立连号，这个字段
+    只服务**一次性运维动作**（``python -m app.storage.postgres_impl.remap``）；
+    新库从基线一路走过来，永远用不到它。
+    """
 
     version: int
     description: str
     statements: tuple[str, ...]
+    legacy_version: int | None = None
 
 
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=2,
+        legacy_version=2,
         description="文档阶段事件：记录每次进入某阶段的时间，用于进度时间线（v24）",
         statements=(
             # 时间线的数据源。为什么另存事件而不是给 documents 加几个时间戳列：
@@ -84,6 +98,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ),
     Migration(
         version=3,
+        legacy_version=3,
         description="补三条索引：云端额度统计、阶段事件清理、任务状态聚合（v24 性能审阅）",
         statements=(
             # ① 云端额度统计（负载面板每 2 秒问一次）按 (parser_name, created_at) 过滤，
@@ -101,6 +116,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ),
     Migration(
         version=4,
+        legacy_version=4,
         description="文档摘要：入库时生成一段紧凑摘要，供问答上下文与界面复用（v25）",
         statements=(
             # 摘要存在的**唯一理由**是省 token：命中 6 段资料时，把每段"所在小节"
@@ -111,80 +127,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ),
     Migration(
         version=5,
-        description="工作区（Agent 的项目）：会话挂到工作区下，知识库范围跟着工作区走（v0.15）",
-        statements=(
-            # 工作区 = Agent 的"在哪干活"。`root_path` 是用户指定的真实目录
-            # （见 docs/设计/Agent-工作区与能力层设计-v0.1.md §3.2）。沙箱与它是两个概念，
-            # 所以这里**没有** sandbox 字段。
-            """
-            CREATE TABLE workspaces (
-                id          text PRIMARY KEY,
-                owner_id    text,
-                name        text NOT NULL,
-                root_path   text NOT NULL,
-                description text NOT NULL DEFAULT '',
-                kb_ids      jsonb NOT NULL DEFAULT '[]'::jsonb,
-                created_at  timestamptz NOT NULL DEFAULT now(),
-                updated_at  timestamptz NOT NULL DEFAULT now()
-            )
-            """,
-            "CREATE INDEX idx_workspaces_owner ON workspaces (owner_id, updated_at DESC)",
-            # `ON DELETE SET NULL` 是刻意的：删工作区**不该删掉里面的会话**。
-            # 会话里有用户问过的内容，误删无法恢复；失去归属只是"掉回未归档那一栏"。
-            """
-            ALTER TABLE conversations
-                ADD COLUMN workspace_id text REFERENCES workspaces (id) ON DELETE SET NULL
-            """,
-            # 侧栏按工作区分组拉会话，这条索引直接服务那个查询
-            """
-            CREATE INDEX idx_conversations_workspace
-                ON conversations (workspace_id, pinned DESC, updated_at DESC)
-            """,
-        ),
-    ),
-    Migration(
-        version=6,
-        description="MCP 服务登记：接外部工具进来（v0.15，见 Agent-工作区与能力层设计 §6.2）",
-        statements=(
-            # 在此之前 KYLAB 只做 MCP **服务端**；这张表是客户端的一半。
-            # `policy` 默认 `ask`：接一个外部服务进来就默认让它静默执行动作，
-            # 是这一层最不该有的默认（QwenPaw 的 Drivers 也是"每次调用过策略闸"）。
-            """
-            CREATE TABLE mcp_servers (
-                id         text PRIMARY KEY,
-                owner_id   text,
-                name       text NOT NULL,
-                transport  text NOT NULL,
-                target     text NOT NULL,
-                args       jsonb NOT NULL DEFAULT '[]'::jsonb,
-                env        jsonb NOT NULL DEFAULT '{}'::jsonb,
-                headers    jsonb NOT NULL DEFAULT '{}'::jsonb,
-                policy     text NOT NULL DEFAULT 'ask',
-                enabled    boolean NOT NULL DEFAULT true,
-                created_at timestamptz NOT NULL DEFAULT now(),
-                updated_at timestamptz NOT NULL DEFAULT now()
-            )
-            """,
-            "CREATE INDEX idx_mcp_servers_owner ON mcp_servers (owner_id, updated_at DESC)",
-        ),
-    ),
-    Migration(
-        version=7,
-        description="会话归档：把不看了的会话收起来，而不是删掉（v0.17，照 Kimi 的历史会话）",
-        statements=(
-            # 用**时间戳**而不是布尔：归档这件事"什么时候做的"本身有用
-            # （归档视图按它排序），而布尔还得再加一列才行。
-            # `NULL` = 未归档，这也是默认值——存量会话全部落在"未归档"里。
-            "ALTER TABLE conversations ADD COLUMN archived_at timestamptz",
-            # 列表默认 `archived_at IS NULL`，这条索引直接服务它
-            """
-            CREATE INDEX idx_conversations_archived
-                ON conversations (archived_at, pinned DESC, updated_at DESC)
-            """,
-        ),
-    ),
-    Migration(
-        version=8,
+        legacy_version=8,
         description="知识库提示词：回答这个库的问题时该怎么答，从对话页搬到库上（v0.19）",
         statements=(
             # **空串 = 用内置提示词**（`services/chat.build_messages` 在空的时候会退回
@@ -194,53 +137,8 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
     ),
     Migration(
-        version=9,
-        description="把过程存下来：工具步骤与思考过程随消息落库（v0.25）",
-        statements=(
-            # **为什么落库**：这两样原先只活在流式那几秒里。用户看着它们跑，
-            # 一旦离开这一页再回来（或者刷新），过程就只剩一句"已生成回答"——
-            # 而"这句答案是怎么来的"恰恰是他回来要找的东西。
-            #
-            # 与 `sources` 同一个道理：`sources` 早就落库了（"当时依据的是哪几段，
-            # 事后回看必须还是那几段"），步骤与思考是同一类快照。
-            "ALTER TABLE chat_messages ADD COLUMN steps jsonb NOT NULL DEFAULT '[]'::jsonb",
-            "ALTER TABLE chat_messages ADD COLUMN thinking text NOT NULL DEFAULT ''",
-        ),
-    ),
-    Migration(
-        version=10,
-        description="会话产物：导出文件先落盘、入库变成一个显式动作（v0.26）",
-        statements=(
-            # 这张表回答两个原先答不出来的问题：
-            # ① "这条会话产出了哪些文件"（此前只能翻文档列表猜）；
-            # ② "它现在在哪、有没有进知识库"——storage/location 是前者，
-            #    document_id 是后者，而后者默认为 NULL（不进）。
-            #
-            # `ON DELETE CASCADE` 只清记录：**文件本体由服务层决定**。
-            # 落在工作区里的那些是他项目里的真实文件，删会话不该动它们。
-            """
-            CREATE TABLE conversation_artifacts (
-                id                text PRIMARY KEY,
-                conversation_id   text NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-                name              text NOT NULL,
-                format            text NOT NULL,
-                size_bytes        bigint NOT NULL DEFAULT 0,
-                storage           text NOT NULL,
-                location          text NOT NULL DEFAULT '',
-                workspace_id      text,
-                owner_id          text,
-                knowledge_base_id text,
-                document_id       text,
-                created_at        timestamptz NOT NULL DEFAULT now()
-            )
-            """,
-            # 读取形状只有一种：某条会话的产物、按先后。索引就照这个形状建。
-            "CREATE INDEX idx_conversation_artifacts_conv"
-            " ON conversation_artifacts (conversation_id, created_at)",
-        ),
-    ),
-    Migration(
-        version=11,
+        version=6,
+        legacy_version=11,
         description="用户头像：只存对象存储的 key（v0.29）",
         statements=(
             # 只加一个 key 列：图片本体在对象存储里（见 services/avatars.py
@@ -250,186 +148,8 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
     ),
     Migration(
-        version=12,
-        description="定时任务：到点替用户跑一轮问答（v0.33）",
-        statements=(
-            # 这张表回答"有没有哪件事是到点就该做、而我不想每次自己去问一遍"。
-            #
-            # 三处刻意的形状（与 ``base.ScheduledTaskRecord`` 的说明一一对应）：
-            # ① 两种时间形态（cron / 一次）各占一列，而不是塞进一个含糊的字段；
-            # ② `next_run_at` 同时承担"下次什么时候跑"与"这一次有没有人认领"——
-            #    认领走一条带条件的 UPDATE（见 meta_store.arm_scheduled_task）；
-            # ③ 结果不另存一套"运行历史"：每次运行就是那条会话里的一轮问答，
-            #    这里只留最近一次的结论（状态 / 错误 / 时间）。
-            #
-            # `conversation_id` 是 ON DELETE SET NULL：用户删掉那条会话**不等于**
-            # 取消这个任务——下一轮它会重新建一条（比"任务悄悄没了"好得多）。
-            """
-            CREATE TABLE scheduled_tasks (
-                id              text PRIMARY KEY,
-                name            text NOT NULL,
-                prompt          text NOT NULL,
-                kind            text NOT NULL,
-                cron            text NOT NULL DEFAULT '',
-                run_at          timestamptz,
-                next_run_at     timestamptz,
-                enabled         boolean NOT NULL DEFAULT true,
-                kb_ids          jsonb NOT NULL DEFAULT '[]'::jsonb,
-                model_pk        text,
-                thinking        boolean,
-                thinking_effort text,
-                conversation_id text REFERENCES conversations (id) ON DELETE SET NULL,
-                owner_id        text,
-                last_run_at     timestamptz,
-                last_status     text NOT NULL DEFAULT '',
-                last_error      text NOT NULL DEFAULT '',
-                run_count       integer NOT NULL DEFAULT 0,
-                created_at      timestamptz NOT NULL DEFAULT now(),
-                updated_at      timestamptz NOT NULL DEFAULT now()
-            )
-            """,
-            # 扫描形状只有一种：**启用的、到点的、按时间正序**。部分索引正好对上它
-            # （停用的那些永远不进这个索引，而它们通常不少——跑完的一次性任务、
-            # 用户临时关掉的周期性任务）。
-            "CREATE INDEX idx_scheduled_tasks_due ON scheduled_tasks (next_run_at) WHERE enabled",
-        ),
-    ),
-    Migration(
-        version=13,
-        description="会话事件日志：只追加的事件表，steps 快照变成它的投影（P0-2，抄 ZCode）",
-        statements=(
-            # 抄的是 ZCode 的**只追加事件日志**（开发计划 §12.225 / P0-2）：
-            # 会话是一串不可变的事件，`chat_messages.steps` 那份"流式当时拍下的快照"
-            # 从此是它的一个投影。`kind` 的词表在 `services/session_events.py`
-            # 一处定义（存储层不认识业务词表，所以这里不加 CHECK）。
-            #
-            # 三处刻意的形状：
-            # ① **只有 append**：没有 updated_at 之类的列，也没有任何写侧方法
-            #    （`MetaStore` 只给 append / list）——能被改的日志回答不了
-            #    "当时发生了什么"，而那正是这张表存在的理由；
-            # ② `seq` 是**会话内**的单调序号，由写那个事务算（max+1）：
-            #    同一毫秒里的并发工具调用靠 created_at 分不出先后，而回放要读它；
-            # ③ `id` 是 bigserial，与 `document_stage_events` 同一种形状
-            #    —— 项目里另一张"只追加的事件表"，不发明第二套写法。
-            #
-            # `ON DELETE CASCADE`：会话删了，它的事件跟着走（与 chat_messages 同规则）。
-            """
-            CREATE TABLE session_events (
-                id              bigserial PRIMARY KEY,
-                conversation_id text NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-                seq             bigint NOT NULL,
-                kind            text NOT NULL,
-                payload         jsonb NOT NULL DEFAULT '{}'::jsonb,
-                created_at      timestamptz NOT NULL DEFAULT now(),
-                CONSTRAINT uq_session_events_seq UNIQUE (conversation_id, seq)
-            )
-            """,
-            # 读形状只有一种：某条会话按 seq 正序（可带 kind 过滤）。上面那条唯一约束
-            # 建出的索引**正好就是这个形状**（前缀 conversation_id + seq 有序），
-            # 所以这里不再另建一条索引：多一条只会多一份写侧的代价与一处会漂的定义。
-        ),
-    ),
-    Migration(
-        version=14,
-        description="笔记文件夹：左栏的层级文件夹 + 笔记的归属（parent_id 自引用）",
-        statements=(
-            # 笔记从"扁平 + 标签"长出一层文件夹。与知识库目录（kb_folders，单层）刻意不同：
-            # **笔记允许嵌套**（`parent_id` 自引用），因为这里的文件夹是用户自己的知识
-            # 组织方式，"工作 / 会议记录"这样的两层是常态，而知识库的目录只是分组文件。
-            #
-            # 两条 `ON DELETE` 语义**是这张迁移的核心决定**，不是默认值：
-            #
-            # ① `parent_id` 用 ``CASCADE``：删一个文件夹连带删掉它的子文件夹。
-            #    子文件夹是"这个文件夹下面的一层"，父不在，那一层也就无从挂起；
-            #    换成 SET NULL 会把子文件夹悄悄挪到根级（用户会以为它们丢了，
-            #    与 folder.py 里"非空目录拒绝删"防的是同一件事）。**注意这里连带删掉的
-            #    只是文件夹本身**：子树里的笔记一个都不会没（见下一条）。
-            #
-            # ② `notes.folder_id` 用 ``SET NULL``：删文件夹 → 里面的笔记**回到未归档**，
-            #    而不是跟着消失。这与本产品"删除笔记要先问"是同一条纪律——删一个容器
-            #    不该顺手销毁里面的内容，而笔记误删不可恢复（正文没有第二份）。
-            #    界面对此负责：确认框里会把"里面的 N 篇笔记会回到未归档"说清楚。
-            #
-            # 代价写在明处：这两条语义意味着"删文件夹"是一个**会动的**操作，
-            # 所以它永远不该被静默触发（界面上是一次显式确认，API 上调 DELETE）。
-            """
-            CREATE TABLE note_folders (
-                id         text PRIMARY KEY,
-                user_id    text,
-                name       text NOT NULL,
-                parent_id  text REFERENCES note_folders (id) ON DELETE CASCADE,
-                created_at timestamptz NOT NULL DEFAULT now(),
-                updated_at timestamptz NOT NULL DEFAULT now()
-            )
-            """,
-            # 树每次都按"谁的文件夹、按名字排"整份读出来（个人规模，不做分页），
-            # 这条索引直接服务它。
-            "CREATE INDEX idx_note_folders_owner ON note_folders (user_id, lower(name))",
-            # 同级重名在**数据库层**也要挡住（服务层先查一次是为了给出人的话，
-            # 这一条是最后一道）。写成表达式索引是因为 `coalesce`：
-            # 唯一索引里 NULL 互不相等，而"根级文件夹"（parent_id 为 NULL）
-            # 与"无归属通道建的文件夹"（user_id 为 NULL）同样要挡住重名。
-            # `''` 不会与真实 id 撞：id 一律是 `fld_<hex>` / `usr_<hex>` 前缀。
-            """
-            CREATE UNIQUE INDEX uq_note_folders_sibling_name
-                ON note_folders (coalesce(user_id, ''), coalesce(parent_id, ''), name)
-            """,
-            """
-            ALTER TABLE notes
-                ADD COLUMN folder_id text REFERENCES note_folders (id) ON DELETE SET NULL
-            """,
-            # 列表的过滤形状是"谁的、哪个文件夹"+置顶/时间排序；未归档（folder_id IS NULL）
-            # 与具体文件夹两种取值都走这条索引（NULL 也在索引里）。
-            "CREATE INDEX idx_notes_folder ON notes (user_id, folder_id)",
-        ),
-    ),
-    Migration(
-        version=15,
-        description="项目（工作区）归档：把不看了的项目收起来，而不是删掉（v0.55）",
-        statements=(
-            # 与会话归档（v7）同一口径：用**时间戳**而不是布尔——“什么时候归档的”
-            # 本身有用（归档视图按它排序），布尔还得再加一列才行。
-            # `NULL` = 未归档，存量项目全部落在“未归档”里，行为与迁移前一致。
-            "ALTER TABLE workspaces ADD COLUMN archived_at timestamptz",
-            # 列表默认 `archived_at IS NULL`，这条索引直接服务它
-            "CREATE INDEX idx_workspaces_archived ON workspaces (archived_at, updated_at DESC)",
-        ),
-    ),
-    Migration(
-        version=16,
-        description="用户消息带上随发的附件快照：这条消息是带着哪几份文件发出去的（v0.55）",
-        statements=(
-            # 用户报的："对话中上传的文件，没有在我发送的对话中有文件组件标识。"
-            # 查下来不是前端没画——**数据里根本没有这个关联**：上传只记到会话
-            # （`conversation_artifacts.conversation_id`），消息是纯文本，
-            # 两点之间只有时间先后，指认不出"这几份是随这条消息发出去的"。
-            #
-            # 存**快照**（key / 名字 / 类型 / 字节数）而不是外键 id，与 `sources`
-            # 同一口径：回看一条旧消息时，当时带着什么就该是什么，
-            # 哪怕那份文件后来被删了、或文件区的落点变了。
-            "ALTER TABLE chat_messages ADD COLUMN attachments jsonb NOT NULL DEFAULT '[]'::jsonb",
-        ),
-    ),
-    Migration(
-        version=17,
-        description="工作区按设备隔离：记录归属设备，桌面端各见各的（v0.59）",
-        statements=(
-            # 桌面壳每次请求带 `X-Kylab-Device: <uuid>`，工作区因此有了**第二维归属**：
-            # device_id 是**设备的稳定标识**（壳生成的 uuid），device_name 是给人看的名字。
-            #
-            # `device_id IS NULL` = **服务器端**的工作区：网页版/直连 API 不带设备头，
-            # 它们看到的就是这一批——语义不是"没归属"，而是"路径在服务器的盘上"
-            # （见 base.py 的 WorkspaceRecord）。所以这一列**必须可空**，
-            # 存量记录全部落在"服务器端"这一档，行为与迁移前一致。
-            #
-            # 不加索引：工作区是几十行规模的表，而列表本来就整表取回来再在服务层
-            # 按归属过滤（存储层不认识调用者身份），加一条只为设备用的索引没有收益。
-            "ALTER TABLE workspaces ADD COLUMN device_id TEXT",
-            "ALTER TABLE workspaces ADD COLUMN device_name TEXT",
-        ),
-    ),
-    Migration(
-        version=18,
+        version=7,
+        legacy_version=18,
         description="API Key 的工具范围：一把钥匙可以只允许调某几个 MCP 工具（v0.60）",
         statements=(
             # 这把钥匙"能碰哪些库"（knowledge_base_ids）之外的第二维：**能用哪些工具**。
@@ -445,7 +165,8 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
     ),
     Migration(
-        version=19,
+        version=8,
+        legacy_version=19,
         description="检索命中事件：每次检索按知识库记一行，供控制台看命中趋势（v0.61）",
         statements=(
             # 这张表回答的是**另一个问题**：`usage_events(kind='search')` 只记了
@@ -482,6 +203,30 @@ MIGRATIONS: tuple[Migration, ...] = (
         ),
     ),
 )
+
+
+#: 旧序列（kylab 合体期：KB 与 Agent 交错连号）的最后一版。
+#: 存量库在分家前停在这里；新库见不到这个数。
+LEGACY_INTERLEAVED_HEAD = 19
+
+
+def legacy_remap_plan() -> dict[int, int]:
+    """旧交错序列版本号 → 新 KB 独立序列版本号（含基线 ``1 -> 1``）。
+
+    **只给一次性运维脚本用**（``python -m app.storage.postgres_impl.remap``）：
+    新库用不到它——没有哪台新库会带着旧序列启动。单点事实是
+    ``Migration.legacy_version``，这里只是把它展开成一张表。
+    """
+    plan = {BASELINE_VERSION: BASELINE_VERSION}
+    for item in MIGRATIONS:
+        if item.legacy_version is not None:
+            plan[item.legacy_version] = item.version
+    return plan
+
+
+def legacy_agent_versions() -> set[int]:
+    """旧序列里那些**只属于 Agent 域**的版本号（迁移脚本要把这些行删掉）。"""
+    return set(range(1, LEGACY_INTERLEAVED_HEAD + 1)) - set(legacy_remap_plan())
 
 
 REQUIRED_EXTENSIONS = ("vector",)
@@ -546,6 +291,15 @@ def ensure_schema(db: Database) -> int:
             "请执行 backend/app/storage/postgres_impl/schema.sql"
         )
     if version > SCHEMA_VERSION:
+        if version == LEGACY_INTERLEAVED_HEAD:
+            raise SchemaError(
+                f"schema 版本为 {version}：这是 kylab 合体期的**交错迁移序列**"
+                "（KB 与 Agent 交错连号），本版起 KB 走自己的独立序列（1..8）。"
+                "库里的字段与表都齐，只差把版本号重写一遍——**升级前先跑一次**："
+                "\n    cd backend && python -m app.storage.postgres_impl.remap --apply"
+                "\n不加 --apply 是 dry-run（只打印计划）。"
+                "详见 docs/部署指南-v0.1.md 的「升级」一节。"
+            )
         raise SchemaError(
             f"schema 版本为 {version}，高于本应用已知的 {SCHEMA_VERSION}；"
             "库是被更新版应用升过级的，请升级应用而不是降级数据库"

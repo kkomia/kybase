@@ -39,16 +39,6 @@ DEFAULT_WATCHDOG_INTERVAL = 60.0
 一份卡住的文档最迟 **5 分钟**被发现——与方案 8 要的"≤5 分钟自动完成或失败"对齐。
 比这更勤没有意义（判定门槛是分钟级），更懒则会把"最迟多久被发现"顶到 5 分钟以上。"""
 
-DEFAULT_SCHEDULE_INTERVAL = 20.0
-"""扫一遍"有没有定时任务到点"的间隔（秒）。
-
-**为什么单独一条循环、而不是挂在空闲分支上**：定时任务要的是"到点就跑"，
-而挂在空闲分支上意味着"队列一直忙 → 它一直不跑"（实测过同一个形状的坑：
-租约回收挂在空闲分支上时，队列忙起来就永远不回收，见 ``_reclaim_loop``）。
-20 秒是"分钟级精度"与"扫描开销"之间的折中：cron 的最小粒度就是分钟，
-再密也快不了一秒，而每次扫描只是一条带索引的 SELECT。
-"""
-
 DEFAULT_SUMMARY_INTERVAL = 30.0
 """补文档摘要的间隔（秒）。
 
@@ -90,9 +80,6 @@ class TaskWorker:
         sync_source: Callable[[str], object] | None = None,
         compile_wiki: Callable[[str], object] | None = None,
         summarize_gap: Callable[[], object] | None = None,
-        run_scheduled: Callable[[str], object] | None = None,
-        due_schedules: Callable[[], object] | None = None,
-        schedule_interval: float = DEFAULT_SCHEDULE_INTERVAL,
     ) -> None:
         if lease_seconds <= 0:
             raise ValueError("租约时长必须为正")
@@ -120,12 +107,6 @@ class TaskWorker:
         # 补文档摘要（v25）。同样是可选回调：不接上就没有这个动作，
         # 而不是"静默什么都不做"——它由组合根显式传入。
         self._summarize_gap = summarize_gap
-        #: 定时任务的**执行体**（v0.33）：到这个 id 去问一趟。
-        self._run_scheduled = run_scheduled
-        #: 定时任务的**调度体**：扫一遍到点的、认领并放进队列（见 ``_schedule_loop``）。
-        self._due_schedules = due_schedules
-        self._schedule_interval = schedule_interval
-        self._last_schedule = 0.0
         self._summary_interval = DEFAULT_SUMMARY_INTERVAL
         self._last_summary = 0.0
         self._last_maintain = 0.0
@@ -216,7 +197,6 @@ class TaskWorker:
             async with asyncio.TaskGroup() as group:
                 group.create_task(self._consume_loop(stopping))
                 group.create_task(self._beat_loop(stopping))
-                group.create_task(self._schedule_loop(stopping))
                 group.create_task(self._reclaim_loop(stopping))
                 group.create_task(self._watchdog_loop(stopping))
         finally:
@@ -264,7 +244,7 @@ class TaskWorker:
     async def _watchdog_loop(self, stopping: asyncio.Event) -> None:
         """入库看门狗：把"任务已经没了、文档却停在半路"的那些捞回来（P0）。
 
-        **为什么要单起一条循环**：与 `_reclaim_loop` / `_schedule_loop` 同一条理由——
+        **为什么要单起一条循环**：与 `_reclaim_loop` 同一条理由——
         它做的事与手上有没有活**无关**。挂在空闲分支上的话，队列一忙它就永远不跑，
         而"卡住"恰恰最可能发生在队列很忙的时候（那份文件就是在长任务间隙里被丢下的）。
 
@@ -295,38 +275,6 @@ class TaskWorker:
                 len(outcome.requeued),
                 len(outcome.failed),
             )
-
-    async def _schedule_loop(self, stopping: asyncio.Event) -> None:
-        """到点就把定时任务放进队列，**独立成一条循环**（v0.33）。
-
-        与 ``_reclaim_loop`` 同一条理由：它做的事（"这条到点了没有"）与手上
-        有没有活干**无关**。挂在空闲分支上的话，一个长时间摄入就能让
-        "每天 9 点"变成"9 点之后的某个时刻，取决于当时队列忙不忙"。
-
-        它只做**入队**（一条 SQL + 一次 CAS），不跑问答——真正的执行在消费者那侧，
-        于是"跑得慢"不会把调度也堵住。异常一律吞掉：调度失败不该带走消费者
-        （下一轮还会再扫一遍，那时重试是免费的）。
-        """
-        while not stopping.is_set() and not self._lease_lost.is_set():
-            self._enqueue_due_schedules(force=True)
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stopping.wait(), timeout=self._schedule_interval)
-
-    def _enqueue_due_schedules(self, *, force: bool = False) -> None:
-        if self._due_schedules is None:
-            return
-        now = time.monotonic()
-        if not force and now - self._last_schedule < self._schedule_interval:
-            return
-        self._last_schedule = now
-        try:
-            count = self._due_schedules()
-        except Exception:
-            logger.warning("扫描定时任务失败，跳过本轮", exc_info=True)
-            return
-        if count:
-            logger.info("定时任务入队 %d 条", count)
-
 
     def _reclaim_expired(self, *, force: bool = False) -> None:
         """把租约过期、还写着 ``running`` 的任务回收掉（回到队列或判失败）。
@@ -462,17 +410,11 @@ class TaskWorker:
             self._compile_wiki(kb_id)
             return
         if task.kind is TaskKind.SCHEDULED:
-            # 定时任务（v0.33）：payload 里是 scheduled_id，没有 document_id。
-            # 与其它分支一样**没接线就明确报错**，不静默跳过——跳过会让"到点了
-            # 什么都没发生"变成一个查不出原因的现象
-            if self._run_scheduled is None:
-                raise NotImplementedError("定时任务尚未接线")
-            scheduled_id = str(task.payload.get("scheduled_id") or "")
-            if not scheduled_id:
-                raise ValueError(f"任务 {task.id} 缺少 scheduled_id")
-            self._run_scheduled(scheduled_id)
-            return
-            return
+            # 定时任务是 Agent 侧的产品面，随 2026-10-20 的数据分家一起删掉了。
+            # 枚举值还留着（旧库的 tasks 行可能还是它，删枚举会让读行直接抛错），
+            # 但这里**明确失败**而不是静默跳过——跳过会让"到点了什么都没发生"变成
+            # 一个查不出原因的现象。
+            raise NotImplementedError("定时任务已随 Agent 侧拆除，不再有执行体")
         if task.kind is TaskKind.QUESTIONS:
             # 补出题不走摄入阶段机（文档已 indexed，只读现有块），所以**不能**
             # 落进下面那条 `self._ingest.ingest(...)`——那会按断点续跑规则什么也不做。

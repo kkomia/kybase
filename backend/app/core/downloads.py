@@ -1,8 +1,7 @@
 """文件下载的两个 HTTP 契约：媒体类型判定 + ``Content-Disposition``。
 
-**为什么住在共享底座**：这两件被两侧同时用来"把一份内容作为文件回给客户端"——
-KB 侧下文档（`api/v1/documents.py`）、Agent 侧导出会话与附件
-（`api/v1/conversations.py`）。它们不含任何业务判断：
+**为什么住在 core**：这两件用来"把一份内容作为文件回给客户端"——
+本服务下文档（`api/v1/documents.py`）与下载解析产物。它们不含任何业务判断：
 
 - 媒体类型是"上传时声明得具体就用它，笼统或缺失就按后缀猜"；
 - ``Content-Disposition`` 是按 RFC 6266 拼头（中文名走 ``filename*=UTF-8''`` 那一支）。
@@ -12,8 +11,9 @@ KB 侧下文档（`api/v1/documents.py`）、Agent 侧导出会话与附件
 就是要靠人记得。
 
 **2026-10-08 剥离阶段 0 从 `services/documents.py` 与 `services/ingest.py` 上移到这里**：
-两处原位置仍 import 进来（`__all__` 里照旧导出），调用点一行没改；Agent 侧的
-`api/v1/conversations.py` 改为直接从这里取，于是它不再 import KB 域模块。
+两处原位置仍 import 进来（`__all__` 里照旧导出），调用点一行没改——于是内容协商
+只有一处规则，文档下载与产物下载不会各写一份（中文文件名的 ``filename*`` 那一支
+尤其细，只改一边就要靠人记得）。
 """
 
 from __future__ import annotations

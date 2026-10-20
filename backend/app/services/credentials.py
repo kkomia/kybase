@@ -76,8 +76,6 @@ MIGRATED_SETTING_KEYS: tuple[str, ...] = ()
 REGISTERED_ONLY_CELLS: tuple[tuple[str, str], ...] = (
     ("app_settings", "mineru.token"),
     ("app_settings", "paddleocr.token"),
-    ("mcp_servers", "env"),
-    ("mcp_servers", "headers"),
 )
 """**只登记、不迁**的那几处（方案 §4.2）与理由——这份清单是给读代码的人看的。
 

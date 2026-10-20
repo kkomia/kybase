@@ -5,7 +5,7 @@
 "哪个用户的哪一份头像、什么时候过期"——比一个长期令牌更窄：换一个 user id
 去请求同一份签名会被拒（见 ``services/avatars.py::resource``）。
 
-与文档下载那条路同一个形状（``/conversations/{id}/files/content``），
+与文档下载那条路同一个形状（``/documents/{id}/content``），
 差别只在**内容寻址**：头像的 key 里带着内容 hash，所以这里可以放心地
 让浏览器长期缓存——换头像就是换 key，不会拿到旧图。
 """

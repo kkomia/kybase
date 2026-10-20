@@ -80,9 +80,9 @@ def resolve_caller(services: Services, token: str) -> Caller:
     - ``kylab_st_`` 开头 = 登录会话 → 身份来自会话里的账号，成员/管理员据此判定；
     - 其余 = API Key → 受限调用方，范围由密钥绑定决定。
 
-    为什么要支持会话令牌：**归属**。API Key 通道没有账号，用它建的笔记
-    ``user_id`` 只能是 NULL，而成员视角的列表按 ``user_id`` 过滤——
-    于是"agent 替我把成果存进我的知识库"会存成一条用户自己看不见的笔记。
+    为什么要支持会话令牌：**归属**。API Key 通道没有账号，用它建的文档
+    ``uploaded_by`` 只能是 NULL，而成员视角的列表按 ``uploaded_by`` 过滤——
+    于是"外部集成替我把文档传进库"会存成一条调用方自己看不见的文档。
     """
     if token.startswith(SESSION_TOKEN_PREFIX):
         user, session = services.auth.authenticate_session(token)

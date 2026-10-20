@@ -1,6 +1,6 @@
-"""按域切开的仓储**窄协议**（strangler 的第二步：184 个方法全部切开）。
+"""按域切开的仓储**窄协议**（strangler 的第二步：151 个方法全部切开）。
 
-`MetaStore` 有 184 个方法、实现三千多行。问题不在行数，而在**接口本身**：
+`MetaStore` 有 151 个方法、实现三千多行。问题不在行数，而在**接口本身**：
 ABC 与实现一对一，于是任何消费者都只能依赖"什么都有的那个接口"——
 "这个模块到底需要什么"在签名里读不出来，拆分也被接口锁死。
 
@@ -17,12 +17,13 @@ ABC 与实现一对一，于是任何消费者都只能依赖"什么都有的那
 **方法签名逐字取自** ``base.py`` 的 ``MetaStore``（先前手抄过一版，核对时抓出 16 处
 形参与默认值不一致）。所以这里只写"为什么这么切"，参数语义与默认值以 ``base.py`` 为准。
 
-**域怎么划的**：以 ABC 里的分节注释为底，修了三处——对话方法被误归在 MCP 节下
-（拆到 `ConversationRepo`）、存储维护混在知识库节里（拆出 `MaintenanceRepo`）、
-阶段事件的读与清理分归两个域（读在文档、清理在维护）。
+**域怎么划的**：以 ABC 里的分节注释为底，修了了两处——存储维护混在知识库节里
+（拆出 `MaintenanceRepo`）、阶段事件的读与清理分归两个域（读在文档、清理在维护）。
+**Agent 域的五个协议（notes / conversations / workspaces / schedules / mcp_servers）
+已随 2026-10-20 的数据分家删除**：那些表与迁移一起从本服务里拿走了。
 
 ``tests/unit/storage/test_repositories.py`` 机械核对三件事：**每个方法恰好属于一个协议**、
-**184 个方法一个不漏**、**签名与 ABC 逐字一致**。
+**151 个方法一个不漏**、**签名与 ABC 逐字一致**。
 """
 
 from __future__ import annotations
@@ -34,10 +35,7 @@ from typing import Protocol, runtime_checkable
 from app.models.enums import DocumentStage, TaskState
 from app.storage.base import (
     ApiKeyRecord,
-    ChatMessageRecord,
     ChunkRecord,
-    ConversationArtifactRecord,
-    ConversationRecord,
     DataSourceRecord,
     DocumentPartRecord,
     DocumentRecord,
@@ -47,15 +45,10 @@ from app.storage.base import (
     IdempotencyRecord,
     ImageRecord,
     KnowledgeBaseRecord,
-    MCPServerRecord,
     ModelProviderRecord,
-    NoteFolderRecord,
-    NoteRecord,
     ParseResultRecord,
     RegisteredModelRecord,
-    ScheduledTaskRecord,
     SearchEventRecord,
-    SessionEventRecord,
     SessionRecord,
     ShareRecord,
     TaskCounts,
@@ -67,13 +60,11 @@ from app.storage.base import (
     WebhookRecord,
     WikiPageRecord,
     WikiSourceRecord,
-    WorkspaceRecord,
 )
 
 __all__ = [
     "ApiKeyRepo",
     "ChunkRepo",
-    "ConversationRepo",
     "DataSourceRepo",
     "DocumentRepo",
     "FolderRepo",
@@ -81,12 +72,9 @@ __all__ = [
     "IdentityRepo",
     "ImageRepo",
     "KnowledgeBaseRepo",
-    "MCPServerRepo",
     "MaintenanceRepo",
     "ModelRegistryRepo",
-    "NoteRepo",
     "ParseResultRepo",
-    "ScheduleRepo",
     "SettingsRepo",
     "ShareRepo",
     "TaskQueueRepo",
@@ -94,7 +82,6 @@ __all__ = [
     "UsageRepo",
     "WebhookRepo",
     "WikiRepo",
-    "WorkspaceRepo",
 ]
 
 
@@ -255,73 +242,6 @@ class FolderRepo(Protocol):
     def delete_folder(self, folder_id: str) -> None: ...
 
 
-@runtime_checkable
-class NoteRepo(Protocol):
-    r"""笔记域（v20 / 文件夹 v14）：笔记本体、计数、标签、文件夹，以及与文档的挂接。
-
-    文件夹（`note_folders`）与"加入知识库"留下的那条边（`attach_note_document`）
-    都在这里：它们读写的是同一批笔记行与它们的归属，拆到两个域只会让
-    "移动笔记 / 改笔记"分成两处看。
-    """
-
-    def create_note(self, record: NoteRecord) -> NoteRecord: ...
-
-    def get_note(self, note_id: str) -> NoteRecord | None: ...
-
-    def list_notes(
-        self,
-        *,
-        user_id: str | None,
-        query: str | None = None,
-        tag: str | None = None,
-        folder_id: str | None = None,
-        unfiled: bool = False,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[NoteRecord]: ...
-
-    def count_notes(
-        self,
-        *,
-        user_id: str | None,
-        query: str | None = None,
-        tag: str | None = None,
-        folder_id: str | None = None,
-        unfiled: bool = False,
-    ) -> int: ...
-
-    def update_note(
-        self,
-        note_id: str,
-        *,
-        title: str,
-        content_md: str,
-        pinned: bool,
-        updated_at: datetime,
-        tags: Sequence[str] | None = None,
-    ) -> None: ...
-
-    def delete_note(self, note_id: str) -> None: ...
-
-    def attach_note_document(self, note_id: str, *, kb_id: str, doc_id: str) -> None: ...
-
-    def list_note_tags(self, *, user_id: str | None) -> list[tuple[str, int]]: ...
-
-    def create_note_folder(self, record: NoteFolderRecord) -> NoteFolderRecord: ...
-
-    def get_note_folder(self, folder_id: str) -> NoteFolderRecord | None: ...
-
-    def list_note_folders(self, *, user_id: str | None) -> list[NoteFolderRecord]: ...
-
-    def rename_note_folder(self, folder_id: str, name: str) -> None: ...
-
-    def set_note_folder_parent(self, folder_id: str, parent_id: str | None) -> None: ...
-
-    def delete_note_folder(self, folder_id: str) -> None: ...
-
-    def count_notes_by_folder(self, *, user_id: str | None) -> dict[str | None, int]: ...
-
-    def set_note_folder(self, note_id: str, folder_id: str | None) -> None: ...
 
 
 @runtime_checkable
@@ -522,157 +442,10 @@ class IdempotencyRepo(Protocol):
     def purge_expired_idempotency_keys(self, *, before: datetime) -> int: ...
 
 
-@runtime_checkable
-class ConversationRepo(Protocol):
-    """对话留存域：会话、消息、置顶/归档/工作区归属、以及摘要与预览。
-
-    **把一个会话的所有属性放在一起**：会话行上有七八个可改属性
-    （模型、思考、置顶、归档、工作区、标题），分散注入会让"改会话"要凑三次依赖。
-    `count_messages` / `count_workspace_conversations` 是它的两个聚合口径。
-    """
-
-    def create_conversation(self, record: ConversationRecord) -> ConversationRecord: ...
-
-    def get_conversation(self, conversation_id: str) -> ConversationRecord | None: ...
-
-    def list_conversations(
-        self, *, limit: int | None = None, q: str | None = None
-    ) -> list[ConversationRecord]: ...
-
-    def rename_conversation(self, conversation_id: str, title: str) -> None: ...
-
-    def set_conversation_archived(self, conversation_id: str, archived: bool) -> None: ...
-
-    def set_conversation_workspace(
-        self, conversation_id: str, workspace_id: str | None
-    ) -> None: ...
-
-    def set_conversation_pinned(self, conversation_id: str, pinned: bool) -> None: ...
-
-    def set_conversation_model(self, conversation_id: str, model_pk: str | None) -> None: ...
-
-    def set_conversation_thinking(
-        self, conversation_id: str, thinking: bool | None, effort: str | None
-    ) -> None: ...
-
-    def touch_conversation(self, conversation_id: str) -> None: ...
-
-    def delete_conversation(self, conversation_id: str) -> None: ...
-
-    def append_message(self, record: ChatMessageRecord) -> ChatMessageRecord: ...
-
-    # 会话事件日志（P0-2）也在对话域里：它**只按会话**被读写，而且
-    # `append_turn` 的整个意义就是"消息与事件同一个事务"——拆到另一个协议，
-    # 那条原子性就得跨两个仓储去保证，而跨仓储没有事务。
-    def append_turn(
-        self,
-        *,
-        messages: Sequence[ChatMessageRecord],
-        events: Sequence[SessionEventRecord],
-    ) -> None: ...
-
-    def append_session_events(
-        self, records: Sequence[SessionEventRecord]
-    ) -> list[SessionEventRecord]: ...
-
-    def list_session_events(
-        self, conversation_id: str, *, kinds: Sequence[str] | None = None
-    ) -> list[SessionEventRecord]: ...
-
-    def list_messages(self, conversation_id: str) -> list[ChatMessageRecord]: ...
-
-    def last_assistant_previews(self, conversation_ids: Sequence[str]) -> dict[str, str]: ...
-
-    def get_conversation_summary(self, conversation_id: str) -> tuple[str, str | None]: ...
-
-    def set_conversation_summary(
-        self, conversation_id: str, summary: str, upto_message_id: str | None
-    ) -> None: ...
-
-    def count_workspace_conversations(self, workspace_id: str) -> int: ...
-
-    def count_messages(self, conversation_id: str) -> int: ...
-
-    # 产物留在会话域里，而不是另开一个 `ArtifactRepo`：它**只按会话**被读取
-    # （"这条会话产出了什么"），而它回答的另外半个问题——"进没进知识库"——
-    # 只在生成它的那一刻被写一次。拆出去只会让"删会话"要凑两个仓储。
-
-    def create_artifact(self, record: ConversationArtifactRecord) -> ConversationArtifactRecord: ...
-
-    def get_artifact(self, artifact_id: str) -> ConversationArtifactRecord | None: ...
-
-    def list_artifacts(self, conversation_id: str) -> list[ConversationArtifactRecord]: ...
-
-    def mark_artifact_ingested(
-        self, artifact_id: str, *, knowledge_base_id: str, document_id: str
-    ) -> None: ...
-
-    def delete_chat_messages(self, message_ids: Sequence[str]) -> int: ...
 
 
-@runtime_checkable
-class WorkspaceRepo(Protocol):
-    """工作区域（v0.15）：账号下的项目容器。
-
-    会话挂在工作区下，但**工作区本身只是一行记录**——归属关系由
-    `ConversationRepo.set_conversation_workspace` 写，不在这里。
-    """
-
-    def create_workspace(self, record: WorkspaceRecord) -> WorkspaceRecord: ...
-
-    def get_workspace(self, workspace_id: str) -> WorkspaceRecord | None: ...
-
-    def list_workspaces(
-        self, *, device_id: str | None = None, any_device: bool = False
-    ) -> list[WorkspaceRecord]: ...
-
-    def update_workspace(self, record: WorkspaceRecord) -> WorkspaceRecord: ...
-
-    def set_workspace_archived(self, workspace_id: str, archived: bool) -> None: ...
-
-    def delete_workspace(self, workspace_id: str) -> None: ...
 
 
-@runtime_checkable
-class ScheduleRepo(Protocol):
-    """定时任务域（v0.33）：到点自动跑一轮问答的那些事。
-
-    调度状态（``next_run_at`` / ``enabled`` / ``last_*``）与任务本体放在同一个域：
-    它们由同一个动作改写（"认领一次运行"），拆成两个域会让那次 CAS 变成跨域的两步。
-    """
-
-    def create_scheduled_task(self, record: ScheduledTaskRecord) -> ScheduledTaskRecord: ...
-
-    def get_scheduled_task(self, scheduled_id: str) -> ScheduledTaskRecord | None: ...
-
-    def list_scheduled_tasks(self) -> list[ScheduledTaskRecord]: ...
-
-    def update_scheduled_task(self, record: ScheduledTaskRecord) -> ScheduledTaskRecord: ...
-
-    def delete_scheduled_task(self, scheduled_id: str) -> None: ...
-
-    def due_scheduled_tasks(
-        self, *, now: datetime, limit: int = 10
-    ) -> list[ScheduledTaskRecord]: ...
-
-    def arm_scheduled_task(
-        self,
-        scheduled_id: str,
-        *,
-        expected_next_run_at: datetime | None,
-        next_run_at: datetime | None,
-        enabled: bool,
-    ) -> bool: ...
-
-    def finish_scheduled_run(
-        self,
-        scheduled_id: str,
-        *,
-        status: str,
-        error: str | None,
-        last_run_at: datetime,
-        conversation_id: str | None = None,
-    ) -> None: ...
 
 
 @runtime_checkable
@@ -701,7 +474,7 @@ class IdentityRepo(Protocol):
 
     def set_user_avatar(self, user_id: str, avatar_key: str) -> None: ...
 
-    def claim_legacy_ownership(self, owner_id: str) -> dict[str, int]: ...
+    def claim_legacy_ownership(self, owner_id: str) -> int: ...
 
     def create_session(self, record: SessionRecord) -> SessionRecord: ...
 
@@ -794,23 +567,6 @@ class ModelRegistryRepo(Protocol):
     ) -> tuple[ModelProviderRecord, RegisteredModelRecord] | None: ...
 
 
-@runtime_checkable
-class MCPServerRepo(Protocol):
-    """外部 MCP 服务域（v0.15）：登记、开关、删除。
-
-    与 `ApiKeyRepo` 相邻但不同：它管的是**对外连接**的配置，凭据在 `api_key` 字段里，
-    但准入策略由服务层的工具闸执行。
-    """
-
-    def create_mcp_server(self, record: MCPServerRecord) -> MCPServerRecord: ...
-
-    def get_mcp_server(self, server_id: str) -> MCPServerRecord | None: ...
-
-    def list_mcp_servers(self) -> list[MCPServerRecord]: ...
-
-    def update_mcp_server(self, record: MCPServerRecord) -> MCPServerRecord: ...
-
-    def delete_mcp_server(self, server_id: str) -> None: ...
 
 
 @runtime_checkable

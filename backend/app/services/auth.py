@@ -157,12 +157,8 @@ class AuthService:
             )
         )
         claimed = self._stores.meta.claim_legacy_ownership(user.id)
-        if claimed["knowledge_bases"] or claimed["conversations"]:
-            logger.info(
-                "老数据已认领给首个管理员：知识库 %d 个、会话 %d 条",
-                claimed["knowledge_bases"],
-                claimed["conversations"],
-            )
+        if claimed:
+            logger.info("老数据已认领给首个管理员：知识库 %d 个", claimed)
         self._ensure_signing_secret()
         logger.warning("已创建管理员账号「%s」：此后 /api/v1 需要登录", cleaned)
         return self._issue_session(user)

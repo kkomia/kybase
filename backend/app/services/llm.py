@@ -869,7 +869,7 @@ class TextToolCalls(NamedTuple):
 #: 而"不带工具表 + 上下文还在催它去查"时，模型只剩"把调用写进正文"这一条路
 #: （实测 DeepSeek Flash：同一个请求带 tools 回结构化 ``tool_calls``，去掉 tools
 #: 就写进 content）。那段标记于是被当成回答**落库并显示**——用户看到的就是
-#: "回答里冒出一段 `<tool_call>` / DSML 标记"，还挂着复制、存为笔记的按钮。
+#: "回答里冒出一段 `<tool_call>` / DSML 标记"，还能原样复制出去。
 #:
 #: "一对"是实测逼出来的：一族的**收尾标签可能比开头多**（DeepSeek 会同时写
 #: `<｜tool▁call▁end｜>` 与 `<｜tool▁calls▁end｜>`、DSML 那族还有 ``invoke`` 这种

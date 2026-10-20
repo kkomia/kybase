@@ -5,7 +5,7 @@
 
 1. 协议里的每个方法在 `MetaStore` 里真实存在，且**签名逐字一致**
    （手抄过一版，16 处形参与默认值对不上——这条用例就是那次教训的产物）；
-2. **184 个方法恰好被域覆盖一次**：域是手工划的，"漏一个方法"不会报错，
+2. **151 个方法恰好被域覆盖一次**：域是手工划的，"漏一个方法"不会报错，
    只会表现为"某个方法永远只能走 meta"，没有人会注意到；
 3. 实现确实满足协议（结构化类型：不继承也必须满足，否则窄接口只是文档）；
 4. `StoreBundle` 的窄视图与协议**一一对应**，且是**同一个实例**。
@@ -27,11 +27,12 @@ from app.storage.postgres_impl.meta_store import PostgresMetaStore
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 #: 协议 → `StoreBundle` 上的视图名。加了协议忘了视图，或者视图改名，这里会红。
+#: **Agent 域的五个（notes / conversations / workspaces / schedules / mcp_servers）
+#: 已随 2026-10-20 的数据分家删除**，不在协议表里。
 VIEW_NAMES = {
     "KnowledgeBaseRepo": "knowledge_bases",
     "DocumentRepo": "documents",
     "FolderRepo": "folders",
-    "NoteRepo": "notes",
     "ChunkRepo": "chunks",
     "ImageRepo": "images",
     "ParseResultRepo": "parse_results",
@@ -40,14 +41,10 @@ VIEW_NAMES = {
     "ApiKeyRepo": "api_keys",
     "WebhookRepo": "webhooks",
     "IdempotencyRepo": "idempotency",
-    "ConversationRepo": "conversations",
-    "WorkspaceRepo": "workspaces",
     "IdentityRepo": "identity",
-    "ScheduleRepo": "schedules",
     "ShareRepo": "shares",
     "UsageRepo": "usage",
     "ModelRegistryRepo": "models",
-    "MCPServerRepo": "mcp_servers",
     "TrashRepo": "trash",
     "SettingsRepo": "app_settings",
     "WikiRepo": "wiki",

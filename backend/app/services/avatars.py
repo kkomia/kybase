@@ -33,7 +33,7 @@ __all__ = ["AVATAR_PREFIX", "MAX_AVATAR_BYTES", "AvatarService", "sniff_image"]
 logger = logging.getLogger(__name__)
 
 AVATAR_PREFIX = "avatars"
-"""对象存储里的前缀。与内容寻址的 ``originals/``、会话产物的 ``conversations/`` 分开。"""
+"""对象存储里的前缀（``avatars/``）。与内容寻址的 ``originals/`` 分开。"""
 
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 """单张上限 2MB。前端会先缩到 256px（通常 10–40KB），这个上限挡的是"绕过界面直接传"。"""
@@ -166,7 +166,7 @@ class AvatarService:
 def resource(user_id: str, key: str) -> str:
     """被签名的资源标识：``avatar:<用户>:<key>``。
 
-    与文件那条同一个道理（见 ``services/artifacts.py::file_signature_resource``）：
+    与文档下载同一条道理（见 ``services/documents.py`` 的签名 URL）：
     URL 里同时有用户与签名，**两者都要绑进签名**，否则换一个用户 id 去请求
     同一份签名，端点会先查"这个人有没有头像"——而这层校验本该由签名保证。
     ``key`` 里有斜杠，转义后再拼：不转的话 ``a/b`` 与 ``a:b`` 会撞成同一个标识。

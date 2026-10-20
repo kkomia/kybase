@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from app.storage.repositories import (
         ApiKeyRepo,
         ChunkRepo,
-        ConversationRepo,
         DataSourceRepo,
         DocumentRepo,
         FolderRepo,
@@ -35,11 +34,8 @@ if TYPE_CHECKING:
         ImageRepo,
         KnowledgeBaseRepo,
         MaintenanceRepo,
-        MCPServerRepo,
         ModelRegistryRepo,
-        NoteRepo,
         ParseResultRepo,
-        ScheduleRepo,
         SettingsRepo,
         ShareRepo,
         TaskQueueRepo,
@@ -47,7 +43,6 @@ if TYPE_CHECKING:
         UsageRepo,
         WebhookRepo,
         WikiRepo,
-        WorkspaceRepo,
     )
 
 from app.models.enums import (
@@ -62,11 +57,8 @@ from app.models.enums import (
 )
 
 __all__ = [
-    "ARTIFACT_IN_OBJECTS",
-    "ARTIFACT_IN_WORKSPACE",
     "ApiKeyRecord",
     "ChunkRecord",
-    "ConversationArtifactRecord",
     "DataSourceRecord",
     "DocumentPartRecord",
     "DocumentRecord",
@@ -74,13 +66,10 @@ __all__ = [
     "ImageRecord",
     "KnowledgeBaseRecord",
     "MetaStore",
-    "NoteFolderRecord",
     "ObjectStore",
     "ParseResultRecord",
-    "ScheduledTaskRecord",
     "SearchFilter",
     "SearchHit",
-    "SessionEventRecord",
     "SessionRecord",
     "ShareRecord",
     "StorageError",
@@ -113,7 +102,7 @@ class StoreBundle:
     #
     # 它们**返回的是同一个 ``meta`` 实例**，只是按域收窄了类型：新代码依赖窄接口，
     # "这个模块需要什么"在签名里读得出来；老代码走 `meta.*` 零改动。
-    # 这是拆 MetaStore 的第一步，不是行为变更——23 个域与 184 个方法的归属
+    # 这是拆 MetaStore 的第一步，不是行为变更——19 个域与 151 个方法的归属
     # 见 repositories.py，`tests/unit/storage/test_repositories.py` 机械核对。
 
     @property
@@ -129,11 +118,6 @@ class StoreBundle:
     @property
     def folders(self) -> FolderRepo:
         """目录域视图（`meta` 的窄类型）。"""
-        return self.meta  # type: ignore[return-value]
-
-    @property
-    def notes(self) -> NoteRepo:
-        """笔记域视图（`meta` 的窄类型）。"""
         return self.meta  # type: ignore[return-value]
 
     @property
@@ -177,21 +161,6 @@ class StoreBundle:
         return self.meta  # type: ignore[return-value]
 
     @property
-    def conversations(self) -> ConversationRepo:
-        """对话留存域视图（`meta` 的窄类型）。"""
-        return self.meta  # type: ignore[return-value]
-
-    @property
-    def workspaces(self) -> WorkspaceRepo:
-        """工作区域视图（`meta` 的窄类型）。"""
-        return self.meta  # type: ignore[return-value]
-
-    @property
-    def schedules(self) -> ScheduleRepo:
-        """定时任务域视图（`meta` 的窄类型）。"""
-        return self.meta  # type: ignore[return-value]
-
-    @property
     def identity(self) -> IdentityRepo:
         """身份域视图（`meta` 的窄类型）。"""
         return self.meta  # type: ignore[return-value]
@@ -209,11 +178,6 @@ class StoreBundle:
     @property
     def models(self) -> ModelRegistryRepo:
         """模型注册域视图（`meta` 的窄类型）。"""
-        return self.meta  # type: ignore[return-value]
-
-    @property
-    def mcp_servers(self) -> MCPServerRepo:
-        """外部 MCP 服务域视图（`meta` 的窄类型）。"""
         return self.meta  # type: ignore[return-value]
 
     @property
@@ -494,55 +458,6 @@ class FolderRecord:
 
 
 @dataclass(slots=True)
-class NoteFolderRecord:
-    """笔记文件夹（v14）。
-
-    **与 `FolderRecord` 刻意不同的一点是 `parent_id`**：知识库的目录单层（理由见上一条），
-    笔记的文件夹允许嵌套——它承载的是用户自己的知识组织方式，"工作 / 会议记录"
-    这样的两层在真实笔记里是常态，而不是要等规模变大才出现的需求。
-
-    级联语义（与 ``schema.py`` 的迁移 v14 逐字对应，两处必须一起读）：
-    删父文件夹连带删子文件夹；**子文件夹里的笔记一律回到未归档**（``ON DELETE SET NULL``），
-    不跟着消失——删容器不该销毁内容。
-    """
-
-    id: str
-    user_id: str | None = None
-    name: str = ""
-    #: 父文件夹 id；``None`` = 根级
-    parent_id: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class NoteRecord:
-    """一条笔记（v20）。
-
-    ``content_md`` 是**唯一事实源**：编辑器（Tiptap）的 JSON 不落库，
-    导出的 Markdown 既直接可读，也能原样喂给摄入流水线。
-    """
-
-    id: str
-    user_id: str | None = None
-    title: str = ""
-    content_md: str = ""
-    #: manual（手记）/ chat（问答存为）/ clip（剪藏）
-    source_kind: str = "manual"
-    #: chat 存会话或消息 id，clip 存 URL
-    source_ref: str | None = None
-    #: 「加入知识库」后指向生成的文档（未入库为空）
-    kb_id: str | None = None
-    doc_id: str | None = None
-    #: 所属文件夹（v14）；``None`` = 未归档
-    folder_id: str | None = None
-    pinned: bool = False
-    tags: list[str] = field(default_factory=list)
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(slots=True)
 class DocumentPartRecord:
     """子文件（大文件强制切分后的页范围片段，UI 显示为可展开的子文件树）。
 
@@ -733,281 +648,6 @@ class IdempotencyRecord:
     key: str
     request_hash: str
     response: dict[str, object] | None = None
-    created_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class ConversationRecord:
-    """一次对话（会话）。
-
-    ``title`` 由首轮提问生成——让用户自己起名字的对话工具，最后满屏都是"新对话"。
-    """
-
-    id: str
-    title: str = ""
-    kb_ids: Sequence[str] = field(default_factory=tuple)
-    pinned: bool = False
-    """置顶（v17）。置顶的会话排在列表最前，**且聊天不会改变它的名次**——
-    用户置顶正是为了"别被新对话挤下去"。"""
-    owner_id: str | None = None
-    """归属账号（v10）。``None`` = 老数据，setup 时认领给首个管理员。"""
-    model_pk: str | None = None
-    """该会话选用的注册模型（v12）。``None`` = 走全局默认（注册表 chat 槽位）。"""
-    thinking: bool | None = None
-    """该会话是否开启思考（v16）。``None`` = 跟随全局默认。"""
-    thinking_effort: str | None = None
-    """该会话的思考强度（v16，low/medium/high）。``None`` = 跟随全局默认。"""
-    archived_at: datetime | None = None
-    """归档时间（v0.17）。``None`` = 未归档——**归档不是删除**：
-    会话从列表里收起来，但内容与引用都还在，随时可以取消归档。
-    用时间戳而不是布尔："什么时候收起来的"本身有用（归档视图按它排序）。"""
-    workspace_id: str | None = None
-    """所属工作区（v0.15）。``None`` = **未归档**，侧栏把它单独排一列。
-
-    为什么不给未归档的会话自动建一个默认工作区：未归档是一个**真实存在的状态**
-    （"我就是随手问一句"）。替它安一个默认工作区，用户就再也分不清"这条是我
-    特意放进项目里的"还是"随手问的"——而那个区分正是工作区这个概念的用处。
-    """
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class MCPServerRecord:
-    """一个外部 MCP 服务（v0.15）：插件能力的落点。
-
-    见 ``docs/设计/Agent-工作区与能力层设计-v0.1.md`` §6.2。``env`` / ``headers`` 里
-    可能带凭据——**接口绝不回显它们的值**，只回"配过没有"。
-    """
-
-    id: str
-    name: str
-    transport: str
-    """``stdio``（起子进程）或 ``http``（连远端服务）。"""
-    target: str
-    """stdio = 要执行的命令；http = 服务的 URL。"""
-    args: Sequence[str] = field(default_factory=tuple)
-    env: dict[str, str] = field(default_factory=dict)
-    headers: dict[str, str] = field(default_factory=dict)
-    policy: str = "ask"
-    """``allow`` / ``ask`` / ``deny``。默认 ``ask``：外部工具会以用户的名义执行动作。"""
-    enabled: bool = True
-    owner_id: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class ScheduledTaskRecord:
-    """定时任务（v0.33）：到点替用户做一件事。
-
-    见 ``docs/设计/Agent-工作区与能力层设计-v0.1.md`` §6.6。它回答的是
-    "有没有哪件事是**到点就该做**、而我不想每次自己去问一遍"——
-    每天早晨把昨天的日志汇总、每周一把上周的周报底稿准备好。
-
-    三处刻意的形状：
-
-    - **两种时间**（``kind``）：``cron`` = 反复发生（5 字段表达式，按**服务器本地时间**
-      解释），``once`` = 就跑一次（``run_at``）。不做"每 N 分钟"这种第三种形态——
-      那用 ``*/N * * * *`` 表达得出来，多一种形态只会多一处要维护的语义；
-    - **结果落进一条会话**（``conversation_id``）：每次运行都是那个会话里的一轮问答，
-      所以"上周它都跑了些什么、结论是什么"就是翻会话记录——不另造一套"运行历史"
-      的存储与界面。首次运行时才建这条会话（没跑过的任务不该先占一个会话）；
-    - ``next_run_at`` 是**调度侧唯一的游标**：它同时承担"下次什么时候跑"与
-      "这一次有没有人认领"（见 ``MetaStore.arm_scheduled_task`` 的 CAS）。
-    """
-
-    id: str
-    """``sched_<hex>``。"""
-
-    name: str
-    """给人看的名字，同时会成为那条会话的标题。"""
-
-    prompt: str
-    """到点要问的那句话（它就是每次运行的用户消息）。"""
-
-    kind: str
-    """``cron`` 或 ``once``。"""
-
-    cron: str = ""
-    """5 字段 cron 表达式（``kind='cron'`` 时有效）：分 时 日 月 周。"""
-
-    run_at: datetime | None = None
-    """一次性任务的执行时刻（``kind='once'``）。"""
-
-    next_run_at: datetime | None = None
-    """下次该跑的时刻（`timestamptz`）。``None`` = 不会再跑（已停用或一次性已跑完）。"""
-
-    enabled: bool = True
-    kb_ids: Sequence[str] = field(default_factory=tuple)
-    """运行时的检索范围。**独立于用户当时的会话**：这一步决定"它去哪儿找资料"，
-    不勾库就是一次不查资料的运行。"""
-
-    model_pk: str | None = None
-    thinking: bool | None = None
-    thinking_effort: str | None = None
-    conversation_id: str | None = None
-    owner_id: str | None = None
-    last_run_at: datetime | None = None
-    last_status: str = ""
-    """``ok`` / ``failed``，或空串（还没跑过）。"""
-
-    last_error: str = ""
-    run_count: int = 0
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class WorkspaceRecord:
-    """工作区（v0.15）：Agent 的"在哪儿干活"。
-
-    见 ``docs/设计/Agent-工作区与能力层设计-v0.1.md`` §3。与**沙箱**是两个概念：
-    工作区是长期、用户拥有、`root_path` 是他自己的目录；沙箱是一次性的试错空间。
-    """
-
-    id: str
-    name: str
-    root_path: str
-    """用户指定的真实目录（绝对路径）。创建时校验存在且是目录，
-    并拒绝指向数据目录或文件系统根——否则"把工作区设成 /"就等于把整台机器交出去。"""
-    owner_id: str | None = None
-    """归属账号。与知识库 / 会话同一套口径：``None`` = 管理员或 API Key 通道，
-    能看到全部；普通成员只看自己的。"""
-    description: str = ""
-    kb_ids: Sequence[str] = field(default_factory=tuple)
-    """这个工作区**带着哪些知识库**。这是"知识库与 Agent 天生融合"的落点：
-    进入工作区，资料范围就定了；新会话默认继承它们（见设计文档 §5）。"""
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    archived_at: datetime | None = None
-    """归档时间（v0.55）。``None`` = 未归档。与会话归档同一口径：用时间戳而不是布尔，
-    "什么时候收起来的"本身有用；归档**不是删除**，里面的会话与内容都还在。"""
-    device_id: str | None = None
-    """归属设备（v0.59）。桌面壳每次请求带 ``X-Kylab-Device: <uuid>``，工作区因此
-    **按设备隔离**：带头的只看得到 ``device_id`` 等于自己那一支的。
-
-    **``None`` = 服务器端**：网页版/直连 API 不带设备头，看到的就是这一批——
-    语义不是"没有归属"，而是"``root_path`` 在服务器的盘上"（与桌面端那种
-    "路径在用户那台机器的盘上"相对）。所以这一列可空，存量记录全落在这一档。"""
-    device_name: str = ""
-    """设备名（``X-Kylab-Device-Name`` 头，可空）。**只给人看**：界面上说清
-    "这个项目在哪台机器上"，判定一律按 ``device_id``。服务器端是空串。"""
-
-
-@dataclass(slots=True)
-class ChatMessageRecord:
-    """会话里的一条消息。
-
-    ``sources`` 是**引用快照**（当轮命中的原文出处），不是每轮重新检索的结果：
-    历史回答当时依据的是哪几段，事后回看必须还是那几段，否则引用编号就对不上了。
-    """
-
-    id: str
-    conversation_id: str
-    role: str
-    content: str
-    sources: Sequence[dict[str, object]] = field(default_factory=tuple)
-    steps: Sequence[dict[str, object]] = field(default_factory=tuple)
-    """当轮的过程步骤（工具调用、组织回答…，v0.25）。
-
-    与 ``sources`` 一样是**快照**：回看一条旧回答时，当时调了哪些工具、
-    每一步拿到什么，都该是当时的样子。此前这两样只活在流式那几秒里，
-    离开页面就没了——而"这句答案是怎么来的"正是回来要找的东西。
-    """
-
-    thinking: str = ""
-    """当轮的思考过程全文（推理模型的 ``reasoning_content``，v0.25）。空串 = 没有思考。"""
-
-    attachments: Sequence[dict[str, object]] = field(default_factory=tuple)
-    """这条消息**随发的附件快照**（v0.55，只有用户消息会有）。
-
-    每项形如 ``{"key": "art_…", "name": "指南.pdf", "kind": "pdf", "size_bytes": 448444}``。
-    存快照而不是外键，与 ``sources`` 同一口径：回看时"当时带着哪几份文件"必须是当时的样子。
-    """
-
-    created_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class SessionEventRecord:
-    """会话事件（P0-2，抄 ZCode 的**只追加事件日志**）。
-
-    ZCode 把整个会话表达成一串不可变的事件
-    （``Turn{Started,Complete}`` / ``ToolCall{Started,Result}`` / ``Model{Error}``…），
-    会话正文只是它的投影（调研报告《Agent-与对话架构对标调研 v0.1》§2.1）。
-    这张表就是那条设计在 KYLAB 的落点：``chat_messages.steps`` 那份**流式当时
-    拍下的快照**从此可以用这份日志现算（``services/session_events.steps_from_events``），
-    续跑 / 压缩 / 回放也就不必各自打补丁。
-
-    **只追加**：存储层只有 append 与 list，没有 update / delete。
-    能被改的日志回答不了"当时发生了什么"——那是这份表存在的全部理由。
-    """
-
-    conversation_id: str
-    kind: str
-    """事件种类。取值是**词表**，定义在 ``services/session_events.EVENT_KINDS``
-    一处；存储层不校验（它不认识业务词表），校验在服务层。"""
-    payload: dict[str, object] = field(default_factory=dict)
-    seq: int = 0
-    """**会话内**单调递增的序号，由存储层在写那个事务里赋值（``max(seq)+1``）。
-
-    为什么不复用 ``created_at`` 排序：同一毫秒内的多条事件（一批并发的工具调用）
-    它分不出先后，而"哪条先发生"正是回放要读的东西。表上有
-    ``UNIQUE (conversation_id, seq)``，重复的 seq 会被数据库拒掉。
-    """
-    id: int | None = None
-    """``bigserial`` 主键，入库时由数据库给（与 ``document_stage_events``
-    同一种形状——另一张"只追加的事件表"，写法上不发明第二套）。"""
-    created_at: datetime | None = None
-
-
-ARTIFACT_IN_WORKSPACE = "workspace"
-"""产物落在一份**真实目录**里（会话挂在某个工作区上）。用户打开自己的项目就看得见。"""
-
-ARTIFACT_IN_OBJECTS = "object"
-"""产物落在对象存储里、按会话分前缀（没挂工作区的会话）。
-
-**这是"临时"那一档**：它只许诺"这条会话里有效"，会话删了就连带清掉
-（见 ``ArtifactService.discard_for_conversation``）。
-"""
-
-
-@dataclass(slots=True)
-class ConversationArtifactRecord:
-    """会话产物（v0.26）：Agent 做出来的一份**文件**。
-
-    在这张表出现之前，导出类工具是"直接当一次入库提交"的——于是文件只有一个身份
-    （某个知识库里的一份文档），而"这条会话产出了什么"要靠翻文档列表猜。
-    实际后果用户撞上过：一个没挂工作区的会话要导出 docx，模型只好**挑一个语义最顺手的
-    知识库塞进去**（它塞进了「笔记」），因为那是当时唯一能写的地方。
-
-    两件事由此分开，这张表是分开的证据：
-
-    - ``storage``/``location`` 回答**它现在在哪**（工作区目录 / 对象存储的会话前缀）；
-    - ``document_id`` 回答**它有没有进知识库**，进的是哪个库。``None`` = 没进，
-      这是默认值——入库是一个**显式动作**（用户点了「存进知识库」，或他明确要求）。
-    """
-
-    id: str
-    conversation_id: str
-    name: str
-    """显示名（带扩展名）。用户看到的那个名字。"""
-    format: str
-    """扩展名小写（``docx`` / ``pdf`` / ``xlsx`` / ``pptx``），界面据此选图标。"""
-    size_bytes: int = 0
-    storage: str = ARTIFACT_IN_OBJECTS
-    location: str = ""
-    """真实落点：工作区那份是绝对路径，对象存储那份是 Key。**由服务层解释**——
-    存储层不知道工作区是什么，它只存字符串。"""
-    workspace_id: str | None = None
-    """挂在哪个工作区上（``None`` = 没挂，落在对象存储）。"""
-    owner_id: str | None = None
-    """归属账号，与知识库/会话同一套口径：``None`` = 管理员或 API Key 通道。"""
-    knowledge_base_id: str | None = None
-    """进了哪个知识库（``None`` = 还没入）。"""
-    document_id: str | None = None
-    """入库之后那份文档的 id（``None`` = 还没入）。界面据此给"去看这份文档"的入口。"""
     created_at: datetime | None = None
 
 
@@ -1577,116 +1217,22 @@ class MetaStore(ABC):
     def set_document_folder(self, document_id: str, folder_id: str | None) -> None:
         """把文档移进目录；``None`` = 移回根。"""
 
-    # ---- 笔记（v20）----
-    @abstractmethod
-    def create_note(self, record: NoteRecord) -> NoteRecord:
-        """建笔记并写入标签。"""
 
-    @abstractmethod
-    def get_note(self, note_id: str) -> NoteRecord | None:
-        """按 id 取一条（含标签）。"""
 
-    @abstractmethod
-    def list_notes(
-        self,
-        *,
-        user_id: str | None,
-        query: str | None = None,
-        tag: str | None = None,
-        folder_id: str | None = None,
-        unfiled: bool = False,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[NoteRecord]:
-        """按置顶 + 更新时间倒序列出；``query`` 做标题/正文的子串匹配。
 
-        ``user_id=None`` 表示"无归属"（管理员/API Key 建的笔记），
-        用 ``IS`` 而不是 ``=`` 比较，才能同时匹配 NULL 与具体值。
 
-        ``folder_id`` / ``unfiled`` 是**同一个轴上的两种取法**（与文档列表的
-        ``folder_id`` / ``root_only`` 同款）：给具体 id 就是"这个文件夹里的"，
-        ``unfiled=True`` 就是"未归档的"。不传两者 = 不按文件夹过滤（全部）。
-        写成两个参数而不是一个 `'unfiled'` 哨兵，是因为存储层不该认识界面上的字符串。
-        """
 
-    @abstractmethod
-    def count_notes(
-        self,
-        *,
-        user_id: str | None,
-        query: str | None = None,
-        tag: str | None = None,
-        folder_id: str | None = None,
-        unfiled: bool = False,
-    ) -> int:
-        """与 ``list_notes`` 同一套过滤条件的总数（分页用）。"""
 
-    @abstractmethod
-    def update_note(
-        self,
-        note_id: str,
-        *,
-        title: str,
-        content_md: str,
-        pinned: bool,
-        updated_at: datetime,
-        tags: Sequence[str] | None = None,
-    ) -> None:
-        """整条覆盖更新；``tags=None`` 表示"不动标签"（只改正文时不必先读标签）。"""
 
-    @abstractmethod
-    def delete_note(self, note_id: str) -> None:
-        """删笔记并清掉它的标签。"""
 
-    @abstractmethod
-    def attach_note_document(self, note_id: str, *, kb_id: str, doc_id: str) -> None:
-        """记下"这条笔记已入库到哪个文档"，供检索命中时跳回笔记。"""
 
-    @abstractmethod
-    def list_note_tags(self, *, user_id: str | None) -> list[tuple[str, int]]:
-        """该用户用过的标签与条数（按条数、名字排序）。"""
 
-    # ---- 笔记文件夹（v14）----
 
-    @abstractmethod
-    def create_note_folder(self, record: NoteFolderRecord) -> NoteFolderRecord:
-        """建一个文件夹（``parent_id`` 为空即根级）。"""
 
-    @abstractmethod
-    def get_note_folder(self, folder_id: str) -> NoteFolderRecord | None: ...
 
-    @abstractmethod
-    def list_note_folders(self, *, user_id: str | None) -> list[NoteFolderRecord]:
-        """按名字（不区分大小写）整份列出——层级由调用方按 ``parent_id`` 自己接。
 
-        **刻意不在存储层拼树**：树是界面的事，"哪些节点展开着"更是；
-        存储只回答"有哪些文件夹、各自的父是谁"。
-        """
 
-    @abstractmethod
-    def rename_note_folder(self, folder_id: str, name: str) -> None: ...
 
-    @abstractmethod
-    def set_note_folder_parent(self, folder_id: str, parent_id: str | None) -> None:
-        """移动文件夹；``None`` = 移到根级。成环由业务层先挡住（这里不做图遍历）。"""
-
-    @abstractmethod
-    def delete_note_folder(self, folder_id: str) -> None:
-        """删文件夹。**子文件夹由外键级联删掉、里面的笔记回到未归档**——
-        两条语义都写在表定义上（见 schema.py 迁移 v14 的注释），这里只发一条 DELETE。
-        """
-
-    @abstractmethod
-    def count_notes_by_folder(self, *, user_id: str | None) -> dict[str | None, int]:
-        """``{文件夹 id（``None`` = 未归档）: 笔记数}``。
-
-        **一次 GROUP BY 取全**：界面上每个文件夹都要显示条数，逐个查就是 N+1；
-        三个数字（每个文件夹、未归档、总数）都由这一次聚合得出，总数 = 各项之和。
-        """
-
-    @abstractmethod
-    def set_note_folder(self, note_id: str, folder_id: str | None) -> None:
-        """把笔记移进文件夹；``None`` = 移回未归档。**只动归属，不碰正文与标签**。"""
 
     # ---- 子文件 ----
     @abstractmethod
@@ -2031,293 +1577,49 @@ class MetaStore(ABC):
         """
         ...
 
-    # ---- 对话留存（架构 §3 的对话层；M6 后续）----
-    @abstractmethod
-    def create_conversation(self, record: ConversationRecord) -> ConversationRecord: ...
 
-    @abstractmethod
-    def get_conversation(self, conversation_id: str) -> ConversationRecord | None: ...
 
-    @abstractmethod
-    def list_conversations(
-        self, *, limit: int | None = None, q: str | None = None
-    ) -> list[ConversationRecord]:
-        """**置顶优先，其次按最近更新倒序**；``q`` 按标题做包含匹配。"""
-        ...
 
-    @abstractmethod
-    def set_conversation_archived(self, conversation_id: str, archived: bool) -> None:
-        """归档 / 取消归档。**不推 ``updated_at``**：与置顶、改名同理——
-        归档是一次整理动作，不该把会话顶到"最近活动"的最前面。"""
-        ...
 
-    @abstractmethod
-    def last_assistant_previews(self, conversation_ids: Sequence[str]) -> dict[str, str]:
-        """``会话 id → 最后一条回答的原文``（历史会话面板的两行预览用它）。
 
-        **一次查完，不逐个查**：列表最多几十条，逐个查就是几十次往返。
-        实现上是一条 ``DISTINCT ON``，取每个会话最新的那条 assistant 消息。
-        """
-        ...
 
-    @abstractmethod
-    def set_conversation_workspace(self, conversation_id: str, workspace_id: str | None) -> None:
-        """把会话挂到某个工作区，或（``None``）退回未归档。
 
-        **不推 ``updated_at``**：归类是一次整理动作，和改名/置顶同理——推了的话
-        "把五条会话整理进项目"会让它们按整理时间重排，而用户想按对话发生的时间找。
-        """
-        ...
 
-    # ---- 工作区（v0.15；见 docs/设计/Agent-工作区与能力层设计-v0.1.md §3）----
-    @abstractmethod
-    def create_workspace(self, record: WorkspaceRecord) -> WorkspaceRecord:
-        """落一行工作区。``record.device_id`` / ``device_name`` 原样存下
-        （``None`` = 服务器端，见 :class:`WorkspaceRecord`）。"""
-        ...
 
-    @abstractmethod
-    def get_workspace(self, workspace_id: str) -> WorkspaceRecord | None: ...
 
-    @abstractmethod
-    def list_workspaces(
-        self, *, device_id: str | None = None, any_device: bool = False
-    ) -> list[WorkspaceRecord]:
-        """按最近更新倒序。归属过滤在服务层做（存储层不认识调用者身份）。
 
-        **设备过滤是三态**（v0.59）：
 
-        - ``any_device=True`` —— 不过滤，跨设备全都要（管理员的跨机清理视图）；
-        - 否则只列 ``device_id`` 与参数**相等**的那些，其中 ``None`` 这一档是
-          **服务器端**（网页版/直连 API 看到的那些），不是"没有归属"。
-        """
-        ...
 
-    @abstractmethod
-    def update_workspace(self, record: WorkspaceRecord) -> WorkspaceRecord: ...
 
-    @abstractmethod
-    def set_workspace_archived(self, workspace_id: str, archived: bool) -> None:
-        """归档 / 取消归档一个工作区（v0.55）。**不推 ``updated_at``**：与会话那条同理
-        （归档是一次整理动作，不该把它顶到"最近更新"的最前面）。"""
-        ...
 
-    @abstractmethod
-    def delete_workspace(self, workspace_id: str) -> None:
-        """删工作区。**里面的会话退回未归档**（外键是 ON DELETE SET NULL），
-        不是跟着一起删——会话里有用户问过的内容，误删不可恢复。"""
-        ...
 
-    # ---- 定时任务（v0.33；见 docs/设计/Agent-工作区与能力层设计-v0.1.md §6.6）----
-    @abstractmethod
-    def create_scheduled_task(self, record: ScheduledTaskRecord) -> ScheduledTaskRecord: ...
 
-    @abstractmethod
-    def get_scheduled_task(self, scheduled_id: str) -> ScheduledTaskRecord | None: ...
 
-    @abstractmethod
-    def list_scheduled_tasks(self) -> list[ScheduledTaskRecord]:
-        """按"下次该跑的时间"排序（``None`` 排最后），其次按创建时间倒序。
 
-        归属过滤在服务层做（存储层不认识调用者身份），与工作区 / MCP 服务同一口径。
-        """
-        ...
 
-    @abstractmethod
-    def update_scheduled_task(self, record: ScheduledTaskRecord) -> ScheduledTaskRecord: ...
 
-    @abstractmethod
-    def delete_scheduled_task(self, scheduled_id: str) -> None: ...
 
-    @abstractmethod
-    def due_scheduled_tasks(self, *, now: datetime, limit: int = 10) -> list[ScheduledTaskRecord]:
-        """到点该跑的那些（``enabled`` 且 ``next_run_at <= now``），按时间正序。
 
-        **只查不算**：真正"认领"要过 :meth:`arm_scheduled_task`——
-        查与认领分成两步是有意的，认领那一步是带条件的 UPDATE（见它的说明）。
-        """
-        ...
 
-    @abstractmethod
-    def arm_scheduled_task(
-        self,
-        scheduled_id: str,
-        *,
-        expected_next_run_at: datetime | None,
-        next_run_at: datetime | None,
-        enabled: bool,
-    ) -> bool:
-        """认领一次运行：**把下次时间推到下一回**，条件是目前还停在 ``expected_next_run_at``。
 
-        返回 ``False`` = 有人先认领了（另一个 worker 或另一次扫描），这次别再跑。
 
-        为什么要 CAS 而不是"先查后写"：多个 worker 会同时扫到同一条到点的任务，
-        而"跑两次"的代价不是重复一次查询——它会重复**一次完整的问答与工具调用**
-        （真花钱），并在会话里留下两条一模一样的记录。判据只能落在一条
-        ``UPDATE ... WHERE next_run_at = 期望值`` 上（与任务队列的
-        ``FOR UPDATE SKIP LOCKED`` 同一个思路：让数据库来裁决谁先）。
-        """
-        ...
 
-    @abstractmethod
-    def finish_scheduled_run(
-        self,
-        scheduled_id: str,
-        *,
-        status: str,
-        error: str | None,
-        last_run_at: datetime,
-        conversation_id: str | None = None,
-    ) -> None:
-        """记一次运行的结果（状态 / 错误 / 时间，首次运行时把会话 id 落下来）。"""
-        ...
 
-    # ---- MCP 服务（v0.15）----
-    @abstractmethod
-    def create_mcp_server(self, record: MCPServerRecord) -> MCPServerRecord: ...
 
-    @abstractmethod
-    def get_mcp_server(self, server_id: str) -> MCPServerRecord | None: ...
 
-    @abstractmethod
-    def list_mcp_servers(self) -> list[MCPServerRecord]:
-        """按最近更新倒序。归属过滤在服务层做（存储层不认识调用者身份）。"""
-        ...
 
-    @abstractmethod
-    def update_mcp_server(self, record: MCPServerRecord) -> MCPServerRecord: ...
 
-    @abstractmethod
-    def delete_mcp_server(self, server_id: str) -> None: ...
 
-    @abstractmethod
-    def count_workspace_conversations(self, workspace_id: str) -> int:
-        """这个工作区下有多少会话。侧栏每个工作区后面那个计数用它。"""
-        ...
 
-    @abstractmethod
-    def rename_conversation(self, conversation_id: str, title: str) -> None: ...
 
-    @abstractmethod
-    def set_conversation_pinned(self, conversation_id: str, pinned: bool) -> None:
-        """置顶/取消置顶。**不推 ``updated_at``**：置顶是一次整理动作，
-        和改名一样不该把会话顶到"最近活动"的最前面（置顶本来就排最前了）。"""
-        ...
 
-    @abstractmethod
-    def delete_chat_messages(self, message_ids: Sequence[str]) -> int:
-        """按 id 删除消息，返回删除条数（「重新生成」回退一轮用）。"""
-        ...
 
-    @abstractmethod
-    def set_conversation_model(self, conversation_id: str, model_pk: str | None) -> None:
-        """记录该会话选用的对话模型（``None`` = 回到全局默认）。
 
-        **不推 ``updated_at``**，与改名同理：切一次模型不该把会话顶到"最近活动"的最前面。
-        """
-        ...
 
-    @abstractmethod
-    def set_conversation_thinking(
-        self, conversation_id: str, thinking: bool | None, effort: str | None
-    ) -> None:
-        """记录该会话的思考偏好（``None`` = 回到全局默认）。同样不推 ``updated_at``。"""
-        ...
 
-    @abstractmethod
-    def touch_conversation(self, conversation_id: str) -> None:
-        """把 ``updated_at`` 推到现在（追加消息后调用）。"""
-        ...
 
-    @abstractmethod
-    def get_conversation_summary(self, conversation_id: str) -> tuple[str, str | None]:
-        """取（上下文摘要，摘要已覆盖到的最后一条消息 id）。
 
-        没摘要过时是 ``("", None)``。**不推 ``updated_at``**：压缩是内部优化，
-        不该让会话在列表里被顶到最前——用户并没有说话。
-        """
 
-    @abstractmethod
-    def set_conversation_summary(
-        self, conversation_id: str, summary: str, upto_message_id: str | None
-    ) -> None:
-        """保存上下文摘要与它覆盖到的消息位置。"""
-
-    @abstractmethod
-    def delete_conversation(self, conversation_id: str) -> None:
-        """删除会话**及其全部消息**（外键级联），以及它的产物记录。
-
-        **只删记录，不删文件**：落在工作区里的产物是用户项目里的真实文件。
-        对象存储里那些临时产物由服务层在调用本方法之前清掉。
-        """
-        ...
-
-    @abstractmethod
-    def append_message(self, record: ChatMessageRecord) -> ChatMessageRecord: ...
-
-    @abstractmethod
-    def list_messages(self, conversation_id: str) -> list[ChatMessageRecord]:
-        """按写入顺序返回——顺序就是对话顺序，所以按 created_at 排序。"""
-        ...
-
-    # ---- 会话事件日志（P0-2）----
-    @abstractmethod
-    def append_turn(
-        self,
-        *,
-        messages: Sequence[ChatMessageRecord],
-        events: Sequence[SessionEventRecord],
-    ) -> None:
-        """把一轮的消息与它的事件**写在同一个事务里**（P0-2）。
-
-        **为什么非要一起写**：事件日志是"当时发生了什么"的唯一事实源，而消息是
-        它的投影。两者分开写，就必然存在"消息在、事件不在"的窗口——回看时会看到
-        一条没有过程记录的回答，而那正是这个不可变日志要消灭的东西（v0.25 之前
-        步骤只活在流里，用户刷新一次就永久丢了）。
-        """
-        ...
-
-    @abstractmethod
-    def append_session_events(
-        self, records: Sequence[SessionEventRecord]
-    ) -> list[SessionEventRecord]:
-        """**只追加**一批事件，返回补好 ``seq`` / ``id`` 的那些记录。
-
-        写在同一事务里：先锁住会话行（``FOR UPDATE``），再按该会话的
-        ``max(seq)`` 逐个递增。锁是为了并发——同一会话同时有两轮在写时，
-        不锁就会算出同一个 seq，而表上的唯一约束会把这变成一次失败。
-        """
-        ...
-
-    @abstractmethod
-    def list_session_events(
-        self, conversation_id: str, *, kinds: Sequence[str] | None = None
-    ) -> list[SessionEventRecord]:
-        """按 ``seq`` 正序返回事件（``kinds`` 非空时只取那几种）。
-
-        **没有分页**：一轮对话的事件量级是几十条，而读它的场景是"把这一轮的
-        过程摊开"；真到几千条量级再谈（那时更该做的是按 turn 切片，不是 offset）。
-        """
-        ...
-
-    # ---- 会话产物（v0.26）----
-    @abstractmethod
-    def create_artifact(self, record: ConversationArtifactRecord) -> ConversationArtifactRecord: ...
-
-    @abstractmethod
-    def get_artifact(self, artifact_id: str) -> ConversationArtifactRecord | None: ...
-
-    @abstractmethod
-    def list_artifacts(self, conversation_id: str) -> list[ConversationArtifactRecord]:
-        """按产出顺序返回。"""
-        ...
-
-    @abstractmethod
-    def mark_artifact_ingested(
-        self, artifact_id: str, *, knowledge_base_id: str, document_id: str
-    ) -> None:
-        """记下这份产物进了哪个库、成了哪份文档。"""
-        ...
 
     # ---- 使用者名册（调研报告 G6）----
     @abstractmethod
@@ -2368,11 +1670,11 @@ class MetaStore(ABC):
         ...
 
     @abstractmethod
-    def claim_legacy_ownership(self, owner_id: str) -> dict[str, int]:
-        """把 owner 为 NULL 的知识库与会话认领给指定账号（setup 向导用）。
+    def claim_legacy_ownership(self, owner_id: str) -> int:
+        """把 owner 为 NULL 的知识库认领给指定账号（setup 向导用），返回认领条数。
 
-        返回 ``{"knowledge_bases": n, "conversations": n}``——认领了几条要让用户知道，
-        静默改掉一堆数据的归属而不吭声是不行的。
+        认领了几条要让用户知道，静默改掉一堆数据的归属而不吭声是不行的。
+        （原先还会认领 `conversations`——那张表是 Agent 侧的，随分家一起删了。）
         """
         ...
 
@@ -2473,10 +1775,6 @@ class MetaStore(ABC):
         """
         ...
 
-    @abstractmethod
-    def count_messages(self, conversation_id: str) -> int:
-        """会话里的消息条数（列表页显示"几轮"，不必把消息全读出来数）。"""
-        ...
 
     # ---- 模型注册器（调研报告 G1）----
     @abstractmethod
