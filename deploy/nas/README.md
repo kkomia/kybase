@@ -81,6 +81,11 @@ cp /vol1/1000/docker/kybase/src/deploy/nas/docker-compose.yml \
 cd ../app && docker compose up -d --build
 ```
 
+- **存量库第一次升级到「数据分家」版时，多一步（只这一次）**：新版应用会以
+  「这是 kylab 合体期的交错迁移序列」拒绝启动——跑一次
+  `cd ../app && docker compose run --rm --no-deps backend python -m app.storage.postgres_impl.remap --apply`，
+  再 `docker compose up -d --force-recreate backend mcp`。映射、核对与可选的
+  `--drop-agent-tables`（**丢数据**）见《部署指南》§6.3。
 - **第 ③ 步为什么必须在**：`app/docker-compose.yml` 是**手工副本**，不是软链、也不在 `src/`
   里，所以 `git pull` 永远更新不到它。漏掉它的表现是"代码是新的、配置是老的那一份"——
   最典型的一次是 `KYLAB_MCP_PUBLIC_URL` / `KYLAB_PUBLIC_BASE_URL` 加进了仓库那份，
