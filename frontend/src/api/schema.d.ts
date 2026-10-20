@@ -1474,8 +1474,9 @@ export interface paths {
          * 登记数据源（HTML / RSS）
          * @description 登记一个数据源。
          *
-         *     **登记不等于拉取**：刚登记完不会立刻有文档，要么等定时任务，
-         *     要么显式点一次"拉取"。界面上要说清这一点，否则用户会以为登记完就有了。
+         *     **登记不等于拉取**：刚登记完不会立刻有文档，要显式点一次「立即拉取」。
+         *     （本服务没有定时拉取——定时任务是 Agent 侧的产品面，随数据分家拆除了。）
+         *     界面上要说清这一点，否则用户会以为登记完就有了。
          */
         post: operations["create_data_source_api_v1_knowledge_bases__kb_id__data_sources_post"];
         delete?: never;
