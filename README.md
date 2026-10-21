@@ -36,6 +36,7 @@ Authorization: Bearer <API Key>
 
 {
   "query": "城市绿地对儿童近视的影响",
+  "kb_ids": ["kb_xxx"],
   "keep": 5,
   "min_score": 0.42
 }
@@ -46,31 +47,36 @@ Authorization: Bearer <API Key>
   "summary": "候选 38 条，收敛后保留 5 条（强相关 3 / 部分相关 2）。",
   "distribution": {
     "fit": "strong",
-    "total": 38,
-    "kept": 5
+    "count": 38,
+    "above_baseline": 5,
+    "suggested": { "keep": 5, "min_score": 0.42, "per_doc": 2 }
   },
   "decision": {
     "keep": 5,
     "min_score": 0.42,
     "per_doc": 2,
-    "strategy": "rrf+score-cut",
+    "decided_by": "model",
+    "fit": "strong",
+    "dropped": 33,
     "unscored_kept": 0
   },
   "hits": [
     {
-      "document_title": "城市绿地暴露与儿童视力的关联",
+      "document_name": "城市绿地暴露与儿童视力的关联.pdf",
       "page": 4,
+      "text": "……原文片段……",
       "score": 0.71,
-      "basis": "hybrid",
-      "lexical_score": 12.4,
-      "content": "……原文片段……"
+      "similarity": 0.62,
+      "basis": "vector",
+      "lexical_score": 12.4
     }
   ],
   "next_offset": null
 }
 ```
 
-> 上面是响应结构示意，不是某次真实请求的统计结果。
+> 上面是响应结构示意（节选），不是某次真实请求的统计结果。`score` 是融合分，
+> `similarity` 才是余弦；`basis` 是 `vector` / `fulltext` 时分别表示这条来自哪条通道。
 
 ## 界面
 
@@ -78,9 +84,7 @@ Authorization: Bearer <API Key>
 
 ![概览](site/assets/console-dashboard.png)
 
-| 概览 | 知识库 |
-|---|---|
-| ![](site/assets/console-dashboard.png) | ![](site/assets/console-kb-list.png) |
+带滚动叙事和可交互检索演示的展示页：**https://kkomia.github.io/kybase/**（源码在 `site/`）。
 
 ## 三条接入路径
 
@@ -88,7 +92,7 @@ Authorization: Bearer <API Key>
 |---|---|---|
 | **MCP**（stdio + Streamable HTTP） | Claude Desktop、Cursor、Codex 等会说 MCP 的客户端 | `python -m app.mcp_server.server --transport http --port 8765` |
 | **REST**（`/api/v1/*`） | 任何能发 HTTP 的系统 | `http://<host>:8080/api/v1`，OpenAPI 在 `/api/v1/openapi.json` |
-| **官方 Skill**（`skills/`） | 只会 shell 与 HTTP 的运行环境 | `skills/kylab-knowledge-base/`（目录名待随配置分家一并改名） |
+| **官方 Skill**（`skills/`） | 只会 shell 与 HTTP 的运行环境 | `skills/` 下的 Skill 包（`SKILL.md` + 纯 REST 查询脚本） |
 
 三条路径语义等价：工具面指纹（`--list-tools` 末行 / `serverInfo.version` 的 `+mcp.<指纹>` /
 `GET /api/v1/tools`）用来判断契约有没有变过。MCP 每个请求都要 `Authorization: Bearer <API Key>`，
@@ -140,6 +144,7 @@ skills/         官方 Skill（独立交付物，不 import app/）
 scripts/        门禁脚本族（check-backend / check-frontend / check_layering / ci …）
 deploy/         compose：干净机器四件套 / NAS 应用层三件套
 docs/           部署指南、外部接入指南、界面设计、交接文档
+site/           展示页（纯静态 HTML / CSS / JS，发布到 GitHub Pages，无构建步骤）
 ```
 
 ## 文档
