@@ -9,6 +9,7 @@
       content="kybase 是自托管的知识库服务：摄入、切块、混合检索，检索时先给判定、再给带出处的原文片段。MCP / REST / Skill 三条等价路径，MIT 协议。"
     />
     <meta name="theme-color" content="#f2efe9" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="canonical" href="https://kkomia.github.io/kybase/" />
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <script>
@@ -19,6 +20,10 @@
           saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       } catch (error) {
         /* 隐私模式下读不到 localStorage，保持默认浅色 */
+      }
+      // 动效开启时先立起标题的初始态，避免第一帧标题先露出来再被推下去
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.documentElement.classList.add('motion-ready');
       }
     </script>
     <link rel="stylesheet" href="./styles.css" />

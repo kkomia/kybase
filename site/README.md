@@ -4,6 +4,7 @@
 
 - 本地预览：在仓库根目录跑 `python -m http.server 4180`，打开 <http://localhost:4180/site/>。
   （直接双击 `site/index.html` 也能看，但 `file://` 下 `fetch` 与动画会受限。）
+  调试参数：`?motion=off` 看静态/减少动态版本，`?smooth=off` 关平滑滚动（截图取证用）。
 - 线上地址：<https://kkomia.github.io/kybase/>
 - 首次启用：仓库 Settings → Pages → Source 选 **GitHub Actions**，或由维护者调用
   `POST /repos/kkomia/kybase/pages`（`build_type=workflow`）。

@@ -15,6 +15,8 @@
     gsap.registerPlugin(ScrollTrigger);
     root.classList.add('motion-ready');
   } else {
+    // GSAP 没加载或被禁用：把内联脚本先立起来的初始态撤掉，内容必须可见
+    root.classList.remove('motion-ready');
     root.classList.add('is-static');
   }
 
