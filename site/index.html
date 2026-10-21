@@ -9,7 +9,18 @@
       content="kybase 是自托管的知识库服务：摄入、切块、混合检索，检索时先给判定、再给带出处的原文片段。MCP / REST / Skill 三条等价路径，MIT 协议。"
     />
     <meta name="theme-color" content="#f2efe9" />
+    <link rel="canonical" href="https://kkomia.github.io/kybase/" />
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <script>
+      // 首屏前定主题，避免深浅切换闪一下；app.js 之后会接管
+      try {
+        var saved = localStorage.getItem('kybase-site-theme');
+        document.documentElement.dataset.theme =
+          saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      } catch (error) {
+        /* 隐私模式下读不到 localStorage，保持默认浅色 */
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="kybase · 自托管的知识库服务" />
@@ -158,7 +169,7 @@
           </div>
 
           <div class="hero-visual">
-            <figure class="decision" data-demo aria-label="检索响应示意">
+            <figure class="decision" data-demo aria-label="检索响应">
               <div class="decision-head">
                 <span class="mono-label">POST /api/v1/search</span>
                 <span class="decision-scope">产品手册</span>
@@ -222,6 +233,8 @@
           <a class="plate-frame" href="#console" aria-label="查看管理台截图">
             <img
               src="./assets/console-dashboard.png"
+              data-img-light="./assets/console-dashboard.png"
+              data-img-dark="./assets/console-dashboard-dark.png"
               width="1440"
               height="1000"
               alt="kybase 管理台概览：知识库、文档与切块数量，近 365 天入库节奏热力图与趋势曲线"
@@ -229,7 +242,7 @@
           </a>
           <figcaption>
             <span class="plate-no">图版 01</span>
-            概览：入库节奏、检索命中与用量，一屏看完。点开看大图。
+            概览：入库节奏、检索命中与用量，一屏看完。点开看管理台全貌。
           </figcaption>
         </figure>
       </section>
@@ -545,7 +558,7 @@
                 alt="管理台概览：五项关键指标、近一年入库热力图、趋势曲线与构成"
               />
             </div>
-            <figcaption><span class="plate-no">图版 01</span>概览：九座库、230 篇文档、28,598 个切块。</figcaption>
+            <figcaption><span class="plate-no">图版 02</span>概览：九座库、230 篇文档、28,598 个切块。</figcaption>
           </figure>
 
           <div class="gallery-grid">
@@ -558,7 +571,7 @@
                   alt="知识库清单：每座库的文档数、最近更新与近 30 天入库和检索活动"
                 />
               </div>
-              <figcaption><span class="plate-no">图版 02</span>知识库：每座库最近 30 天的入库与检索。</figcaption>
+              <figcaption><span class="plate-no">图版 03</span>知识库：每座库最近 30 天的入库与检索。</figcaption>
             </figure>
 
             <figure class="plate">
@@ -570,7 +583,19 @@
                   alt="库详情：目录树与文档列表，标出状态、切块、问题数、大小与更新时间"
                 />
               </div>
-              <figcaption><span class="plate-no">图版 03</span>库详情：文档、切块、问题数，一行一个来路。</figcaption>
+              <figcaption><span class="plate-no">图版 04</span>库详情：文档、切块、问题数，一行一个来路。</figcaption>
+            </figure>
+
+            <figure class="plate">
+              <div class="plate-frame">
+                <img
+                  src="./assets/console-models.png"
+                  width="1440"
+                  height="1000"
+                  alt="模型页：嵌入、对话、重排三种用途各绑定一个模型，下面是供应商与模型清单"
+                />
+              </div>
+              <figcaption><span class="plate-no">图版 05</span>模型：嵌入 / 对话 / 重排，注册表里绑定用途。</figcaption>
             </figure>
 
             <figure class="plate">
@@ -582,7 +607,7 @@
                   alt="深色主题下的概览页，同一套内容与层级"
                 />
               </div>
-              <figcaption><span class="plate-no">图版 04</span>深色：同一套语义，换一种亮度。</figcaption>
+              <figcaption><span class="plate-no">图版 06</span>深色：同一套语义，换一种亮度。</figcaption>
             </figure>
           </div>
         </div>
@@ -638,6 +663,14 @@ docker compose -f deploy/docker-compose.yml up -d --build
           <span class="brand-word">kybase</span>
           <span class="footer-tag">自托管的知识库服务</span>
         </div>
+
+        <nav class="footer-toc" aria-label="本页目录">
+          <a href="#capability">能力</a>
+          <a href="#pipeline">过程</a>
+          <a href="#connect">接入</a>
+          <a href="#console">界面</a>
+          <a href="#deploy">部署</a>
+        </nav>
 
         <nav class="footer-links" aria-label="页脚链接">
           <a href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">GitHub</a>

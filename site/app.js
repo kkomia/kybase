@@ -18,6 +18,8 @@
     root.classList.add('is-static');
   }
 
+  if (params.get('smooth') === 'off') root.classList.add('no-smooth');
+
   /* ---------------------------------------------------------------- 主题 */
   const themeButton = document.getElementById('theme-toggle');
   const themeMeta = document.querySelector('meta[name="theme-color"]');
@@ -34,9 +36,15 @@
   const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const initialTheme = storedTheme || (systemDark ? 'dark' : 'light');
 
+  const heroShot = document.querySelector('[data-img-light][data-img-dark]');
+
   function applyTheme(theme) {
     root.dataset.theme = theme;
     if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#0d0e10' : '#f2efe9');
+    if (heroShot) {
+      const next = theme === 'dark' ? heroShot.dataset.imgDark : heroShot.dataset.imgLight;
+      if (next && heroShot.getAttribute('src') !== next) heroShot.setAttribute('src', next);
+    }
     if (themeButton) {
       const next = theme === 'dark' ? '切换为浅色' : '切换为深色';
       themeButton.setAttribute('aria-label', next);
