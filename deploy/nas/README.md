@@ -67,7 +67,7 @@ docker compose down                 # 停掉（**不动存储层**）
 
 ### 升级（标准流程：`git pull` 那条路）
 
-`src/` **是本仓在 Gitee 上的 git 检出**，所以升级是四步——**第 ③ 步别省**：
+`src/` **是本仓 Gitee 镜像的 git 检出**（主库是 GitHub，这台机器从镜像拉），所以升级是四步——**第 ③ 步别省**：
 
 ```bash
 # ① 本机：把要上线的提交推上去
@@ -104,11 +104,11 @@ cd ../app && docker compose up -d --build
 | 项 | 值 |
 | --- | --- |
 | 检出位置 | `/vol1/1000/docker/kybase/src` |
-| 远端 | `git@gitee.com:kkomia/kybase.git`（**私有仓库**） |
+| 远端 | `git@gitee.com:kkomia/kybase.git`（**镜像**；主库是 GitHub `https://github.com/kkomia/kybase.git`） |
 | 凭据 | NAS 上的一把**只读部署公钥** `~/.ssh/kybase-gitee-deploy`；Gitee 侧那个 deploy key 的名字叫 `kybase-nas-deploy` |
 
-- **只读**：NAS 上能 `fetch` / `pull`，**不能推**。推送一律在开发机上做（`origin` 是
-  `https://gitee.com/kkomia/kybase.git`）。
+- **只读**：NAS 上能 `fetch` / `pull`，**不能推**。推送一律在开发机上做，两边都推：
+  `origin`（GitHub，主库）与 `gitee`（镜像，这台机器从这里拉）。
 - ssh 侧已配好：`~/.ssh/config` 里有 `Host gitee.com` + `IdentityFile ~/.ssh/kybase-gitee-deploy`
   + `IdentitiesOnly yes`（2026-10-09 配置并实测 `git clone` 通过）。`git pull` 报权限错时先查这里。
 - 换机器/重装时：在 Gitee 仓库的「部署公钥」里加一把**只读** key，公钥落到 NAS 的
