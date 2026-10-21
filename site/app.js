@@ -38,15 +38,15 @@
   const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const initialTheme = storedTheme || (systemDark ? 'dark' : 'light');
 
-  const heroShot = document.querySelector('[data-img-light][data-img-dark]');
+  const themedShots = Array.from(document.querySelectorAll('[data-img-light][data-img-dark]'));
 
   function applyTheme(theme) {
     root.dataset.theme = theme;
     if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#0d0e10' : '#f2efe9');
-    if (heroShot) {
-      const next = theme === 'dark' ? heroShot.dataset.imgDark : heroShot.dataset.imgLight;
-      if (next && heroShot.getAttribute('src') !== next) heroShot.setAttribute('src', next);
-    }
+    themedShots.forEach((img) => {
+      const next = theme === 'dark' ? img.dataset.imgDark : img.dataset.imgLight;
+      if (next && img.getAttribute('src') !== next) img.setAttribute('src', next);
+    });
     if (themeButton) {
       const next = theme === 'dark' ? '切换为浅色' : '切换为深色';
       themeButton.setAttribute('aria-label', next);
@@ -76,6 +76,34 @@
   onScroll();
   window.addEventListener('scroll', onScroll, { passive: true });
 
+  /* 窄屏目录：没有横向导航时，从这里进五个分区 */
+  const menuToggle = document.getElementById('menu-toggle');
+  const mobileNav = document.getElementById('mobile-nav');
+
+  if (menuToggle && mobileNav) {
+    const closeMenu = () => {
+      mobileNav.hidden = true;
+      menuToggle.setAttribute('aria-expanded', 'false');
+    };
+    menuToggle.addEventListener('click', () => {
+      const open = mobileNav.hidden;
+      mobileNav.hidden = !open;
+      menuToggle.setAttribute('aria-expanded', String(open));
+    });
+    mobileNav.addEventListener('click', (event) => {
+      if (event.target.closest('a')) closeMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !mobileNav.hidden) {
+        closeMenu();
+        menuToggle.focus();
+      }
+    });
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 860) closeMenu();
+    });
+  }
+
   /* ------------------------------------------------- 首屏判定卡片的演示 */
   const demo = document.querySelector('[data-demo]');
   const queryText = demo && demo.querySelector('.query-text');
@@ -92,12 +120,29 @@
   let typingTimer = null;
 
   if (dist) {
+    const bars = [];
     DIST.forEach((height) => {
       const bar = document.createElement('span');
       bar.style.setProperty('--h', `${height}%`);
       dist.appendChild(bar);
+      bars.push(bar);
     });
+    const peak = DIST.indexOf(Math.max(...DIST));
+    if (bars[peak]) bars[peak].classList.add('is-peak');
   }
+
+  /* 静态直方图也只亮一根峰：有数据含义的蓝，不是装饰 */
+  document.querySelectorAll('.hits-dist').forEach((chart) => {
+    const bars = Array.from(chart.children);
+    if (!bars.length) return;
+    let peak = 0;
+    bars.forEach((bar, index) => {
+      const height = parseFloat(bar.style.getPropertyValue('--h')) || 0;
+      const best = parseFloat(bars[peak].style.getPropertyValue('--h')) || 0;
+      if (height > best) peak = index;
+    });
+    bars[peak].classList.add('is-peak');
+  });
 
   function stopTyping() {
     if (typingTimer) {

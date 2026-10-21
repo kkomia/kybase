@@ -79,6 +79,15 @@
         </nav>
 
         <div class="topbar-actions">
+          <button
+            class="menu-toggle"
+            type="button"
+            id="menu-toggle"
+            aria-expanded="false"
+            aria-controls="mobile-nav"
+          >
+            目录
+          </button>
           <a
             class="ghost-link"
             href="https://github.com/kkomia/kybase"
@@ -122,6 +131,14 @@
           </button>
         </div>
       </div>
+
+      <nav class="mobile-nav" id="mobile-nav" aria-label="页面导航" hidden>
+        <a href="#capability">能力</a>
+        <a href="#pipeline">过程</a>
+        <a href="#connect">接入</a>
+        <a href="#console">界面</a>
+        <a href="#deploy">部署</a>
+      </nav>
     </header>
 
     <main id="main">
@@ -151,16 +168,16 @@
                   />
                 </svg>
               </a>
-              <a class="btn btn-ghost" href="#pipeline">看它如何判定</a>
+              <a class="btn btn-ghost" href="#capability">看它如何判定</a>
             </div>
             <dl class="hero-facts">
               <div>
                 <dt>检索</dt>
-                <dd>向量 + BM25，RRF 融合</dd>
+                <dd>向量 + BM25 · RRF</dd>
               </div>
               <div>
                 <dt>判定</dt>
-                <dd>strong / weak / none</dd>
+                <dd>strong / weak /<br />none / unknown</dd>
               </div>
               <div>
                 <dt>路径</dt>
@@ -194,8 +211,6 @@
                 </div>
                 <div class="dist" data-dist aria-hidden="true"></div>
                 <div class="verdict-facts">
-                  <span><b>38</b> 候选</span>
-                  <span><b>5</b> 保留</span>
                   <span><code>keep 5</code></span>
                   <span><code>min_score 0.42</code></span>
                   <span><code>per_doc 2</code></span>
@@ -203,9 +218,9 @@
               </div>
 
               <ol class="hits" data-hits>
-                <li>
+                <li class="is-selected">
                   <span class="hit-rank">1</span>
-                  <span class="hit-doc">部署手册-NAS.md</span>
+                  <span class="hit-doc">部署手册-NAS.pdf</span>
                   <span class="hit-page">p.7</span>
                   <span class="hit-basis">hybrid</span>
                   <span class="hit-score">0.71</span>
@@ -227,8 +242,20 @@
               </ol>
 
               <div class="decision-foot">
-                <span>判定排在原文之前</span>
-                <button class="replay" type="button" data-replay>重放</button>
+                <span>显示 3 / 5 条</span>
+                <button class="replay" type="button" data-replay aria-label="重放检索演示">
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                    <path
+                      d="M9.8 4.6A4 4 0 1 0 10 6M9.8 1.8v2.9H6.9"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  重放
+                </button>
               </div>
             </figure>
           </div>
@@ -247,7 +274,7 @@
           </a>
           <figcaption>
             <span class="plate-no">图版 01</span>
-            概览：入库节奏、检索命中与用量，一屏看完。点开看管理台全貌。
+            概览：入库节奏、检索命中与用量。点开看管理台全貌。
           </figcaption>
         </figure>
       </section>
@@ -309,7 +336,7 @@
               <div class="viz-quote">
                 <p>“嵌入维度建议不超过 2000，推荐 1024……”</p>
                 <div class="viz-cite">
-                  <span>部署手册-NAS.md</span>
+                  <span>部署手册-NAS.pdf</span>
                   <span class="viz-page">p.7</span>
                   <span class="viz-basis">hybrid · 0.71</span>
                 </div>
@@ -365,7 +392,7 @@
                 <div class="sheet">
                   <div class="sheet-head">
                     <span class="sheet-tag">PDF</span>
-                    <span class="sheet-name">部署手册-NAS.md</span>
+                    <span class="sheet-name">部署手册-NAS.pdf</span>
                     <span class="sheet-meta">2.4 MB · 23 页</span>
                   </div>
                   <div class="sheet-lines" aria-hidden="true">
@@ -378,9 +405,9 @@
               </div>
 
               <div class="stage-chunks" data-chunks aria-hidden="true">
-                <div class="chunk"><span class="chunk-no">#01 · p.3</span><span class="chunk-line" style="--w: 84%"></span><span class="chunk-line" style="--w: 62%"></span><span class="chunk-line" style="--w: 74%"></span></div>
+                <div class="chunk"><span class="chunk-no">#01 · p.3</span><span class="chunk-title">二、登记嵌入模型</span><span class="chunk-text">模型身份由注册表承担，</span><span class="chunk-text">不写进环境变量。</span></div>
                 <div class="chunk"><span class="chunk-no">#02 · p.5</span><span class="chunk-line" style="--w: 74%"></span><span class="chunk-line" style="--w: 88%"></span><span class="chunk-line" style="--w: 56%"></span></div>
-                <div class="chunk"><span class="chunk-no">#03 · p.7</span><span class="chunk-line" style="--w: 90%"></span><span class="chunk-line" style="--w: 48%"></span><span class="chunk-line" style="--w: 70%"></span></div>
+                <div class="chunk"><span class="chunk-no">#03 · p.7</span><span class="chunk-title">五、维度的上限</span><span class="chunk-text">建议不超过 2000，推荐 1024。</span><span class="chunk-text">超过后建不了 HNSW。</span></div>
                 <div class="chunk"><span class="chunk-no">#04 · p.9</span><span class="chunk-line" style="--w: 68%"></span><span class="chunk-line" style="--w: 80%"></span><span class="chunk-line" style="--w: 52%"></span></div>
                 <div class="chunk"><span class="chunk-no">#05 · p.12</span><span class="chunk-line" style="--w: 82%"></span><span class="chunk-line" style="--w: 56%"></span><span class="chunk-line" style="--w: 76%"></span></div>
                 <div class="chunk"><span class="chunk-no">#06 · p.15</span><span class="chunk-line" style="--w: 60%"></span><span class="chunk-line" style="--w: 72%"></span><span class="chunk-line" style="--w: 44%"></span></div>
@@ -398,7 +425,7 @@
                     <span style="--h: 66%"></span><span style="--h: 46%"></span><span style="--h: 32%"></span>
                     <span style="--h: 24%"></span><span style="--h: 18%"></span><span style="--h: 12%"></span>
                   </div>
-                  <div class="hit-row"><span class="hit-doc">部署手册-NAS.md</span><span class="hit-page">p.7</span><span class="hit-score">0.71</span></div>
+                  <div class="hit-row is-selected"><span class="hit-doc">部署手册-NAS.pdf</span><span class="hit-page">p.7</span><span class="hit-score">0.71</span></div>
                   <div class="hit-row"><span class="hit-doc">检索设计-v2.md</span><span class="hit-page">p.3</span><span class="hit-score">0.64</span></div>
                   <div class="hit-row"><span class="hit-doc">混合检索与融合.md</span><span class="hit-page">p.5</span><span class="hit-score">0.58</span></div>
                   <div class="hit-row"><span class="hit-doc">部署手册-干净机器.md</span><span class="hit-page">p.2</span><span class="hit-score">0.52</span></div>
@@ -406,7 +433,7 @@
                   <div class="hit-quote">
                     <p>“嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。”</p>
                     <div class="hit-quote-cite">
-                      <span class="hit-doc">部署手册-NAS.md</span>
+                      <span class="hit-doc">部署手册-NAS.pdf</span>
                       <span class="hit-page">p.7</span>
                       <span class="hit-basis">hybrid</span>
                     </div>
@@ -478,15 +505,14 @@
     "kybase": {
       "type": "http",
       "url": "http://kb.example.com:8765/mcp",
-      "headers": {
-        "Authorization": "Bearer &lt;你的 API Key&gt;"
-      }
+      "headers": { "Authorization": "Bearer &lt;你的 API Key&gt;" }
     }
   }
 }</code></pre>
               </div>
               <ul class="panel-notes">
                 <li>Streamable HTTP，路径 <code>/mcp</code>；每个请求都要凭据，没有匿名放行。</li>
+                <li>MCP 单独监听一个端口（示例 8765）；REST 与界面同源在 8081（干净机器 compose 是 8080）。</li>
                 <li>握手时 <code>serverInfo.version</code> 带工具面指纹，客户端据此判断契约有没有变过。</li>
               </ul>
             </div>
@@ -549,72 +575,68 @@
         <div class="section-head">
           <h2 id="console-title">管理台不是装饰。</h2>
           <p>
-            摄入看进度、检索看命中、模型看用途、任务看失败。真实运行截图，数据来自演示实例。
+            指标带、文档来路、模型用途——三个局部，一条从文件到引用的来路。
           </p>
         </div>
 
         <div class="gallery">
           <figure class="plate plate-wide">
-            <div class="plate-frame">
+            <a class="plate-frame" href="./assets/console-metrics-crop.png" target="_blank" rel="noreferrer" aria-label="打开指标带原图">
               <img
-                src="./assets/console-dashboard.png"
-                width="1440"
-                height="1000"
-                alt="管理台概览：五项关键指标、近一年入库热力图、趋势曲线与构成"
+                src="./assets/console-metrics-crop.png"
+                data-img-light="./assets/console-metrics-crop.png"
+                data-img-dark="./assets/console-metrics-crop-dark.png"
+                width="1140"
+                height="450"
+                alt="管理台指标带：知识库 9、文档 230、切块 28,598、原文件体积 919.7 MB、近一年入库 230"
               />
-            </div>
-            <figcaption><span class="plate-no">图版 02</span>概览：九座库、230 篇文档、28,598 个切块。</figcaption>
+            </a>
+            <figcaption>
+              <span class="plate-no">图版 02</span>指标带：9 座库、230 篇文档、28,598 个切块（演示数据）。
+            </figcaption>
           </figure>
 
           <div class="gallery-grid">
             <figure class="plate">
-              <div class="plate-frame">
+              <a class="plate-frame" href="./assets/console-detail-crop.png" target="_blank" rel="noreferrer" aria-label="打开文档列表原图">
                 <img
-                  src="./assets/console-kb-list.png"
-                  width="1440"
-                  height="1000"
-                  alt="知识库清单：每座库的文档数、最近更新与近 30 天入库和检索活动"
+                  src="./assets/console-detail-crop.png"
+                  data-img-light="./assets/console-detail-crop.png"
+                  data-img-dark="./assets/console-detail-crop-dark.png"
+                  width="920"
+                  height="605"
+                  alt="文档列表局部：每一行是文件名、已索引状态、切块数、问题数、大小与更新时间"
                 />
-              </div>
-              <figcaption><span class="plate-no">图版 03</span>知识库：每座库最近 30 天的入库与检索。</figcaption>
+              </a>
+              <figcaption><span class="plate-no">图版 03</span>文档来路：状态、切块、问题数，一行一个来路。</figcaption>
             </figure>
 
             <figure class="plate">
-              <div class="plate-frame">
+              <a class="plate-frame" href="./assets/console-models-crop.png" target="_blank" rel="noreferrer" aria-label="打开模型用途原图">
                 <img
-                  src="./assets/console-kb-detail.png"
-                  width="1440"
-                  height="1000"
-                  alt="库详情：目录树与文档列表，标出状态、切块、问题数、大小与更新时间"
+                  src="./assets/console-models-crop.png"
+                  data-img-light="./assets/console-models-crop.png"
+                  data-img-dark="./assets/console-models-crop-dark.png"
+                  width="1140"
+                  height="550"
+                  alt="模型用途局部：对话、向量化、重排三种用途各绑定一个模型"
                 />
-              </div>
-              <figcaption><span class="plate-no">图版 04</span>库详情：文档、切块、问题数，一行一个来路。</figcaption>
-            </figure>
-
-            <figure class="plate">
-              <div class="plate-frame">
-                <img
-                  src="./assets/console-models.png"
-                  width="1440"
-                  height="1000"
-                  alt="模型页：嵌入、对话、重排三种用途各绑定一个模型，下面是供应商与模型清单"
-                />
-              </div>
-              <figcaption><span class="plate-no">图版 05</span>模型：嵌入 / 对话 / 重排，注册表里绑定用途。</figcaption>
-            </figure>
-
-            <figure class="plate">
-              <div class="plate-frame">
-                <img
-                  src="./assets/console-dashboard-dark.png"
-                  width="1440"
-                  height="1000"
-                  alt="深色主题下的概览页，同一套内容与层级"
-                />
-              </div>
-              <figcaption><span class="plate-no">图版 06</span>深色：同一套语义，换一种亮度。</figcaption>
+              </a>
+              <figcaption><span class="plate-no">图版 04</span>模型用途：嵌入 / 对话 / 重排，注册表里绑定。</figcaption>
             </figure>
           </div>
+
+          <figure class="plate plate-wide plate-narrow">
+            <a class="plate-frame" href="./assets/console-dashboard-dark.png" target="_blank" rel="noreferrer" aria-label="打开深色概览原图">
+              <img
+                src="./assets/console-dashboard-dark.png"
+                width="1440"
+                height="1000"
+                alt="深色主题下的概览页，同一套内容与层级"
+              />
+            </a>
+            <figcaption><span class="plate-no">图版 05</span>深色：概览页的同一组数据。</figcaption>
+          </figure>
         </div>
       </section>
 
@@ -648,11 +670,42 @@ docker compose -f deploy/docker-compose.yml up -d --build
 # 健康   http://localhost:8080/api/v1/health</code></pre>
             </div>
             <p class="deploy-note">
-              四件套这份 compose 尚未在干净机器上整体实测；作者机器上长期运行的是三件套（接外部
-              PostgreSQL 与 MinIO）。两档部署的差异写在
-              <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>里。
+              四件套 compose 尚未在干净机器实测；作者机器上长期运行的是三件套（外部 PostgreSQL +
+              MinIO），差异见
+              <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>。
             </p>
           </div>
+        </div>
+      </section>
+
+      <!-- 收束 -->
+      <section class="cta-band" aria-labelledby="cta-title">
+        <div class="cta-inner">
+          <h2 id="cta-title">一条命令之后，交给 Agent。</h2>
+          <div class="cta-actions">
+            <a class="btn btn-primary" href="#deploy">
+              部署一套
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path
+                  d="M2.5 7h8M7.5 3.5 11 7l-3.5 3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+            <a
+              class="btn btn-ghost-inverse"
+              href="https://github.com/kkomia/kybase"
+              target="_blank"
+              rel="noreferrer"
+            >
+              在 GitHub 上读它
+            </a>
+          </div>
+          <p class="cta-note">MIT · 自托管 · 无托管服务</p>
         </div>
       </section>
     </main>
@@ -685,7 +738,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
         </nav>
 
         <p class="footer-fine">
-          本站是产品展示页，部署与接入以仓库文档为准。<span>© 2026 kkomia</span>
+          部署与接入以仓库文档为准；截图数据来自演示实例。<span>© 2026 kkomia</span>
         </p>
       </div>
     </footer>
