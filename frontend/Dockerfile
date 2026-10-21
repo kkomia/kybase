@@ -37,6 +37,11 @@ FROM nginx:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# NAS 的 /vol1 文件系统会把个别文件报成 000（源文件 `favicon.svg` 就是），
+# COPY 原样带进镜像后 nginx 读不了、请求返回 403（页面能开、标签页图标是坏的）。
+# 与后端 Dockerfile 的 `chmod -R a+rX /app` 同一个理由，作用在静态产物根上。
+RUN chmod -R a+rX /usr/share/nginx/html
+
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
