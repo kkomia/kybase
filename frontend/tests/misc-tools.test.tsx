@@ -404,7 +404,7 @@ describe('客户端配置片段', () => {
 
     expect(screen.getByText('客户端标识符')).toBeInTheDocument()
     expect(screen.getByText('kybase')).toBeInTheDocument()
-    expect(screen.getByText('KYLAB 知识库')).toBeInTheDocument()
+    expect(screen.getByText('KYBASE 知识库')).toBeInTheDocument()
     expect(screen.getByText('Streamable HTTP')).toBeInTheDocument()
     // 地址在这一档是「服务器 URL」那一格的值（上面那条在输入框里，不是文字）
     expect(screen.getByText(ENDPOINT)).toBeInTheDocument()

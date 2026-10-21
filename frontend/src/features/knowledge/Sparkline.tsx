@@ -9,15 +9,14 @@
  * 2. **宽度让 CSS 给，坐标不重算**：`viewBox` 横轴一天一列，
  *    `preserveAspectRatio="none"` 把它拉伸到卡片宽，`vector-effect:
  *    non-scaling-stroke` 把线宽拉回设备像素——否则拉伸之后线会跟着变粗变细；
- * 3. **纵轴按这一天里自己那条线的峰值归一**：卡片上的读数是"近 90 天入库 N 篇" /
- *    "近 90 天检索命中 N 条"，峰值只决定形状。要跨库比大小看的是那个数，不是线的高低。
+ * 3. **纵轴按这一条线自己的峰值归一**：卡片上的读数是"近 30 天活动 N 次"，
+ *    峰值只决定形状。要跨库比大小看的是那个数，不是线的高低。
  *
- * 颜色全部在 `knowledge.css` 的 `.kb-spark*` 里引用主题变量（深浅两套主题同一句话）；
- * 卡片上第二根线（检索命中）靠 `.kb-trend-hits` 换一档副色，**不是**在这里传色值。
+ * 颜色全部在 `knowledge.css` 的 `.kb-spark*` 里引用主题变量（深浅两套主题同一句话）。
  */
 
-/** 画布高（结构常量，与列宽同类，不走 `--space-*` 阶梯；CSS 那边给的是同一个数）。 */
-const HEIGHT = 28
+/** 画布高（结构常量，与列宽同类，不走 `--space-*` 阶梯；卡片上那一条是 40）。 */
+const DEFAULT_HEIGHT = 28
 
 /** 上下各留一点，峰顶与 0 线都不会被裁掉半个线宽。 */
 const PAD_Y = 3
@@ -30,36 +29,40 @@ function round(value: number): number {
 export function Sparkline({
   series,
   className,
+  height = DEFAULT_HEIGHT,
 }: {
   series: readonly number[]
   className?: string
+  /** 画布高（px）。卡片底部那条活动线要 40，列表里的旧读数用默认值。 */
+  height?: number
 }) {
   const columns = Math.max(series.length, 1)
   // 全是 0 时用 1 当分母：曲线落在最下面那条 0 线上，而不是除出 NaN
   const peak = Math.max(...series, 0) || 1
-  const inner = HEIGHT - PAD_Y * 2
+  const inner = height - PAD_Y * 2
 
   const line = series
     .map((value, index) => {
       const x = round(index + 0.5)
-      const y = round(HEIGHT - PAD_Y - (inner * value) / peak)
+      const y = round(height - PAD_Y - (inner * value) / peak)
       return `${index === 0 ? 'M' : 'L'}${x} ${y}`
     })
     .join(' ')
 
   // 面积是线本身 + 两端垂到底边的封口：一整块的节奏比一根细线好读
-  const area = line ? `${line} L${round(columns - 0.5)} ${HEIGHT} L0.5 ${HEIGHT} Z` : ''
+  const area = line ? `${line} L${round(columns - 0.5)} ${height} L0.5 ${height} Z` : ''
 
   const classes = ['kb-spark', series.some((value) => value > 0) ? '' : 'kb-spark-empty', className]
     .filter(Boolean)
     .join(' ')
 
   return (
-    // 图形本身不带文字：同一件事已经由旁边那个读数（「近 90 天入库 N 篇」/「近 90 天
-    // 检索命中 N 条」）说清楚了，屏读用户在卡片链路上听到的就是那句（重复念一遍是噪音）
+    // 图形本身不带文字：同一件事已经由旁边那个读数（「近 30 天活动」那一行）说清楚了，
+    // 屏读用户在卡片链路上听到的就是那句（重复念一遍是噪音）
     <svg
       className={classes}
-      viewBox={`0 0 ${columns} ${HEIGHT}`}
+      style={{ height }}
+      viewBox={`0 0 ${columns} ${height}`}
       preserveAspectRatio="none"
       aria-hidden="true"
       focusable="false"

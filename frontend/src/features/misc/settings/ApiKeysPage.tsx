@@ -38,6 +38,7 @@ import { getToolCatalogue } from '@/api/tools'
 import { copyText } from '@/lib/clipboard'
 import { formatDate, formatRelativeTime } from '@/lib/format'
 import { useSessionStore } from '@/lib/session'
+import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Input } from '@/ui/input'
 
@@ -54,7 +55,6 @@ import {
   OptionSelect,
   PageShell,
   SkeletonBlock,
-  StatusTag,
 } from '../shared/composites'
 import { notifyError, notifySuccess } from '../shared/toast'
 
@@ -83,6 +83,21 @@ function messageOf(cause: unknown, fallback: string): string {
 /** 端点回 403 的判据（`api/client.ts` 给错误标过 `status`）。 */
 function isForbidden(cause: unknown): boolean {
   return cause instanceof Error && (cause as { status?: number }).status === 403
+}
+
+/**
+ * 权限档那一枚徽章。
+ *
+ * **两档都用中性色**（2026-10 评审之后改的）：一列"读写"如果全是琥珀色，
+ * 整页读起来像一排告警，而"读写"是这把钥匙的**能力档**、不是异常状态。
+ * 区分靠**形状**：读写是实心浅底、只读是描边——一眼能分开，又不吵。
+ * （语义色只留给"出问题了"的状态。）
+ */
+function PermissionBadge({ permission }: { permission: ApiKeyPermission }) {
+  if (permission === 'readwrite') {
+    return <Badge variant="secondary">读写</Badge>
+  }
+  return <Badge variant="outline">只读</Badge>
 }
 
 export function ApiKeysPage() {
@@ -186,6 +201,21 @@ export function ApiKeysPage() {
   const forbidden = !isAdmin || (list.isError && isForbidden(list.error))
   const loadFailed = list.isError && !forbidden
 
+  const readonlyCount = items.filter((key) => key.permission === 'readonly').length
+  /**
+   * 页头那一行：只说从这份清单算得出来的两件事（一共几把、其中几把只读）。
+   * 受限态与读不到时**不补话**——下面那块已经把那句话完整说过一遍，
+   * 同一句「需要管理员权限」印两次，读起来像两处毛病。
+   */
+  const subtitle =
+    forbidden || loadFailed
+      ? undefined
+      : list.isLoading
+        ? '正在读取密钥清单…'
+        : items.length > 0
+          ? `共 ${items.length} 把 · ${readonlyCount} 把只读`
+          : undefined
+
   const kbOptions = knowledgeBases.items.map((kb) => ({ value: kb.id, label: kb.name }))
   const toolOptions = (tools.data?.items ?? []).map((tool) => ({
     value: tool.name,
@@ -195,6 +225,7 @@ export function ApiKeysPage() {
   return (
     <PageShell
       title="API 密钥"
+      subtitle={subtitle}
       actions={
         forbidden ? undefined : (
           <>
@@ -207,150 +238,172 @@ export function ApiKeysPage() {
         )
       }
     >
-      {/* 正文那一层与 `TasksPage` **同一结构**（页面自己写一层 `page-shell-body`）：
-          这样本页正文与标题行之间的那一档间距，与任务中心那一页逐像素一致。 */}
-      <div className="page-shell-body">
-        {forbidden ? (
-          <EmptyState title="需要管理员权限" hint="API 密钥只有管理员能管理，请找管理员开通。" />
-        ) : (
-          <>
-            {/* 明文只此一次：创建成功后就地摊在列表上方，点「我已保存」才收起
-                （做成弹窗的话，Esc 一按这块内容就没了，而它是这次操作唯一要留存的东西） */}
-            {issued && (
-              <section className="m-block">
-                <Notice tone="warn">
-                  明文只显示这一次：现在复制并保存好，关掉就再也看不到了。
-                </Notice>
-                <div className="flex items-center gap-2">
-                  <Input
-                    readOnly
-                    value={issued.token}
-                    aria-label="新密钥明文"
-                    onFocus={(event) => event.target.select()}
-                  />
-                  <Button onClick={() => void copyIssued()}>复制</Button>
-                  <Button onClick={() => setIssued(null)}>我已保存</Button>
-                </div>
-                <p className="m-muted">「{issued.name}」已创建，已进列表。</p>
-              </section>
-            )}
+      {forbidden ? (
+        <EmptyState title="需要管理员权限" hint="API 密钥只有管理员能管理，请找管理员开通。" />
+      ) : (
+        <div className="flex flex-col gap-6">
+          {/* 明文只此一次：创建成功后就地摊在列表上方，点「我已保存」才收起
+            （做成弹窗的话，Esc 一按这块内容就没了，而它是这次操作唯一要留存的东西） */}
+          {issued && (
+            <section className="surface-card anim-rise p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="section-label">新密钥</p>
+                <Button variant="ghost" size="sm" onClick={() => setIssued(null)}>
+                  我已保存
+                </Button>
+              </div>
+              <Notice tone="warn">明文只显示这一次：现在复制并保存好，关掉就再也看不到了。</Notice>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  readOnly
+                  value={issued.token}
+                  aria-label="新密钥明文"
+                  className="min-w-[240px] flex-1 font-mono text-[12.5px]"
+                  onFocus={(event) => event.target.select()}
+                />
+                <Button onClick={() => void copyIssued()}>复制</Button>
+              </div>
+              <p className="mt-2 text-[length:var(--text-micro-size)] text-text-tertiary">
+                「{issued.name}」已创建，已进列表。
+              </p>
+            </section>
+          )}
 
-            {list.isLoading && <SkeletonBlock variant="list" rows={3} />}
-            {loadFailed && <ErrorLine>{messageOf(list.error, '读不到 API 密钥')}</ErrorLine>}
-            {!list.isLoading && !loadFailed && items.length === 0 && (
-              <EmptyState title="还没有 API 密钥" hint="新建一把，给脚本或外部集成用。" />
-            )}
-            {items.length > 0 && (
-              <ul className="m-list">
-                {items.map((key) => (
-                  <li key={key.id} className="m-row">
-                    <div className="m-row-lines">
-                      <span className="m-row-label">
+          {list.isLoading && <SkeletonBlock variant="list" rows={3} />}
+          {loadFailed && <ErrorLine>{messageOf(list.error, '读不到 API 密钥')}</ErrorLine>}
+          {!list.isLoading && !loadFailed && items.length === 0 && (
+            <EmptyState title="还没有 API 密钥" hint="新建一把，给脚本或外部集成用。" />
+          )}
+
+          {/* 清单是一张 `.panel`：行与行之间只有一条发丝线，没有一行一张卡。
+              每行四段：哪把钥匙（名称 + 权限档 + 前缀）→ 两条收窄轴 → 两个时间 →
+              撤销。窄屏时按段折行（撤销靠右），不裁内容。 */}
+          {items.length > 0 && (
+            <ul className="panel m-0 list-none p-0">
+              {items.map((key) => (
+                <li
+                  key={key.id}
+                  className="panel-row flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1 basis-[200px]">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[length:var(--text-body-size)] font-medium text-text-primary">
                         {key.name}
-                        <StatusTag
-                          tone={key.permission === 'readwrite' ? 'warning' : 'neutral'}
-                          label={key.permission === 'readwrite' ? '读写' : '只读'}
-                        />
                       </span>
-                      <span className="m-row-value">{key.prefix}</span>
-                      <span className="m-row-value">
-                        范围 {kbScopeText(key)} · 工具 {toolScopeText(key)}
-                      </span>
-                      <span className="m-row-value">
-                        创建于 {formatDate(key.created_at)} · 最近使用{' '}
-                        {formatRelativeTime(key.last_used_at)}
-                      </span>
+                      <PermissionBadge permission={key.permission} />
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`撤销「${key.name}」`}
-                      onClick={() => setRemoving(key)}
-                    >
-                      撤销
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
+                    <p className="mt-0.5 truncate font-mono text-[12.5px] leading-[1.5] text-text-tertiary">
+                      {key.prefix}
+                    </p>
+                  </div>
+
+                  {/* 两条收窄轴：空 = 不限（照实写"全部"），不选库时也明说 */}
+                  <div className="flex min-w-[160px] flex-[1.1] flex-col gap-0.5">
+                    <span className="text-[length:var(--text-meta-size)] leading-[1.45] text-text-secondary">
+                      范围 {kbScopeText(key)}
+                    </span>
+                    <span className="text-[length:var(--text-meta-size)] leading-[1.45] text-text-tertiary">
+                      工具 {toolScopeText(key)}
+                    </span>
+                  </div>
+
+                  {/* 两个时间：创建是绝对时间，最近使用是相对口径（没用过就是 —
+                      ）。这一格宽度按最长串留够，折行时不会被挤断 */}
+                  <div className="tabular flex w-[170px] shrink-0 flex-col gap-0.5 whitespace-nowrap text-[length:var(--text-meta-size)] leading-[1.45] text-text-tertiary">
+                    <span>创建于 {formatDate(key.created_at)}</span>
+                    <span>最近使用 {formatRelativeTime(key.last_used_at)}</span>
+                  </div>
+
+                  {/* 危险动作：静止时是**中性灰字**，悬停才转 danger 色 + 浅红底。
+                      一列 9 个红色「撤销」会把整页读成一条告警带——危险动作要能被找到，
+                      但不该在扫视时一直喊。`ml-auto`：窄屏折行时它留在右端。 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto text-text-secondary hover:bg-[var(--danger-soft)] hover:text-status-danger"
+                    aria-label={`撤销「${key.name}」`}
+                    onClick={() => setRemoving(key)}
+                  >
+                    撤销
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <Modal
+        open={createOpen}
+        title="新建密钥"
+        onClose={() => setCreateOpen(false)}
+        size="md"
+        footer={
+          <>
+            <Button onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button disabled={draft.name.trim() === '' || create.isPending} onClick={submitCreate}>
+              {create.isPending ? '创建中…' : '创建'}
+            </Button>
           </>
-        )}
-
-        <Modal
-          open={createOpen}
-          title="新建密钥"
-          onClose={() => setCreateOpen(false)}
-          size="md"
-          footer={
-            <>
-              <Button onClick={() => setCreateOpen(false)}>取消</Button>
-              <Button
-                disabled={draft.name.trim() === '' || create.isPending}
-                onClick={submitCreate}
-              >
-                {create.isPending ? '创建中…' : '创建'}
-              </Button>
-            </>
-          }
-        >
-          <div className="m-form">
-            <Field label="名称" htmlFor="apikey-name">
-              <Input
-                id="apikey-name"
-                value={draft.name}
-                placeholder="比如：报表脚本"
-                onChange={(event) => setDraft((cur) => ({ ...cur, name: event.target.value }))}
-              />
-            </Field>
-            <Field label="权限" hint="只读 = 只能检索与对话；读写 = 还能上传与删除。">
-              <OptionSelect
-                value={draft.permission}
-                options={PERMISSION_OPTIONS}
-                label="权限"
-                onValueChange={(value) =>
-                  setDraft((cur) => ({ ...cur, permission: value as ApiKeyPermission }))
-                }
-              />
-            </Field>
-            <div className="field">
-              <span className="field-label">库范围</span>
-              <MultiSelect
-                options={kbOptions}
-                value={draft.kbIds}
-                onChange={(kbIds) => setDraft((cur) => ({ ...cur, kbIds }))}
-                emptyText="还没有知识库可选。"
-                label="库范围"
-              />
-              <span className="text-hint">不选就是不限定范围（全部知识库都能用）。</span>
-            </div>
-            <div className="field">
-              <span className="field-label">工具范围</span>
-              <MultiSelect
-                options={toolOptions}
-                value={draft.toolNames}
-                onChange={(toolNames) => setDraft((cur) => ({ ...cur, toolNames }))}
-                emptyText="读不到工具清单，这一格没法勾。"
-                label="工具范围"
-              />
-              <span className="text-hint">不选就是不限定工具（全部工具都能调）。</span>
-            </div>
+        }
+      >
+        <div className="m-form">
+          <Field label="名称" htmlFor="apikey-name">
+            <Input
+              id="apikey-name"
+              value={draft.name}
+              placeholder="比如：报表脚本"
+              onChange={(event) => setDraft((cur) => ({ ...cur, name: event.target.value }))}
+            />
+          </Field>
+          <Field label="权限" hint="只读 = 只能检索与对话；读写 = 还能上传与删除。">
+            <OptionSelect
+              value={draft.permission}
+              options={PERMISSION_OPTIONS}
+              label="权限"
+              onValueChange={(value) =>
+                setDraft((cur) => ({ ...cur, permission: value as ApiKeyPermission }))
+              }
+            />
+          </Field>
+          <div className="field">
+            <span className="field-label">库范围</span>
+            <MultiSelect
+              options={kbOptions}
+              value={draft.kbIds}
+              onChange={(kbIds) => setDraft((cur) => ({ ...cur, kbIds }))}
+              emptyText="还没有知识库可选。"
+              label="库范围"
+            />
+            <span className="text-hint">不选就是不限定范围（全部知识库都能用）。</span>
           </div>
-        </Modal>
+          <div className="field">
+            <span className="field-label">工具范围</span>
+            <MultiSelect
+              options={toolOptions}
+              value={draft.toolNames}
+              onChange={(toolNames) => setDraft((cur) => ({ ...cur, toolNames }))}
+              emptyText="读不到工具清单，这一格没法勾。"
+              label="工具范围"
+            />
+            <span className="text-hint">不选就是不限定工具（全部工具都能调）。</span>
+          </div>
+        </div>
+      </Modal>
 
-        <ConfirmDialog
-          open={removing !== null}
-          title="撤销这把密钥？"
-          lead={`「${removing?.name ?? ''}」撤销立即生效。`}
-          note="还在用它的地方都会 401，要换一把新的才能接着用。"
-          confirmLabel="撤销"
-          busy={revoke.isPending}
-          busyLabel="撤销中…"
-          onCancel={() => setRemoving(null)}
-          onConfirm={() => {
-            if (removing) revoke.mutate(removing)
-          }}
-        />
-      </div>
+      <ConfirmDialog
+        open={removing !== null}
+        title="撤销这把密钥？"
+        lead={`「${removing?.name ?? ''}」撤销立即生效。`}
+        note="还在用它的地方都会 401，要换一把新的才能接着用。"
+        confirmLabel="撤销"
+        busy={revoke.isPending}
+        busyLabel="撤销中…"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) revoke.mutate(removing)
+        }}
+      />
     </PageShell>
   )
 }

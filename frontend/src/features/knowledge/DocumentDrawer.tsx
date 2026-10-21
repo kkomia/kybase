@@ -38,6 +38,7 @@ import { ProcessingTimeline } from '@/features/knowledge/ProcessingTimeline'
 import { messageOf, notify } from '@/features/knowledge/store'
 import { documentSourceLabel, documentStageView } from '@/features/knowledge/status'
 import { formatBytes, formatCount, formatDate, formatRelativeTime } from '@/lib/format'
+import { Notice } from '@/features/misc/shared/composites'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +57,7 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/dropdown-menu'
 import { Textarea } from '@/ui/textarea'
+import { Tabs, TabsList, TabsTrigger } from '@/ui/tabs'
 
 /** 预览最多拉几块：再多就该去库内检索面板，而不是在这一页翻。 */
 const PREVIEW_LIMIT = 5
@@ -411,7 +413,7 @@ export function DocumentDrawer({
         </header>
 
         <div className="kb-drawer-body">
-          {error ? <p className="kb-error-line">{error}</p> : null}
+          {error ? <Notice tone="error">{error}</Notice> : null}
           {loading ? <SkeletonRows variant="text" rows={5} /> : null}
 
           {!loading && document ? (
@@ -468,22 +470,19 @@ export function DocumentDrawer({
                 ) : null}
               </h3>
 
-              <div className="kb-tabs" role="tablist" aria-label="查看方式">
-                {VIEW_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={view === tab.key}
-                    className={['kb-tab', view === tab.key ? 'kb-tab-on' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                    onClick={() => setView(tab.key)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <Tabs
+                value={view}
+                onValueChange={(next) => setView(next as DrawerView)}
+                className="kb-view-tabs"
+              >
+                <TabsList aria-label="查看方式">
+                  {VIEW_TABS.map((tab) => (
+                    <TabsTrigger key={tab.key} value={tab.key}>
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
 
               {/* 摘要放在视角之上：它是"这份文档是什么"的一句话答案 */}
               {document.summary ? (
@@ -496,30 +495,25 @@ export function DocumentDrawer({
               {view === 'read' ? (
                 <>
                   {readTabs.length > 0 && !previewLoading ? (
-                    <div className="kb-source-switch" role="tablist" aria-label="内容来源">
-                      {readTabs.map((option) => (
-                        <button
-                          key={option.key}
-                          type="button"
-                          role="tab"
-                          aria-selected={previewSource === option.key}
-                          className={[
-                            'kb-source-tab',
-                            previewSource === option.key ? 'kb-source-tab-on' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          onClick={() => {
-                            if (previewSource === option.key) return
-                            setPreviewSource(option.key)
-                            // 「按页」自己那套请求由 <DocumentPages/> 发，不走整份预览这条缓存
-                            if (option.key !== 'pages') void loadReadingView(option.key)
-                          }}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
+                    <Tabs
+                      value={previewSource}
+                      onValueChange={(next) => {
+                        const option = readTabs.find((item) => item.key === next)
+                        if (!option || option.key === previewSource) return
+                        setPreviewSource(option.key)
+                        // 「按页」自己那套请求由 <DocumentPages/> 发，不走整份预览这条缓存
+                        if (option.key !== 'pages') void loadReadingView(option.key)
+                      }}
+                      className="kb-reader-switch"
+                    >
+                      <TabsList aria-label="内容来源">
+                        {readTabs.map((option) => (
+                          <TabsTrigger key={option.key} value={option.key}>
+                            {option.label}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
                   ) : null}
 
                   {previewSource === 'pages' ? (
@@ -554,7 +548,9 @@ export function DocumentDrawer({
                         />
                       ) : null}
                       {!previewLoading && !readError && preview ? (
-                        <FilePreview preview={preview} page={page} />
+                        <div className="kb-reader">
+                          <FilePreview preview={preview} page={page} />
+                        </div>
                       ) : null}
                     </>
                   )}

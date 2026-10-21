@@ -61,10 +61,20 @@
     flex-wrap: wrap;
   }
 
+  /* 标题与说明那一列 */
+  .m-page-heading {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-1-5);
+  }
+
   .m-page-title {
     margin: 0;
     font-size: var(--text-page-title-size);
     font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
     color: var(--text-primary);
   }
 
@@ -79,6 +89,7 @@
     margin: 0 0 var(--space-3);
     font-size: var(--text-section-size);
     font-weight: 600;
+    letter-spacing: -0.012em;
     color: var(--text-primary);
   }
 
@@ -134,7 +145,7 @@
     color: var(--status-danger);
   }
 
-  /* 通知条：深色下也要能看清，所以底色用语义色的 soft 档 */
+  /* 通知条：浅底 + 语义字色，圆角与卡片同一档 */
   .m-notice {
     display: flex;
     align-items: flex-start;
@@ -142,6 +153,7 @@
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
     background: var(--bg-subtle);
+    border: 1px solid var(--border-hairline);
     border-radius: var(--radius-row);
     color: var(--text-secondary);
     font-size: var(--text-meta-size);
@@ -149,14 +161,20 @@
   }
 
   .m-notice-error {
+    background: var(--status-danger-soft);
+    border-color: transparent;
     color: var(--status-danger);
   }
 
   .m-notice-warn {
+    background: var(--status-warning-soft);
+    border-color: transparent;
     color: var(--status-warning);
   }
 
   .m-notice-ok {
+    background: var(--status-success-soft);
+    border-color: transparent;
     color: var(--status-success);
   }
 
@@ -191,45 +209,50 @@
     user-select: none;
   }
 
-  /* 筛选胶囊（带计数）：与分段控件不同——它是一排可以横着滚的过滤器 */
+  /* 筛选胶囊：一排可以横着滚的过滤器 */
   .m-filters {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--space-1-5);
     flex-wrap: wrap;
-    /* 与下面内容之间留一条呼吸带（2026-09-24 用户反馈："能力菜单里面 skill 跟菜单的
-       下线靠的太近了"）。原先这里没有下外边距，实测筛选行底边到第一张卡的上边是 **0px**
-       ——两块 1px 描边贴成一条线，一排胶囊看起来像"菜单的第二行贴进了内容里"。
-       取 --space-4 而不是 --space-3：这一排是**单独的一层带**，它到下面内容的距离要比
-       工具栏到它的那 12px 大一档，四级次序（页签 20 / 工具栏 12 / 筛选 16）才读得出来。 */
     margin-bottom: var(--space-4);
   }
 
   .m-filter {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
-    height: 26px;
-    padding: 0 var(--space-2-5);
-    border: 1px solid transparent;
+    gap: var(--space-1-5);
+    height: 30px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-hairline);
     border-radius: var(--radius-pill);
-    background: var(--bg-subtle);
+    background: var(--bg-surface);
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--text-micro-size);
+    font-weight: 500;
     cursor: pointer;
     transition: var(--transition-ui);
   }
 
   .m-filter:hover {
     color: var(--text-primary);
-    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    background: var(--bg-subtle);
   }
 
+  /* 选中：品牌蓝的浅底 + 蓝字。蓝在这里表示"当前看到的是哪一组"，
+     与导航当前项同一条语义。 */
   .m-filter-on {
-    background: var(--bg-selected);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
+    background: var(--bg-accent-soft);
+    border-color: transparent;
+    color: var(--accent-text);
+  }
+
+  .m-filter-on:hover {
+    background: var(--bg-accent-soft);
+    border-color: transparent;
+    color: var(--accent-text);
   }
 
   /* 运行中：脉动的小圆点，配合文字（颜色只是加速识别，规范 §8） */
@@ -277,14 +300,20 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    flex: 0 1 240px;
-    min-width: 160px;
+    flex: 0 1 260px;
+    min-width: 180px;
     height: var(--control-height);
     padding: 0 var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--bg-subtle);
+    border-radius: var(--radius-input);
+    background: var(--bg-surface);
     color: var(--text-tertiary);
+    transition: var(--transition-ui);
+  }
+
+  .m-toolbar-search:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-selected);
   }
 
   .m-toolbar-search input {
@@ -320,7 +349,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-2);
-    padding: var(--space-8) var(--space-4);
+    padding: var(--space-12) var(--space-4);
     text-align: left;
   }
 
@@ -332,14 +361,16 @@
   .m-empty-title {
     margin: 0;
     font-size: var(--text-section-size);
+    font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
   }
 
   .m-empty-hint {
     margin: 0;
-    max-width: var(--measure);
+    max-width: 46ch;
     font-size: var(--text-meta-size);
-    line-height: var(--line-prose);
+    line-height: var(--line-ui);
     color: var(--text-secondary);
   }
 
@@ -358,10 +389,19 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    background: var(--bg-subtle);
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-surface);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-card);
+    transition: var(--transition-surface);
+  }
+
+  /* 卡片可点时（整块是链接 / 按钮）抬一下 */
+  .m-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-1px);
   }
 
   .m-card-icon {
@@ -685,7 +725,7 @@
   .m-bar-track {
     flex: 1 1 auto;
     min-width: 0;
-    height: 12px;
+    height: var(--meter-height);
     overflow: hidden;
     background: var(--meter-track);
     border-radius: var(--radius-pill);
@@ -735,8 +775,8 @@
     flex: 1 1 0;
     min-width: 2px;
     max-width: 12px;
-    height: 12px;
-    border-radius: 3px;
+    height: var(--meter-height);
+    border-radius: var(--radius-pill);
     background: var(--meter-track);
   }
 
@@ -763,8 +803,8 @@
   .m-quota-cell {
     flex: 1 1 0;
     min-width: 0;
-    height: 14px;
-    border-radius: 3px;
+    height: var(--meter-height);
+    border-radius: var(--radius-pill);
     background: var(--meter-track);
   }
 
@@ -1467,51 +1507,84 @@
 
   /* ---------------------------------------------------------------- 驾驶舱 */
 
+  /**
+   * 仪表带：**一张卡、五格**。
+   *
+   * 旧版是五张各自描边的卡，摆在一起既碎又占地方。现在共用一层白面 + 一层投影，
+   * 格与格之间只用 1px 发丝线分开——读起来是"一块仪表"，不是"五块拼图"。
+   * 窄屏按 2 / 3 列换行，发丝线在两个方向上都是同一套（`gap: 1px` + 底色）。
+   */
   .m-figures {
     display: grid;
-    /* 六个大数：**3 列 × 2 行**（旧前端的口径，见 DashboardView.vue 的 `.figures`）。
-     写成 6 列会让数字挤成一条、字号显得更小，第一眼就不像同一页。 */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
     margin: 0;
     padding: 0;
     list-style: none;
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* 5 格在 2 / 3 列时最后一格会空出来：让"排在最后一行的那个"跨列占满，
+     仪表带在任何宽度下都是一块完整的矩形（不是一块缺角的拼图）。 */
+  .m-figures > :nth-child(5) {
+    grid-column: span 2;
+  }
+
+  @media (min-width: 760px) {
+    .m-figures {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .m-figures > :nth-child(4) {
+      grid-column: span 2;
+    }
+
+    .m-figures > :nth-child(5) {
+      grid-column: span 1;
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .m-figures {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .m-figures > :nth-child(4),
+    .m-figures > :nth-child(5) {
+      grid-column: span 1;
+    }
   }
 
   .m-figure {
     display: flex;
     flex-direction: column;
-    gap: var(--space-0-5);
+    gap: var(--space-1);
     min-width: 0;
-    padding: var(--space-3) var(--space-4);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    padding: var(--space-5);
+    background: var(--bg-surface);
+    /* 格与格之间的发丝线：每格自己画一圈 outset 阴影，相邻两格在同一条坐标上
+       互相覆盖，读起来仍是 1px。好处是换行后剩下的空格子保持白面，
+       不会像 `gap: 1px` 那样露出一块灰底。 */
+    box-shadow: 0 0 0 1px var(--border-hairline);
   }
 
-  /* 「文档与索引」占两列：原来六格里有三格在说同一件事（界面评审 D8），
-   合成一张之后这一行仍然排满——所以它按"两列宽的一张卡"来放，
-   而不是让第二行末尾空出一格。窄屏（<=960px，见文末那条媒体查询）退成两列时，
-   它自然占满一整行，不必另写规则。 */
-  .m-figure-wide {
-    grid-column: span 2;
-  }
-
-  /* 数字用**大号单层灰**，标签在上、注解在下——取值逐条照旧 `DashboardView.vue` 的
-   `.figure-label` / `.figure-value` / `.figure-note`（对照记录 §3 第 2 条）：
-   label 与 note 都是 C1（12px），只有数字是 T1（18px）那一档，
-   并且**带 `line-height: 1.15` 与 `letter-spacing: -0.015em`**——
-   大号数字的默认行距会把它自己在卡片里"撑松"，那两个字距/行距的调整正是它紧凑的原因。 */
+  /* 标签在上、数字在下：数字是这一格真正的主角 */
   .m-figure-label {
     font-size: var(--text-micro-size);
-    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: var(--text-tertiary);
   }
 
   .m-figure-value {
-    font-size: var(--text-page-title-size);
+    font-size: var(--text-figure-size);
     font-weight: 600;
-    line-height: 1.15;
-    letter-spacing: -0.015em;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
     color: var(--text-primary);
   }
 
@@ -1520,18 +1593,31 @@
   }
 
   .m-figure-note {
+    min-height: 18px;
     font-size: var(--text-micro-size);
     color: var(--text-tertiary);
   }
 
-  .m-card-block {
-    padding: var(--space-4);
+  /* ---------------------------------------------------------------- 分区标题 */
+
+  /* 分区标题：19px、上方 40px 留白——"这里换了一件事"由留白说，不靠分割线 */
+  .m-group-title {
+    margin: var(--space-8) 0 var(--space-4);
+    font-size: var(--text-section-size);
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    color: var(--text-primary);
   }
 
-  /* 热力图的图例：**色阶样本 + 一句话**。
-   方块的颜色来自 `HEAT_STEPS`（与图上的分档同源），这里只管形状：
-   10px 的小方块、圆角与热力图的格子同一档（3px），描边用 hairline 兜住最浅那一档——
-   深色下空格子与卡底只差一档明度，没有描边的话最左那个方块会看不见。 */
+  .m-group-title:first-child {
+    margin-top: 0;
+  }
+
+  .m-card-block {
+    padding: var(--space-5);
+  }
+
+  /* 热力图的图例：色阶样本（方块与图上的分档同源） */
   .m-heat-legend {
     display: inline-flex;
     align-items: center;
@@ -1540,12 +1626,12 @@
 
   .m-heat-swatches {
     display: inline-flex;
-    gap: var(--space-0-5);
+    gap: var(--space-1);
   }
 
   .m-heat-swatch {
-    width: var(--space-3);
-    height: var(--space-3);
+    width: 11px;
+    height: 11px;
     border-radius: 3px;
     box-shadow: inset 0 0 0 1px var(--border-hairline);
   }
@@ -1556,25 +1642,41 @@
     gap: var(--space-4);
   }
 
+  /* 分段控件：灰槽 + 白面当前项（与 @/ui/tabs 同一个语言，这里是轻量版） */
   .m-metric-switch {
     display: inline-flex;
-    gap: var(--space-1);
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-subtle);
+    box-shadow: inset 0 1px 2px rgb(31 26 15 / 6%);
   }
 
   .m-metric-tab {
-    padding: var(--space-0-5) var(--space-2);
+    padding: 3px var(--space-2-5);
     border: none;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-pill);
     background: none;
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--text-micro-size);
+    font-weight: 500;
+    white-space: nowrap;
     cursor: pointer;
+    transition: var(--transition-ui);
+  }
+
+  .m-metric-tab:hover {
+    color: var(--text-primary);
   }
 
   .m-metric-tab-on {
-    background: var(--bg-selected);
+    background: var(--bg-surface);
     color: var(--text-primary);
+    box-shadow:
+      0 1px 2px rgb(31 26 15 / 8%),
+      0 2px 8px -2px rgb(31 26 15 / 10%);
   }
 
   .m-usage-figures {
@@ -1590,10 +1692,31 @@
   }
 
   .m-usage-figure dd {
-    margin: var(--space-0-5) 0 0;
-    font-size: var(--text-section-size);
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-page-title-size);
     font-weight: 600;
+    letter-spacing: -0.03em;
     color: var(--text-primary);
+  }
+
+  /* 窄屏：仪表带与用量数字都收一档，否则 32px 的数字在 ~150px 的格子里会折行 */
+  @media (max-width: 640px) {
+    .m-figure {
+      padding: var(--space-4);
+    }
+
+    .m-figure-value {
+      font-size: calc(26px * var(--font-scale));
+      white-space: nowrap;
+    }
+
+    .m-usage-figures {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .m-usage-figure dd {
+      font-size: calc(24px * var(--font-scale));
+    }
   }
 
   .m-usage-empty,
@@ -1644,11 +1767,13 @@
   }
 
   .m-kb-name {
-    font-size: var(--text-meta-size);
+    font-size: var(--text-body-size);
+    font-weight: 500;
     color: var(--text-primary);
   }
 
   .m-kb-model {
+    font-family: var(--font-mono);
     font-size: var(--text-c2-size);
     color: var(--text-tertiary);
   }
@@ -1672,6 +1797,7 @@
     color: var(--text-secondary);
   }
 
+  /* 整行是链接：悬停时整块给反馈，行高 52 */
   .m-kb-link {
     display: flex;
     align-items: center;
@@ -1680,6 +1806,13 @@
     min-height: var(--row-height);
     padding: 0 var(--space-4);
     color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-row);
+    transition: var(--transition-ui);
+  }
+
+  .m-kb-link:hover {
+    background: var(--bg-hover);
     text-decoration: none;
   }
 
@@ -1866,40 +1999,103 @@
 
   /* ---------------------------------------------------------------- 登录页 */
 
+  /**
+   * 登录页 = **纸上一张卡**。
+   *
+   * 三件东西：纸底、一片极淡的品牌蓝光、一枚放大的行星轨道线（登录页唯一的大图形）。
+   * 它们都不动——这一页的任务只有"把两个字段填完"，动效留给字段聚焦与按钮。
+   * 卡片用 `--shadow-raised`：它是全站唯一"浮在纸面上"的整块表单。
+   */
   .m-login {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    min-height: 100dvh;
     padding: var(--space-8) var(--page-gutter);
+    overflow: hidden;
     background: var(--bg-canvas);
   }
 
+  .m-login-glow {
+    position: absolute;
+    inset: -25%;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        40% 32% at 16% 10%,
+        color-mix(in srgb, var(--accent) 13%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        34% 28% at 88% 92%,
+        color-mix(in srgb, var(--accent-2) 11%, transparent),
+        transparent 72%
+      );
+  }
+
+  .m-login-orbit {
+    position: absolute;
+    right: -90px;
+    bottom: -140px;
+    color: var(--text-primary);
+    opacity: 0.05;
+    pointer-events: none;
+  }
+
   .m-login-panel {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-5);
     width: 100%;
-    max-width: 340px;
+    max-width: 400px;
+    padding: var(--space-8);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-overlay);
+    box-shadow: var(--shadow-raised);
+    animation: rise-in var(--motion-slow) var(--ease-out) both;
+  }
+
+  .m-login-heading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1-5);
   }
 
   .m-login-title {
     margin: 0;
-    font-size: var(--text-page-title-size);
+    font-size: calc(26px * var(--font-scale));
     font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
   }
 
   .m-login-hint {
     margin: 0;
     font-size: var(--text-meta-size);
-    line-height: var(--line-prose);
+    line-height: var(--line-ui);
     color: var(--text-secondary);
   }
 
   .m-login-error {
     margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    background: var(--status-danger-soft);
     font-size: var(--text-meta-size);
     color: var(--status-danger);
+  }
+
+  /* 卡片底部的一句：产品定位，不解释这一页 */
+  .m-login-foot {
+    margin: 0;
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-hairline);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+    text-align: center;
   }
 
   /* ---------------------------------------------------------------- 供应商 / 模型 */
@@ -3033,7 +3229,8 @@
     flex-direction: column;
     gap: var(--space-0-5);
     flex: 1 1 0;
-    min-width: 0;
+    /* 窄屏兜住中文工具名：低于这个宽度标题会逐字换行 */
+    min-width: 160px;
   }
 
   /* 技术标识（工具名）：跟在标签后面，等宽字、比标签轻一档 */
@@ -3120,8 +3317,8 @@
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-row);
     font-family: var(--font-mono);
-    font-size: var(--text-micro-size);
-    line-height: var(--line-prose);
+    font-size: 12.5px;
+    line-height: 1.7;
     color: var(--text-primary);
     overflow-x: auto;
     white-space: pre;
@@ -3169,11 +3366,17 @@
     border-collapse: collapse;
   }
 
+  /* 表头一层浅底：与 `.panel-head` 同一个语言（"这是表头、下面是数据"） */
+  .m-trouble thead {
+    background: var(--bg-subtle);
+  }
+
   .m-trouble th {
     padding: var(--space-2) var(--space-4);
     text-align: left;
     font-size: var(--text-micro-size);
-    font-weight: 600;
+    font-weight: 500;
+    letter-spacing: 0.03em;
     color: var(--text-tertiary);
     border-bottom: 1px solid var(--border-hairline);
   }
@@ -3201,10 +3404,7 @@
   /* ---------------------------------------------------------------- 窄屏 */
 
   @media (max-width: 960px) {
-    .m-figures {
-      /* 桌面 3 列 → 窄屏 2 列（与旧前端一致：960 是它的断点） */
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+    /* 仪表带在 900 以下本来就是两列（见 `.m-figures` 上的断点），这里不再重复 */
 
     .m-gauges {
       grid-template-columns: repeat(2, minmax(0, 1fr));

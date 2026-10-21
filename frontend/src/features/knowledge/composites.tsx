@@ -78,18 +78,30 @@ export function StatusTag({ label, tone = 'neutral', running = false, title }: S
 
 /* ---------------------------------------------------------------- 骨架屏 */
 
-/** 骨架屏的三种预设（旧 `Skeleton`）：高度不同，底色与呼吸交给 `@/ui/skeleton`。 */
+/**
+ * 骨架屏的三种预设（旧 `Skeleton`）：高度不同，底色与呼吸交给 `@/ui/skeleton`。
+ *
+ * `layout="grid"` 给知识库清单这种**卡片网格**：卡片骨架要按网格排（3/2/1 列），
+ * 否则加载中是一叠通栏灰条，和加载完的三列卡片完全是两种版面。
+ */
 export function SkeletonRows({
   variant,
   rows,
+  layout = 'stack',
 }: {
   variant: 'card' | 'list' | 'text'
   rows: number
+  layout?: 'stack' | 'grid'
 }) {
   const itemClass =
     variant === 'card' ? 'kb-skeleton-card' : variant === 'text' ? 'kb-skeleton-text' : ''
   return (
-    <div className="kb-skeleton" aria-hidden="true">
+    <div
+      className={['kb-skeleton', layout === 'grid' ? 'kb-skeleton-grid' : '']
+        .filter(Boolean)
+        .join(' ')}
+      aria-hidden="true"
+    >
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton
           key={index}

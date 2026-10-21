@@ -445,24 +445,46 @@ describe('基础层：分层与搜索框结构护栏', () => {
   it('.m-toolbar-search：宽度只在 flex-basis 上，不加 width', () => {
     const source = styleSource('../src/features/misc/shared/misc.css')
     const base = ruleBody(source, '.m-toolbar-search')
-    expect(base).toContain('flex: 0 1 240px')
-    // 多一个 `width` 就会把块级那处（技能市场弹窗的搜索框）缩成 240px
+    // 2026-10 重做把这一档从 240 放宽到 260（新的控件高度 36 下 240 显得挤）
+    expect(base).toContain('flex: 0 1 260px')
+    // 多一个 `width` 就会把块级那处（技能市场弹窗的搜索框）缩成 260px
     expect(base).not.toMatch(/(?:^|[;\s])width:/)
-    // 记忆页侧栏那一处随页面下线（§6.3）一起删掉了，`.m-side-col` 的容器规则
-    // 不再有使用者；这一条只保 row 工具栏与块级弹窗两处的口径。
     expect(withoutComments(source)).not.toContain('.m-side-col')
   })
 
-  it('两套主题的三级灰/四级灰都指向达标档，而不是 Kimi 原值', () => {
-    for (const [file, tert, quat] of [
-      ['../src/styles/themes/light.css', '#0000008c', '#00000070'],
-      ['../src/styles/themes/dark.css', '#ffffff85', '#ffffff5c'],
-    ]) {
-      const source = withoutComments(styleSource(file))
-      expect(source, `${file} 三级灰没走达标档`).toContain(`--Labels-Tertiary-text: ${tert}`)
-      expect(source, `${file} 四级灰没走达标档`).toContain(`--Labels-Quaternary-text: ${quat}`)
-      expect(source).toContain('--text-tertiary: var(--Labels-Tertiary-text)')
-      expect(source).toContain('--text-quaternary: var(--Labels-Quaternary-text)')
+  it('两套主题都按对比度契约给出四级墨色（正文 4.5:1 / 占位 3:1）', () => {
+    for (const file of ['../src/styles/themes/light.css', '../src/styles/themes/dark.css']) {
+      const raw = styleSource(file)
+      const source = withoutComments(raw)
+      // 四级墨色的名字与取值都在主题文件里（组件只认 --text-*）
+      for (const token of [
+        '--text-primary:',
+        '--text-secondary:',
+        '--text-tertiary:',
+        '--text-quaternary:',
+      ]) {
+        expect(source, `${file} 缺 ${token}`).toContain(token)
+      }
+      // 取值的契约写在文件头：正文/元信息 ≥4.5:1，占位文字与图标 ≥3:1
+      expect(raw, `${file} 没写 4.5:1 契约`).toContain('4.5:1')
+      expect(raw, `${file} 没写 3:1 契约`).toContain('3:1')
+    }
+  })
+
+  it('两套主题都按对比度契约给出四级墨色（正文 4.5:1 / 占位 3:1）', () => {
+    for (const file of ['../src/styles/themes/light.css', '../src/styles/themes/dark.css']) {
+      const raw = styleSource(file)
+      const source = withoutComments(raw)
+      for (const token of [
+        '--text-primary:',
+        '--text-secondary:',
+        '--text-tertiary:',
+        '--text-quaternary:',
+      ]) {
+        expect(source, `${file} 缺 ${token}`).toContain(token)
+      }
+      expect(raw, `${file} 没写 4.5:1 契约`).toContain('4.5:1')
+      expect(raw, `${file} 没写 3:1 契约`).toContain('3:1')
     }
   })
 })

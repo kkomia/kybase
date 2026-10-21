@@ -10,6 +10,23 @@
  *
  * 缓存口径与旧 store 一致：**列表整份缓存在 query 里**，筛选/分页都在客户端做
  * （任务量级在几百以内）；轮询期间旧数据继续显示，不闪骨架屏。
+ *
+ * ## 2026-10 重做的排布
+ *
+ * ```
+ * 任务中心                                  [有任务在跑，自动刷新中] [刷新]
+ * 246 个任务 · 12 个失败 · 3 个排队 · 1 个执行中
+ * 运行负载                                   ← 仪表卡（管理员才有）
+ * [CPU] [内存] [并发槽位] [云端解析额度] [常驻内存]
+ * [按知识库▾] [按状态▾] [按健康▾]  □显示已取消  …  66 / 246 项
+ * ┌ 类型 │ 任务 │ 状态 │ 健康 │ 尝试次数 │ 更新时间 ┐
+ * │ 失败行：淡红底 + 左侧危险色竖条（不靠文字颜色单独表达）│
+ * └ 20 行一页，容器定高 8 行，翻页器常显 ┘
+ * ```
+ *
+ * 页头是主角（28px 标题 + 一句现状 + 右侧主按钮），下面的负载卡与列表安静地排开；
+ * 原来那层多余的 `.page-shell-body` 已经去掉——`PageShell` 自己就带这一层，
+ * 套两层等于页头到内容多空了一倍。
  */
 import { TASKS_QUERY_KEY } from '@/features/misc/queryKeys'
 
@@ -21,6 +38,7 @@ import { useNavigate } from 'react-router'
 import { cancelTasks, getTaskLoad, listTasks, type TaskSummary } from '@/api/tasks'
 import { formatCount, formatDate } from '@/lib/format'
 import { useSessionStore } from '@/lib/session'
+import { cn } from '@/lib/utils'
 
 import { useKnowledgeBases } from '../shared/knowledgeBases'
 import { isTaskProblem, taskHealthTone, taskKindLabel, taskStateView } from '../shared/status'
@@ -152,6 +170,32 @@ export function TasksPage() {
   const error = list.isError ? messageOf(list.error, '任务列表加载失败') : ''
   const loading = list.isLoading
 
+  /**
+   * 页头那句现状要用的三个数，**全从这一页已有的列表里算**：
+   * 不另发请求（也就不会引出一个非管理员拉不到的端点），不编，也不为了页头多算一份缓存。
+   *
+   * 失败与排队是"要不要现在动手"的判据，所以 0 也照常写出来（"0 个失败"本身就是结论）；
+   * 执行中只在真有任务在跑时补一句——没有在跑的时候，那个 0 不提供新信息。
+   */
+  const counts = useMemo(() => {
+    let failed = 0
+    let pending = 0
+    let runningCount = 0
+    for (const task of tasks) {
+      if (task.state === 'failed') failed += 1
+      else if (task.state === 'pending') pending += 1
+      else if (task.state === 'running') runningCount += 1
+    }
+    return { failed, pending, running: runningCount }
+  }, [tasks])
+
+  const subtitle = list.data
+    ? `${formatCount(tasks.length)} 个任务 · ${formatCount(counts.failed)} 个失败 · ${formatCount(counts.pending)} 个排队` +
+      (counts.running > 0 ? ` · ${formatCount(counts.running)} 个执行中` : '')
+    : loading
+      ? '正在读取任务…'
+      : ''
+
   /** 工具栏上那条提示：藏了多少条（0 就不显示）。 */
   const hiddenCanceled = showCanceled ? 0 : tasks.filter((task) => task.state === 'canceled').length
 
@@ -208,8 +252,6 @@ export function TasksPage() {
     setListAtEnd(scrolledToEnd(element))
   }, [page, visibleTasks])
 
-  const pendingCount = tasks.filter((task) => task.state === 'pending').length
-
   /**
    * 撤下任务。
    *
@@ -255,17 +297,18 @@ export function TasksPage() {
   return (
     <PageShell
       title="任务中心"
+      subtitle={subtitle}
       actions={
         <>
           {running && <StatusTag tone="info" live label="有任务在跑，自动刷新中" />}
-          <Button onClick={refresh}>
+          <Button variant="secondary" onClick={refresh}>
             <RefreshCw size={14} />
             刷新
           </Button>
         </>
       }
     >
-      <div className="page-shell-body">
+      <>
         {/*
             运行负载放在最上面：它解释的是"为什么后台慢"，而那正是用户打开这一页时
             的问题——排在列表下方的话，他要先翻过几十行任务才看得到（管理员专属）。
@@ -315,6 +358,18 @@ export function TasksPage() {
               <CheckRow checked={showCanceled} onCheckedChange={setShowCanceled}>
                 显示已取消
               </CheckRow>
+              {/* 失败是这一页唯一"要人现在动手"的状态：给一个一键只看失败的入口，
+                  不用先去状态下拉里找。再点一次回全部。 */}
+              {counts.failed > 0 && (
+                <Button
+                  variant={state === 'failed' ? 'default' : 'secondary'}
+                  size="sm"
+                  aria-pressed={state === 'failed'}
+                  onClick={() => setState(state === 'failed' ? '' : 'failed')}
+                >
+                  只看失败（{formatCount(counts.failed)}）
+                </Button>
+              )}
               {hiddenCanceled > 0 && (
                 <span className="m-toolbar-note">已取消 {formatCount(hiddenCanceled)}</span>
               )}
@@ -325,14 +380,14 @@ export function TasksPage() {
               )}
               {/* 唯一能真正"给队列踩刹车"的地方：几十条 pending 堵着时，
                     逐篇取消文档是做不到的（用户反馈） */}
-              {pendingCount > 0 && (
+              {counts.pending > 0 && (
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={canceling}
                   onClick={() => setCancelOpen(true)}
                 >
-                  取消排队中的任务（{formatCount(pendingCount)}）
+                  取消排队中的任务（{formatCount(counts.pending)}）
                 </Button>
               )}
               <span className="m-toolbar-count tabular">
@@ -380,9 +435,9 @@ export function TasksPage() {
                     onScroll={(event) => setListAtEnd(scrolledToEnd(event.currentTarget))}
                     className="max-h-[calc(var(--row-height)*8)] overflow-y-auto"
                   >
-                    <ul className="m-list">
+                    <ul className={cn('m-list', page === 1 && 'stagger')}>
                       {pagedTasks.map((task) => (
-                        <li key={task.id} className="m-list-item">
+                        <li key={task.id} className={cn('m-list-item', rowToneClass(task))}>
                           <div className="m-task-row panel-row">
                             <FileText className="m-row-icon" size={16} />
                             <span className="m-row-kind">{taskKindLabel(task.kind)}</span>
@@ -570,14 +625,14 @@ export function TasksPage() {
         <ConfirmDialog
           open={cancelOpen}
           title="取消排队中的任务"
-          lead={`撤下 ${formatCount(pendingCount)} 个还在排队的任务？`}
+          lead={`撤下 ${formatCount(counts.pending)} 个还在排队的任务？`}
           note="只是不再处理：文档与已入库内容都保留，之后可重新上传或点「重新摄入」。正在执行的任务不在此列。"
           confirmLabel="撤下"
           busy={canceling}
           onCancel={() => setCancelOpen(false)}
           onConfirm={() => void runCancel()}
         />
-      </div>
+      </>
     </PageShell>
   )
 }
@@ -690,6 +745,28 @@ function healthText(task: TaskSummary): string {
 /** 行上是否需要招人注意：**失败**与**卡住/逾期**都要，但原因不同，所以文案分开。 */
 function needsAttention(task: TaskSummary): boolean {
   return task.state === 'failed' || isTaskProblem(task.health)
+}
+
+/**
+ * 失败 / 异常行的**非文字标记**。
+ *
+ * 只在状态列上写"失败"不够：一屏十几行，红字小徽章要逐行扫才找得到，而规范要求
+ * "不要只靠文字颜色表达状态"（§8）。所以行本身给一个记号：
+ *
+ * - **失败**：整行淡红底（`--status-danger-soft`）+ 左侧 2px 危险色竖条；
+ * - **可能卡住 / 长时间未执行**：只给左侧 2px 警示色竖条——它们的健康徽章已经是语义色，
+ *   再铺一层底会把徽章糊进底色里（徽章底也是 `--status-*-soft`，同一个值）。
+ *
+ * 记号落在 `<li>` 上、**不落在 `.panel-row` 上**：`.panel-row:hover` 是半透明的
+ * `--bg-hover`，压在 li 的底色上正好，悬停反馈不会因此消失、列也不会因为左边加 2px
+ * 描边而错位（用 inset 阴影画竖条，不占盒宽）。
+ */
+function rowToneClass(task: TaskSummary): string {
+  if (task.state === 'failed') {
+    return 'bg-[var(--status-danger-soft)] shadow-[inset_2px_0_0_var(--status-danger)]'
+  }
+  if (isTaskProblem(task.health)) return 'shadow-[inset_2px_0_0_var(--status-warning)]'
+  return ''
 }
 
 /**

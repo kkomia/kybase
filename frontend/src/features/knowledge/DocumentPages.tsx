@@ -35,6 +35,7 @@ import { formatCount } from '@/lib/format'
 import { Button } from '@/ui/button'
 import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/ui/tabs'
 
 /** 这一档看什么：原件页图 / 解析文字。 */
 type PageMode = 'image' | 'text'
@@ -159,22 +160,19 @@ export function DocumentPages({ documentId, name, pageCount, canPageImages }: Do
         </div>
 
         {canPageImages ? (
-          <div className="kb-source-switch" role="tablist" aria-label="按页内容">
-            {MODE_TABS.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                role="tab"
-                aria-selected={mode === option.key}
-                className={['kb-source-tab', mode === option.key ? 'kb-source-tab-on' : '']
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => setMode(option.key)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            value={mode}
+            onValueChange={(next) => setMode(next as PageMode)}
+            className="kb-pages-switch"
+          >
+            <TabsList aria-label="按页内容">
+              {MODE_TABS.map((option) => (
+                <TabsTrigger key={option.key} value={option.key}>
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         ) : null}
       </form>
 

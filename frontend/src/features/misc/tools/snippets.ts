@@ -135,7 +135,7 @@ export const GENERIC_WHERE = '任一客户端的「新建 MCP 服务器 / 连接
 export function genericFields(endpoint: string, token: string): FormField[] {
   return [
     { label: '客户端标识符', value: 'kybase' },
-    { label: '显示名称', value: 'KYLAB 知识库' },
+    { label: '显示名称', value: 'KYBASE 知识库' },
     { label: '传输方式', value: 'Streamable HTTP' },
     { label: '服务器 URL', value: endpoint },
     { label: 'Bearer token env var', value: TOKEN_ENV_VAR },

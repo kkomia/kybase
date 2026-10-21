@@ -125,25 +125,20 @@ describe('ui 原语', () => {
     await waitFor(() => expect(trigger).toHaveTextContent('K3'))
   })
 
-  it('Badge：默认是 4px 方角，`shape="pill"` 那一档才是胶囊（状态标签用）', () => {
-    // 两档形状都有明确出处，别合并成一档（对照记录 §3 第 4 条）：
-    // - 方角 = tokens.css 对 `--radius-badge` 的注解（Kimi 的 badge 一律 4px 方角），
-    //   卡片里那些 `chip`（技能来源 / 传输方式 / 版本号）用它；
-    // - 胶囊 = 旧 `StatusTag.vue` 的 `.status`（`height: 22px` + `--radius-pill`），
-    //   状态标签用它。
-    const { unmount } = render(<Badge>内置</Badge>)
-    const square = screen.getByText('内置')
-    expect(square).toHaveAttribute('data-shape', 'square')
-    expect(square.className).toContain('var(--radius-badge)')
-    expect(square.className).not.toContain('var(--radius-pill)')
-    unmount()
-
-    render(<Badge shape="pill">已索引</Badge>)
+  it('Badge：默认是胶囊（状态短语），`shape="square"` 留给名词性标记', () => {
+    // 2026-10 重做把默认形状翻了过来：这一版里徽章承载的是**状态短语**
+    // （"已完成""解析中"），胶囊读起来像一个状态；方角那档留给"种类 / 计数"这类
+    // 名词性标记（技能来源 / 传输方式 / 版本号）。
+    const { unmount } = render(<Badge>已索引</Badge>)
     const pill = screen.getByText('已索引')
     expect(pill).toHaveAttribute('data-shape', 'pill')
-    expect(pill.className).toContain('var(--radius-pill)')
-    // 高度也照旧 `.status`：22px（不是 Badge 默认的 py-0.5 撑出来的那个高度）
-    expect(pill.className).toContain('h-[22px]')
+    expect(pill.className).toContain('var(--radius-badge)')
+    unmount()
+
+    render(<Badge shape="square">内置</Badge>)
+    const square = screen.getByText('内置')
+    expect(square).toHaveAttribute('data-shape', 'square')
+    expect(square.className).toContain('rounded-[6px]')
   })
 
   it('Tooltip：悬停触发器后气泡出现', async () => {

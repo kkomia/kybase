@@ -40,7 +40,7 @@ const QUARTER_FIRST_MONTHS = new Set([0, 3, 6, 9])
  * 换成"把文字色按比例混进卡底"，同一句表达式在两套主题里都成立：
  * 浅色得到浅灰格，深色得到比卡底亮一档的格子，都不写死色值。
  */
-export const HEAT_EMPTY = 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-surface))'
+export const HEAT_EMPTY = 'color-mix(in srgb, var(--text-primary) 8%, var(--heat-0))'
 
 /** 四档色阶：图例方块与图上的 `visualMap` **共用这一份**，两处颜色不许各写一遍。 */
 export const HEAT_STEPS = [HEAT_EMPTY, 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)'] as const
@@ -152,7 +152,7 @@ export function ActivityHeatmap({
         splitLine: { show: false },
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: 10, interval: 0 },
       },
       visualMap: {
         show: false,

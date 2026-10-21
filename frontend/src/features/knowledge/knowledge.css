@@ -104,6 +104,27 @@
     border-radius: var(--radius-panel);
   }
 
+  /* 卡片骨架按清单的网格排（3/2/1 列，与 `.kb-cards` 同一组断点）：
+     加载中是一屏"即将出现的卡片"，而不是一叠通栏灰条。 */
+  .kb-skeleton-grid {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: var(--space-5);
+  }
+
+  @media (min-width: 800px) {
+    .kb-skeleton-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .kb-skeleton-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
   .kb-skeleton-text {
     height: 14px;
   }
@@ -432,14 +453,6 @@
 
   /* ------------------------------------------------------------ 知识库列表（卡片 / 行） */
 
-  /* 知识库列表 / Wiki 的页头：标题 + 右侧的页面动作（`h1` 带 `flex: 1`，
-   于是动作被推到右端——那两页的动作确实是"页面级"的）。 */
-  .kb-head-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   /* 知识库**详情**的页头：标题与它的行内控件（设置齿轮）同处一行、**紧贴标题**。
    旧 `PageHeader.vue` 的 `title-suffix` 槽就是这个语义——它那条 `.page-title-row`
    也是 `display: flex; align-items: center; gap: var(--space-1)`（齿轮属于"这个库本身"，
@@ -450,53 +463,170 @@
     gap: var(--space-1);
   }
 
-  /* `auto-fit` 而不是 `auto-fill`：后者会保留空轨道，两个库时右边留一大片空白 */
+  /**
+ * 详情页的页头：`.m-page-heading` 在 misc 里是**竖排**（标题 → 说明），
+ * 而这一页的齿轮是"标题的行内后缀"——它必须和标题同一行，不能掉到说明下面。
+ * 所以在这页把那一列改成两行网格：第一行 = 标题 + 齿轮，第二行 = 元信息。
+ * 用复合选择器（0,2,0）压过 `.m-page-heading`，不去改别人的 misc.css。
+ */
+  .m-page-heading.kb-title-row {
+    display: grid;
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .m-page-heading.kb-title-row > .page-subtitle {
+    grid-column: 1 / -1;
+  }
+
+  /* 知识库清单的网格：3 列（≥1200px）/ 2 列（≥800px）/ 1 列。
+     上限 3 列是有意的——再宽一张卡的"名字 + 一句元信息"就会拉成一条空旷的横带。 */
   .kb-cards {
     display: grid;
-    gap: var(--space-3);
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    margin: var(--space-5) 0 0;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
     padding: 0;
     list-style: none;
   }
 
+  @media (min-width: 800px) {
+    .kb-cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .kb-cards {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
   .kb-card-item {
     position: relative;
-  }
-
-  .kb-card {
-    /* 左边那一列（字母块 36px + 间距）的宽度。主体与脚注都让出这一段，
-     全卡只剩**一条左基准**——原先标题在 337、正文与脚注在 291，差着那枚字母块。
-     分隔线仍是贯穿的（`border` 画在 border box 上，不受 padding 影响）。 */
-    --kb-card-indent: calc(36px + var(--space-3));
-
-    display: flex;
-    height: 100%;
-    flex-direction: column;
-    gap: var(--space-4);
-    padding: var(--space-4);
-    color: inherit;
-    text-decoration: none;
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
-    transition:
-      border-color 120ms ease,
-      background-color 120ms ease;
-  }
-
-  .kb-card:hover {
-    background: var(--bg-surface-raised);
-    border-color: var(--border-strong);
-  }
-
-  .kb-card-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
     min-width: 0;
   }
 
+  /**
+ * 一张库卡只有三行：**名字** / 一句元信息 / 一条 30 天活动线。
+ *
+ * 白面、投影、圆角、悬停抬起都来自 `.surface-card` + `.surface-card-interactive`
+ * （见 tokens.css），这里只管内容排布——原先这张卡自带 `--bg-subtle` 底与描边，
+ * 比它所在的白面"低一档"，在一屏里既不像卡片也不像行。
+ */
+  .kb-card {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* 键盘走到卡片上：焦点环画在卡外（投影不被遮住），与主按钮同一枚品牌蓝 */
+  .kb-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* 第一行：库名（17px / 600）。右侧让出设置图标的体积——那颗按钮绝对定位在右上角 */
+  .kb-card-name {
+    display: block;
+    overflow: hidden;
+    padding-right: calc(var(--control-height) + var(--space-2));
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 第二行：一句话元信息（13.5px 二级墨色）——卡片上唯一的"读数" */
+  .kb-card-meta {
+    display: block;
+    overflow: hidden;
+    font-size: var(--text-meta-size);
+    line-height: var(--line-ui);
+    color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 概述是可选的第四行：没写就不占位；写了压在二级墨色之下，最多两行 */
+  .kb-description {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: var(--text-meta-size);
+    line-height: var(--line-ui);
+    color: var(--text-tertiary);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  /* 底部活动块：一条发丝线把它和上面的文字分开，图形 40px、单色、无坐标轴。
+     `margin-top: auto` 让所有卡的这一块压在同一条基准线上（不管有没有概述）。 */
+  .kb-card-activity {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: auto;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-hairline);
+  }
+
+  .kb-activity-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--text-micro-size);
+    color: var(--text-tertiary);
+  }
+
+  .kb-activity-label {
+    flex: 0 0 auto;
+  }
+
+  .kb-activity-total {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 设置齿轮：第一行右端，平时压到三级墨色，悬停整张卡（或键盘进入）时回到一级。
+     整卡悬停会抬 2px（`.surface-card-interactive`），齿轮跟着抬——否则它像浮在卡外 */
+  .kb-card-settings {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    color: var(--text-tertiary);
+    opacity: 0.75;
+    transition:
+      opacity var(--motion-fast) var(--ease-out),
+      transform var(--motion-fast) var(--ease-out);
+  }
+
+  .kb-card-item:hover .kb-card-settings,
+  .kb-card-settings:focus-within {
+    opacity: 1;
+  }
+
+  .kb-card-item:hover .kb-card-settings {
+    transform: translateY(-2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kb-card-item:hover .kb-card-settings {
+      transform: none;
+    }
+  }
+
+  /* 行形态（> 12 个库）里那枚字母块：24px 见方，字取 B2 */
   .kb-mark {
     display: flex;
     flex: 0 0 auto;
@@ -512,9 +642,6 @@
     border-radius: var(--radius-row);
   }
 
-  /* 行首那枚字母块：**24px 里放的是 B2（14px）**，不是 C1——
-   旧 `KnowledgeBasesView.vue` 的 `.kb-mark-sm` 写的是 `--text-meta-size`
-   （对照记录 §3 第 2 条的"单元格字号"）。小一档在 24px 的方块里看着偏空。 */
   .kb-mark-sm {
     width: 24px;
     height: 24px;
@@ -522,13 +649,7 @@
     border-radius: var(--radius-control);
   }
 
-  .kb-card-title {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
+  /* 行形态的库名（卡片上用的是 `.kb-card-name`：17px / 600） */
   .kb-name {
     overflow: hidden;
     font-size: var(--text-section-size);
@@ -546,102 +667,16 @@
     white-space: nowrap;
   }
 
-  .kb-card-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding-top: var(--space-3);
-    padding-left: var(--kb-card-indent);
-    border-top: 1px solid var(--border-hairline);
-  }
-
-  .kb-doc-count {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-1);
-  }
-
-  .kb-doc-value {
-    font-size: var(--text-figure-size);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .kb-doc-unit {
-    font-size: var(--text-micro-size);
-    color: var(--text-tertiary);
-  }
-
-  .kb-description {
-    display: -webkit-box;
-    overflow: hidden;
-    min-height: calc(var(--text-meta-size) * 1.7 * 2);
-    font-size: var(--text-meta-size);
-    line-height: var(--line-prose);
-    color: var(--text-secondary);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .kb-card-foot {
-    margin-top: auto;
-    /* 右侧让出那颗菜单的体积，脚注文案长了也不会被压到它下面 */
-    padding-right: var(--control-height);
-    padding-left: var(--kb-card-indent);
-    font-size: var(--text-micro-size);
-    color: var(--text-tertiary);
-  }
-
-  /* 卡片的管理入口：与脚注同一行的右手边（原先钉在右上角，压着标题那一行） */
-  .kb-menu-corner {
-    position: absolute;
-    right: var(--space-2);
-    bottom: var(--space-3);
-  }
-
-  /* 卡片上的迷你趋势图，两根各占一行：上「近 90 天入库」、下「近 90 天检索命中」。
-     每根整块（读数一行 + 图形）的高度都是**死**的：一条记录都没有的库也占同样的高度，
-     所以卡片不会被趋势图撑得忽高忽低。见 `Sparkline.tsx` 头注那三条。 */
-  .kb-trend {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin-top: var(--space-2);
-  }
-
-  .kb-trend-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-
-  /* 两段都单行不折：卡片最窄那一档（240px 网格轨道）里宁可把标签裁掉尾巴，
-     也不让它折成两行——折了高度就变了，正是整块高度写死要防的事 */
-  .kb-trend-label {
-    overflow: hidden;
-    font-size: var(--text-micro-size);
-    color: var(--text-tertiary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .kb-trend-value {
-    flex: 0 0 auto;
-    font-size: var(--text-micro-size);
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-
-  /* 图形高度写死（结构常量，与列宽同类）：与 `Sparkline.tsx` 的 `HEIGHT` 是同一个数 */
+  /* 图形高度由 `Sparkline` 的 `height` 属性写在内联样式上（40px 那条活动线）；
+     这一条是 28px 档的兜底，与 `Sparkline.tsx` 的默认值同一个数。 */
   .kb-spark {
     display: block;
     width: 100%;
     height: 28px;
   }
 
-  /* 颜色只认主题变量：`--accent` 与本项目那条系列线的口径一致
-     （概览的趋势线也是 `--accent` + 一成面积的底，见 `DashboardPage.tsx`） */
+  /* 颜色只认主题变量：**单色** `--accent`（原先两条分别用 --accent / --accent-2），
+     一成面积的浅底让节奏比一根细线好读。 */
   .kb-spark-line {
     fill: none;
     stroke: var(--accent);
@@ -652,7 +687,7 @@
   }
 
   .kb-spark-area {
-    fill: color-mix(in srgb, var(--accent) 16%, transparent);
+    fill: color-mix(in srgb, var(--accent) 14%, transparent);
     stroke: none;
   }
 
@@ -663,26 +698,6 @@
   }
 
   .kb-spark-empty .kb-spark-area {
-    fill: none;
-  }
-
-  /* 卡片上第二根线（检索命中）换一档副色：与入库那根的 `--accent` 分开，
-     一眼看出两行量的是两件事。副色就是概览文件类型图用的那一枚（`--accent-2`），
-     不另立图表配色。**空线仍然退成中性色**——那两条选择器比上面多一段，
-     是为了不受"谁写在后面"影响（同优先级时后写者胜，靠顺序就成了一条暗规则）。 */
-  .kb-trend-hits .kb-spark-line {
-    stroke: var(--accent-2);
-  }
-
-  .kb-trend-hits .kb-spark-area {
-    fill: color-mix(in srgb, var(--accent-2) 16%, transparent);
-  }
-
-  .kb-trend-hits .kb-spark-empty .kb-spark-line {
-    stroke: var(--border-strong);
-  }
-
-  .kb-trend-hits .kb-spark-empty .kb-spark-area {
     fill: none;
   }
 
@@ -770,7 +785,8 @@
     display: flex;
     align-items: stretch;
     gap: var(--space-5);
-    margin-top: var(--space-4);
+    /* 页头下面那块内容：与列表页 `page-shell-body` 的 24px 同一档呼吸 */
+    margin-top: var(--space-5);
   }
 
   .kb-tree {
@@ -1124,7 +1140,7 @@
   }
 
   .kb-col-questions {
-    flex: 0 0 64px;
+    flex: 0 0 56px;
     overflow: hidden;
     font-size: var(--text-meta-size);
     color: var(--text-secondary);
@@ -1138,7 +1154,7 @@
   }
 
   .kb-col-size {
-    flex: 0 0 72px;
+    flex: 0 0 64px;
     font-size: var(--text-meta-size);
     color: var(--text-tertiary);
     text-align: right;
@@ -1168,27 +1184,6 @@
 
   .kb-doc-group + .kb-doc-group {
     border-top: 1px solid var(--border-hairline);
-  }
-
-  .kb-doc-empty {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    font-size: var(--text-meta-size);
-  }
-
-  .kb-doc-empty-text {
-    color: var(--text-secondary);
-  }
-
-  .kb-doc-empty-hint {
-    overflow: hidden;
-    flex: 1;
-    min-width: 0;
-    font-size: var(--text-micro-size);
-    color: var(--text-tertiary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .kb-doc-filler {
@@ -1286,15 +1281,6 @@
     text-align: center;
   }
 
-  .kb-readonly-note {
-    margin: var(--space-4) 0 0;
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-meta-size);
-    color: var(--text-secondary);
-    background: var(--bg-subtle);
-    border-radius: var(--radius-control);
-  }
-
   /* ------------------------------------------------------------ 抽屉 */
 
   /**
@@ -1317,6 +1303,10 @@
     opacity: 0;
   }
 
+  /**
+ * 抽屉是**浮在列表之上的一层纸**：白面 + 浮层投影（不是把页面底色再铺一遍——
+ * 那样它与背后的列表是同一个平面，只有一条遮罩在说"我上面有一层"）。
+ */
   .kb-drawer {
     position: fixed;
     inset: 0 0 0 auto;
@@ -1324,9 +1314,9 @@
     display: flex;
     flex-direction: column;
     width: min(720px, 46vw);
-    background: var(--bg-canvas);
-    border-left: 1px solid var(--border);
-    box-shadow: -10px 0 28px rgb(0 0 0 / 12%);
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border-hairline);
+    box-shadow: var(--shadow-popover);
     animation: kb-drawer-in 180ms ease-out;
     transition: transform 180ms ease-out;
   }
@@ -1401,15 +1391,16 @@
     border-radius: var(--radius-control);
   }
 
+  /* 基本信息：**一条事实带，不是卡片**——抽屉里再套一张带底色的卡会变成
+     "卡片里的卡片"。上下各一条发丝线把它和前后文分开，字段之间靠列宽与留白。 */
   .kb-meta {
     display: grid;
-    gap: var(--space-4) var(--space-6);
+    gap: var(--space-3) var(--space-6);
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     margin: 0;
-    padding: var(--space-4) var(--space-5);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--border-hairline);
+    border-bottom: 1px solid var(--border-hairline);
   }
 
   .kb-meta dt {
@@ -1419,18 +1410,19 @@
 
   .kb-meta dd {
     margin: var(--space-1) 0 0;
+    font-size: var(--text-meta-size);
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
   }
 
+  /* 摘要：左侧一条发丝线引出的"一句话"，不铺底色（正文才是这一页的主体） */
   .kb-summary {
-    margin: 0 0 var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    margin: 0 0 var(--space-4);
+    padding: var(--space-1) 0 var(--space-1) var(--space-4);
     font-size: var(--text-meta-size);
     line-height: var(--line-prose);
     color: var(--text-secondary);
-    background: var(--bg-subtle);
-    border-radius: var(--radius-control);
+    border-left: 2px solid var(--border-strong);
   }
 
   .kb-summary-label {
@@ -1439,62 +1431,19 @@
     color: var(--text-tertiary);
   }
 
-  .kb-tabs {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-4);
-    margin-top: var(--space-5);
-    border-bottom: 1px solid var(--border-hairline);
+  /* 页签本身是 `@/ui/tabs` 的胶囊（原语里的取值）；这里只管它在抽屉里的位置 */
+  .kb-view-tabs,
+  .kb-reader-switch {
+    margin-top: var(--space-2);
   }
 
-  .kb-tab {
-    padding: var(--space-2) 0;
-    margin-bottom: -1px;
-    font-size: var(--text-body-size);
-    color: var(--text-secondary);
-    border-bottom: 2px solid transparent;
+  /* 正文阅读面：**限宽到 `--measure`、行高走 `--line-prose`**。
+     一行太长时眼睛要来回找行首，阅读面比抽屉窄一档反而更好读。 */
+  .kb-reader {
+    max-width: var(--measure);
+    margin-top: var(--space-3);
+    line-height: var(--line-prose);
   }
-
-  .kb-tab:hover {
-    color: var(--text-primary);
-  }
-
-  .kb-tab-on {
-    color: var(--text-primary);
-    border-bottom-color: var(--accent);
-  }
-
-  .kb-tabs-hint {
-    margin-left: auto;
-    padding-bottom: var(--space-2);
-    font-size: var(--text-micro-size);
-    color: var(--text-tertiary);
-  }
-
-  .kb-source-switch {
-    display: inline-flex;
-    gap: var(--space-pair);
-    margin-top: var(--space-4);
-    padding: var(--space-pair);
-    background: var(--bg-subtle);
-    border-radius: var(--radius-row);
-  }
-
-  .kb-source-tab {
-    height: 26px;
-    padding: 0 var(--space-3);
-    font-size: var(--text-meta-size);
-    color: var(--text-secondary);
-    border-radius: var(--radius-control);
-  }
-
-  .kb-source-tab-on {
-    color: var(--text-primary);
-    background: var(--bg-subtle);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
-  }
-
-  /* ------------------------------------------------------------ 按页看原文 */
 
   .kb-pages {
     margin-top: var(--space-4);
@@ -1537,10 +1486,8 @@
     white-space: nowrap;
   }
 
-  /* 工具栏里的那一枚「图片 / 文字」贴着输入框，不再自带顶边距 */
-  .kb-pages-bar .kb-source-switch {
-    margin-top: 0;
-  }
+  /* 页签是 `@/ui/tabs`（`.kb-pages-switch` 只做定位，形状与底色由原语给），
+     这一行里它与页码输入框同一水平线，不再自带顶边距。 */
 
   .kb-pages-total {
     margin: 0 0 var(--space-2);
@@ -1554,15 +1501,16 @@
     list-style: none;
   }
 
+  /* 每页是**一段连续阅读面上的分节**，不是一叠卡片：发丝线分隔、留白呼吸。
+     页图本身还带着一条极浅的描边（它是一张图，不是一块卡片）。 */
   .kb-page {
-    padding: var(--space-4);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    max-width: var(--measure);
+    padding: var(--space-4) 0 var(--space-5);
+    border-top: 1px solid var(--border-hairline);
   }
 
   .kb-page + .kb-page {
-    margin-top: var(--space-3);
+    margin-top: 0;
   }
 
   .kb-page-head {
@@ -1597,8 +1545,9 @@
     color: var(--text-tertiary);
   }
 
-  /* 原文渲染（`kb-reader*` 三条）已随预览交给 `@/features/preview` 而删除：
-   那三条在换原语之前就没有调用方了（本次一并清掉，免得看着像还有第二个阅读器）。 */
+  /* 原文渲染本身交给 `@/features/preview`；这里只留 `.kb-reader` 那一层——
+     它给阅读面限宽（`--measure`）与正文行高（`--line-prose`）。
+     两条旧规则（`.kb-reader-*`）在换原语之前就没有调用方了，本次一并清掉。 */
 
   .kb-muted {
     margin: var(--space-4) 0 0;
@@ -1631,18 +1580,19 @@
   }
 
   .kb-chunk {
-    padding: var(--space-4) var(--space-5);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    max-width: var(--measure);
+    padding: var(--space-4) 0;
+    border-top: 1px solid var(--border-hairline);
   }
 
   .kb-chunk + .kb-chunk {
-    margin-top: var(--space-3);
+    margin-top: 0;
   }
 
+  /* 被停用的块只是"不参与检索"：保留内容，用一道侧标与极浅的底提示它 */
   .kb-chunk-disabled {
-    background: var(--bg-subtle);
+    padding-left: var(--space-3);
+    background: var(--status-warning-soft);
     border-left: 2px solid var(--status-warning);
   }
 
@@ -1828,6 +1778,29 @@
 
   /* ------------------------------------------------------------ Wiki */
 
+  /* Wiki 页头：`库名 › Wiki` 是一条路径，不是两句话；窄的时候只压缩库名 */
+  .kb-wiki-crumb {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .kb-wiki-crumb-name {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+  }
+
+  .kb-wiki-crumb > svg {
+    flex: 0 0 auto;
+    margin: 0 var(--space-1);
+  }
+
+  .kb-wiki-crumb > span {
+    flex: 0 0 auto;
+  }
+
   .kb-wiki-body {
     display: flex;
     align-items: stretch;
@@ -1924,8 +1897,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    font-size: var(--text-page-title-size);
+    /* 页头那条路径（28px）是这一页的标题；文章标题是正文里的第一个标题，
+       比它低一档（19px），两层标题才不打架。 */
+    font-size: var(--text-section-size);
     font-weight: 600;
+    letter-spacing: -0.012em;
   }
 
   .kb-article-brief {
@@ -2670,20 +2646,20 @@
   }
 
   /* 判定条：后端 `summary` 那一行放在命中列表**上面**（判定在前、原文在后）。
-     `fit` 自己也挂一枚小标——`none`（"资料里没有"）整条换一档警示底：
-     那是"这个库答不了这个问题"，与"检索出错"是两件事，红色会把它读成故障。 */
+     `fit` 自己也挂一枚小标——`none`（"资料里没有"）那一条左侧换成警示色：
+     那是"这个库答不了这个问题"，与"检索出错"是两件事，红色会把它读成故障。
+     形状是**一条侧线**，不是一块卡：它读起来是"结论"，不是"又一个结果"。 */
   .kb-verdict {
-    margin: 0 0 var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    margin: 0 0 var(--space-4);
+    padding: var(--space-1) 0 var(--space-1) var(--space-4);
     font-size: var(--text-meta-size);
     line-height: var(--line-prose);
     color: var(--text-secondary);
-    background: var(--bg-subtle);
-    border-radius: var(--radius-panel);
+    border-left: 2px solid var(--border-strong);
   }
 
   .kb-verdict-none {
-    background: var(--status-warning-soft);
+    border-left-color: var(--status-warning);
   }
 
   .kb-verdict-mark {
@@ -2692,7 +2668,7 @@
     padding: 0 var(--space-2);
     font-size: var(--text-micro-size);
     color: var(--text-primary);
-    background: var(--bg-canvas);
+    background: var(--bg-subtle);
     border-radius: var(--radius-control);
   }
 
@@ -2712,15 +2688,14 @@
     list-style: none;
   }
 
+  /* 命中是**行**，不是卡：列表行之间用发丝线，读起来是一条结果流 */
   .kb-hit {
-    padding: var(--space-4);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    padding: var(--space-4) 0;
+    border-top: 1px solid var(--border-hairline);
   }
 
   .kb-hit + .kb-hit {
-    margin-top: var(--space-3);
+    margin-top: 0;
   }
 
   .kb-hit-title {
@@ -2935,8 +2910,15 @@
     }
   }
 
+  @media (max-width: 1500px) {
+    /* 上传者是"谁传的"，扫读优先级低于文件名与状态：中等宽屏先收它，
+       把宽度让给文件名（文件名是这一页的检索主键，截断后只能点开才知道是哪篇）。 */
+    .kb-col-uploader {
+      display: none;
+    }
+  }
+
   @media (max-width: 1200px) {
-    .kb-col-uploader,
     .kb-col-size {
       display: none;
     }

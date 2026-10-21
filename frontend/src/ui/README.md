@@ -108,30 +108,31 @@ import 也从 `@radix-ui/react-*` 换成了统一的 `radix-ui` 包——凭记�
 
 ### 2.2 尺寸与间距
 
-| 项                         | 取值                                                                                                     | 依据                                                                                                                 |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 控件高度（按钮/输入/下拉） | `h-8`（32px）；`sm` 档 `h-7`、`lg` `h-9`、`xs` `h-6`；图标按钮 `size-8`                                  | `--control-height: 32px`（"输入框 / 下拉 / 按钮唯一的高度口径"）                                                     |
-| 多行输入                   | `min-h-16` + `resize-y`                                                                                  | 与旧前端 `rows=3` 的实际高度一致                                                                                     |
-| 表头                       | `h-9`（36px）+ `bg-[var(--bg-subtle)]`                                                                   | `.panel-head`                                                                                                        |
-| 菜单项                     | `min-h-9`（36px）+ `py-1.5`                                                                              | `--menu-item-height`（两行内容仍能长）                                                                               |
-| 菜单内边距                 | `p-2`（8px），分隔线 `-mx-2`                                                                             | `--menu-pad`                                                                                                         |
-| 弹窗内边距                 | `p-4`（16px），宽度 `sm:max-w-[480px]`                                                                   | 旧 `AppModal` 的 `md` 档                                                                                             |
-| 标题字号                   | `text-[length:var(--text-section-size)]` + `tracking-[-0.005em]`                                         | 与 `tokens.css` 的 `h2` / `.modal-title` 同级                                                                        |
-| 正文字号                   | `text-[length:var(--text-meta-size)]`（14px）、`...-micro-size`（12px）、`...-body-size`（15px，输入类） | 三个具名类是坑，见 §1.1；取值仍来自 `@theme inline` 注册的那三档                                                     |
-| 间距                       | 全部用 Tailwind 的数值刻度（`p-4`/`gap-2`/`px-3`…）                                                      | Tailwind 默认的 4px 基数与 `--space-*` **逐值相等**（`p-1.5`=6px、`p-2.5`=10px…），所以数值刻度就是 `--space-*` 阶梯 |
-| 滚动条槽                   | `w-3`（12px）                                                                                            | `::-webkit-scrollbar { width: 12px }`                                                                                |
+| 项                         | 取值                                                                                                       | 依据                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 控件高度（按钮/输入/下拉） | `h-9`（36px）；`sm` 档 `h-8`、`lg` `h-10`、`xs` `h-6`；图标按钮 `size-9`                                   | `--control-height: 36px`（"输入框 / 下拉 / 按钮唯一的高度口径"；2026-10 重做从 32 提到 36）                          |
+| 多行输入                   | `min-h-20` + `resize-y`                                                                                    | 36px 控件口径下的一档（2026-10 重做从 64 提到 80）                                                                   |
+| 表头                       | `h-11`（44px）+ `bg-[var(--bg-subtle)]`                                                                    | `.panel-head`（2026-10 重做从 36 提到 44）                                                                           |
+| 菜单项                     | `min-h-9`（36px）+ `py-1.5`                                                                                | `--menu-item-height`（两行内容仍能长）                                                                               |
+| 菜单内边距                 | `p-2`（8px），分隔线 `-mx-2`                                                                               | `--menu-pad`                                                                                                         |
+| 弹窗内边距                 | `p-4`（16px），宽度 `sm:max-w-[480px]`                                                                     | 旧 `AppModal` 的 `md` 档                                                                                             |
+| 标题字号                   | `text-[length:var(--text-section-size)]` + `tracking-[-0.005em]`                                           | 与 `tokens.css` 的 `h2` / `.modal-title` 同级                                                                        |
+| 正文字号                   | `text-[length:var(--text-meta-size)]`（13.5px）、`...-micro-size`（12px）、`...-body-size`（15px，输入类） | 三个具名类是坑，见 §1.1；取值仍来自 `@theme inline` 注册的那三档                                                     |
+| 间距                       | 全部用 Tailwind 的数值刻度（`p-4`/`gap-2`/`px-3`…）                                                        | Tailwind 默认的 4px 基数与 `--space-*` **逐值相等**（`p-1.5`=6px、`p-2.5`=10px…），所以数值刻度就是 `--space-*` 阶梯 |
+| 滚动条槽                   | `w-2.5`（10px）                                                                                            | `::-webkit-scrollbar { width: 10px }`                                                                                |
 
 ### 2.3 圆角
 
-| shadcn                                              | 我们的类                          | 令牌                                   |
-| --------------------------------------------------- | --------------------------------- | -------------------------------------- |
-| `rounded-sm`、`rounded-md`（控件、菜单项）          | `rounded-control`                 | `--radius-control` 10px                |
-| 胶囊槽（segmented 控件）                            | `rounded-row`                     | `--radius-row` 12px                    |
-| 卡片                                                | `rounded-[var(--radius-panel)]`   | `--radius-panel` 16px                  |
-| 浮层（菜单/下拉/选择/弹窗/抽屉/气泡之外的 popover） | `rounded-[var(--radius-overlay)]` | `--radius-overlay` 20px                |
-| `rounded-full`（开关/滑块/头像）                    | `rounded-pill`                    | `--radius-pill`                        |
-| `rounded-[4px]`（复选框、拖拽把手里的小方块）       | `rounded-[var(--radius-badge)]`   | `--radius-badge` 就是 4px 方角         |
-| 徽章                                                | `rounded-[var(--radius-badge)]`   | `--radius-badge` **4px 方角**（见 §4） |
+| shadcn                                              | 我们的类                          | 令牌                                                        |
+| --------------------------------------------------- | --------------------------------- | ----------------------------------------------------------- |
+| `rounded-sm`、`rounded-md`（控件、菜单项）          | `rounded-control`                 | `--radius-control` 10px                                     |
+| 输入类控件（输入框 / 下拉 / 多行输入）              | `rounded-[var(--radius-input)]`   | `--radius-input` 12px                                       |
+| 胶囊槽（segmented 控件）                            | `rounded-row`                     | `--radius-row` 12px                                         |
+| 卡片                                                | `rounded-[var(--radius-panel)]`   | `--radius-panel` 18px                                       |
+| 浮层（菜单/下拉/选择/弹窗/抽屉/气泡之外的 popover） | `rounded-[var(--radius-overlay)]` | `--radius-overlay` 22px                                     |
+| `rounded-full`（开关/滑块/头像）                    | `rounded-pill`                    | `--radius-pill`                                             |
+| `rounded-[4px]`（复选框、拖拽把手里的小方块）       | `rounded-[6px]`                   | 复选框自己的 6px（`--radius-badge` 已改胶囊，不再借它）     |
+| 徽章                                                | `rounded-[var(--radius-badge)]`   | `--radius-badge` **胶囊**（`shape="square"` 才是 6px 方角） |
 
 > `index.css` 里注册的 `--radius-card` 指向一个**不存在**的 `--radius-card` 令牌，
 > 所以 `rounded-card` 是空类；卡片请用 `rounded-[var(--radius-panel)]`。详见 §7。
@@ -172,27 +173,27 @@ import 也从 `@radix-ui/react-*` 换成了统一的 `radix-ui` 包——凭记�
 
 ## 4. 有意偏离上游的地方（全部有理由，改回去之前先读理由）
 
-| 偏离                                                           | 理由                                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Button` 默认高度 36 → **32px**                                | 本仓"按钮与输入框同高"的硬口径（`--control-height`）                                                                                                                                                                                                                                             |
-| `Button variant="destructive"` 是**红字 + 浅红底**，不是红实心 | 沿用旧前端 `AppButton variant="danger"`；Kimi 的纪律是"动作靠墨色，红只做小面积"，且白字压红在深色主题下只有 3.0:1                                                                                                                                                                               |
-| `Badge` 默认圆角 999px → **4px 方角**（另留 `shape="pill"`）   | `tokens.css` 对 `--radius-badge` 有明确注解："Kimi 的 badge 一律 4px 方角，胶囊是最像生成式设计的一种做法"。方角仍给卡片里的 `chip`（旧 `.chip` 本来就是方角）；**状态标签**那条走 `shape="pill"`——旧 `StatusTag.vue` 的 `.status` 明确是胶囊（22px 高 + `--radius-pill`），两者本来就是两种东西 |
-| `Tooltip` 浅底 + 描边（上游是反色气泡），并**去掉小三角**      | 与旧前端 `InfoTip` 一致；带描边的气泡接实心三角会留接缝                                                                                                                                                                                                                                          |
-| `Popover`/菜单**保留 1px 描边**                                | Kimi 深色靠底色差分，浅色下 `Bg-Tertiary`(#fff) 与画布(#fbfaf9) 几乎同色，必须靠描边                                                                                                                                                                                                             |
-| `Card` 去掉 `shadow-sm`                                        | 规范：静态内容不用阴影                                                                                                                                                                                                                                                                           |
-| `Skeleton` 底色 `bg-accent` → `bg-[var(--bg-hover)]`           | 与旧前端 `SkeletonBlock` 同款                                                                                                                                                                                                                                                                    |
-| `Tabs` 指示条/当前项用**墨色与底色差**，不用品牌蓝             | 同上，强调只在小面积上用品牌色                                                                                                                                                                                                                                                                   |
-| `ScrollArea` 只是"要和浮层一起滚"时才用                        | 全局原生细滚动条（tokens.css 那一大段）已经覆盖常规场景                                                                                                                                                                                                                                          |
-| `Sheet` 的关闭按钮 28×28 + `--bg-hover`                        | 与旧 `AppModal` 的关闭按钮同款                                                                                                                                                                                                                                                                   |
-| `Toaster` 位置 `top-center`、图标用语义色、主题读 `data-theme` | 旧前端通知条在顶部居中；不引 `next-themes`                                                                                                                                                                                                                                                       |
-| `Avatar` 默认尺寸 32 → **28px**（`size-[var(--avatar-size)]`） | tokens.css 那一行注释就是照 Kimi 的 `.not-login-icon` 实测写的（28×28 圆形）                                                                                                                                                                                                                     |
-| `Avatar` 兜底文字用 `--text-secondary`，不是三级灰             | 首字母/缩写是**要被读到的内容**，而三级灰的用途约束是"只给可略过的元信息"（见 `themes/light.css` 文件头）                                                                                                                                                                                        |
-| `Checkbox` 选中态是**品牌蓝**（`--accent`）不是墨色实心        | 墨色实心在本仓只有一个意思："主按钮"；勾选框做成墨块会被读成一个按钮                                                                                                                                                                                                                             |
-| `AlertDialog` 内边距 `p-6` → `p-4`、宽度 480px                 | 本仓的弹窗只有一套取值（`dialog.tsx` 的 `md` 档），`size="sm"` 仍保留 `max-w-xs`                                                                                                                                                                                                                 |
-| `Progress` 把 `value` 也传给 `Root`                            | 上游只拿它算 `translateX`，于是 `role="progressbar"` 上没有 `aria-valuenow` / `aria-valuemax`——读屏读不出进度                                                                                                                                                                                    |
-| `ContextMenu` / `Command` 的菜单取值**对齐 `DropdownMenu`**    | 上游这三份的 `p-1` / `p-2`、`shadow-md` / `lg`、字号各写各的；本仓菜单只有一套取值                                                                                                                                                                                                               |
-| `ResizableHandle` 删掉 `focus-visible:ring-1 ...`              | 与其它组件同一条：焦点环只有 `tokens.css` 那条全局 `:focus-visible`（`role="separator"` / `tabIndex` 由库给，未丢）                                                                                                                                                                              |
-| 字号写带 `length:` 提示的任意值形式而不是具名类                | 具名类与 `tokens.css` 的遗留辅助类同名且会被它们的 `color` 压过，见 §1.1                                                                                                                                                                                                                         |
+| 偏离                                                                       | 理由                                                                                                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Button` 默认高度 36 → **36px**（与 shadcn 的 36 一致，`sm` 32 / `lg` 40） | 本仓"按钮与输入框同高"的硬口径（`--control-height` 36px，2026-10 重做从 32 提到 36）                                                                               |
+| `Button variant="destructive"` 是**红字 + 浅红底**，不是红实心             | 沿用旧前端 `AppButton variant="danger"`；"动作靠墨色/品牌色，红只做小面积"，且白字压红在深色主题下只有 3.0:1                                                       |
+| `Badge` 默认圆角是**胶囊**（`shape="square"` 才是 6px 方角）               | 2026-10 重做：这一版徽章承载的是**状态短语**（"已完成""解析中"），胶囊读起来像一个状态；方角那档留给"种类 / 计数"这类名词性标记。`--radius-badge` 因此改成了 999px |
+| `Tooltip` 浅底 + 描边（上游是反色气泡），并**去掉小三角**                  | 与旧前端 `InfoTip` 一致；带描边的气泡接实心三角会留接缝                                                                                                            |
+| `Popover`/菜单**保留 1px 描边**                                            | 深色靠底色差分时边界更清楚；浅色下 `bg-menu`(#fff) 与画布(#F1EEE8) 只差一层，描边兜住边界                                                                          |
+| `Card` **保留**阴影（`--shadow-card`）                                     | 2026-10 重做：分块交给白面 + 投影，描边只做兜底（旧规范"静态内容不用阴影"已作废）                                                                                  |
+| `Skeleton` 底色 `bg-accent` → `bg-[var(--bg-active)]`                      | 与旧前端 `SkeletonBlock` 同款                                                                                                                                      |
+| `Tabs` 当前项是白面 + 浅落影（胶囊槽），line 档指示条用墨色                | 分段控件的"当前项"浮起来，比"换个底色"更清楚；强调仍然只在小面积上用品牌色                                                                                         |
+| `ScrollArea` 只是"要和浮层一起滚"时才用                                    | 全局原生细滚动条（tokens.css 那一大段）已经覆盖常规场景                                                                                                            |
+| `Sheet` 的关闭按钮 28×28 + `--bg-hover`                                    | 与旧 `AppModal` 的关闭按钮同款                                                                                                                                     |
+| `Toaster` 位置 `top-center`、图标用语义色、主题读 `data-theme`             | 旧前端通知条在顶部居中；不引 `next-themes`                                                                                                                         |
+| `Avatar` 默认尺寸 32 → **28px**（`size-[var(--avatar-size)]`）             | tokens.css 那一行注释就是照 Kimi 的 `.not-login-icon` 实测写的（28×28 圆形）                                                                                       |
+| `Avatar` 兜底文字用 `--text-secondary`，不是三级灰                         | 首字母/缩写是**要被读到的内容**，而三级灰的用途约束是"只给可略过的元信息"（见 `themes/light.css` 文件头）                                                          |
+| `Checkbox` 选中态是**品牌蓝**（`--accent`）不是墨色实心                    | 墨色实心在本仓只有一个意思："主按钮"；勾选框做成墨块会被读成一个按钮                                                                                               |
+| `AlertDialog` 内边距 `p-6` → `p-4`、宽度 480px                             | 本仓的弹窗只有一套取值（`dialog.tsx` 的 `md` 档），`size="sm"` 仍保留 `max-w-xs`                                                                                   |
+| `Progress` 把 `value` 也传给 `Root`                                        | 上游只拿它算 `translateX`，于是 `role="progressbar"` 上没有 `aria-valuenow` / `aria-valuemax`——读屏读不出进度                                                      |
+| `ContextMenu` / `Command` 的菜单取值**对齐 `DropdownMenu`**                | 上游这三份的 `p-1` / `p-2`、`shadow-md` / `lg`、字号各写各的；本仓菜单只有一套取值                                                                                 |
+| `ResizableHandle` 删掉 `focus-visible:ring-1 ...`                          | 与其它组件同一条：焦点环只有 `tokens.css` 那条全局 `:focus-visible`（`role="separator"` / `tabIndex` 由库给，未丢）                                                |
+| 字号写带 `length:` 提示的任意值形式而不是具名类                            | 具名类与 `tokens.css` 的遗留辅助类同名且会被它们的 `color` 压过，见 §1.1                                                                                           |
 
 ## 5. 已 vendor（29 个）
 

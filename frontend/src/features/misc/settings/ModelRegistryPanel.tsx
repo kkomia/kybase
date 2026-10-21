@@ -37,6 +37,7 @@ import {
 import { formatCount } from '@/lib/format'
 
 import { notifyError, notifySuccess } from '../shared/toast'
+import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import {
   DropdownMenu,
@@ -52,7 +53,6 @@ import {
   Field,
   OptionSelect,
   SkeletonBlock,
-  StatusTag,
 } from '../shared/composites'
 import { mergeModelOptions, presetModelMeta } from './providerPresets'
 
@@ -69,6 +69,31 @@ const EMPTY_MODEL: ModelDraft = { model_id: '', label: '', dim: '', capabilities
 
 type DeleteTarget =
   { kind: 'provider'; provider: Provider } | { kind: 'model'; model: RegisteredModel }
+
+/**
+ * 供应商那一枚状态徽章。
+ *
+ * **一枚就够**：同一个人在卡头读的是"这家能不能用"——停用了、缺密钥、正常，
+ * 三选一。两枚并排（"已启用" + "未配置密钥"）会同时说"能用"和"不能用"。
+ */
+function providerBadge(provider: Provider): {
+  label: string
+  variant: 'success' | 'warning' | 'secondary'
+} {
+  if (!provider.enabled) return { label: '已停用', variant: 'secondary' }
+  if (!provider.api_key_configured) return { label: '未配置密钥', variant: 'warning' }
+  return { label: '已启用', variant: 'success' }
+}
+
+/**
+ * 卡片里的行内表单（编辑供应商 / 登记模型 / 编辑模型）。
+ *
+ * **它不是第二张卡**：契约说"不要在卡片里再套卡片"。所以这里不套 `.m-form-card`
+ * （那个有四面描边 + 圆角 + 浅底，放进白卡里就是一张小卡），而是一条**通栏的浅色带**
+ * ——顶上一条发丝线与上面的行分开，左右直接顶到卡片边缘。读起来是"这一块展开成了
+ * 表单"，而不是"卡里又开了一张卡"。
+ */
+const INLINE_FORM = 'flex flex-col gap-3 border-t border-border-hairline bg-subtle px-4 py-3'
 
 /**
  * `canWrite = false`：只读态（成员账号）——写端点全要管理员，与其让人点出一串 403，
@@ -334,21 +359,32 @@ export function ModelRegistryPanel({ canWrite = true }: { canWrite?: boolean }) 
         : ''
 
   return (
-    <div className="m-block">
-      {/* 独立页里的区块标题：页标题已经是「模型」，这里只说这一块管什么 */}
-      <h3 className="m-section-title">供应商与模型</h3>
-      <div className="m-block-head">
-        <h3 className="m-block-title">供应商</h3>
+    <section className="flex flex-col gap-4">
+      {/* 这一块的标题：页标题已经是「模型」，这里只说这一块管什么 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[length:var(--text-section-size)] font-semibold tracking-[-0.012em] text-text-primary">
+          供应商与模型
+        </h2>
         {canWrite && (
-          <Button onClick={() => setAddingProvider((value) => !value)}>
-            <Plus size={14} />
-            {addingProvider ? '取消' : '添加供应商'}
+          /* 表单打开时这一颗退成次要按钮：一次只留一个主动作（表单右下角的「添加」） */
+          <Button
+            variant={addingProvider ? 'secondary' : 'default'}
+            onClick={() => setAddingProvider((value) => !value)}
+          >
+            {addingProvider ? (
+              '取消'
+            ) : (
+              <>
+                <Plus size={14} />
+                添加供应商
+              </>
+            )}
           </Button>
         )}
       </div>
 
       {addingProvider && (
-        <div className="m-form-card">
+        <div className="m-form-card max-w-[760px]">
           <div className="m-form-grid">
             {/* 预设：一键填好名称与接口地址（各家地址不一样，抄地址是纯摩擦） */}
             <div className="m-field-wide">
@@ -406,7 +442,7 @@ export function ModelRegistryPanel({ canWrite = true }: { canWrite?: boolean }) 
               </Field>
             </div>
           </div>
-          <div className="m-form-actions">
+          <div className="m-form-actions justify-end">
             <Button
               disabled={busy === 'provider:create' || !providerDraft.name.trim()}
               onClick={() => createProviderMutation.mutate()}
@@ -418,353 +454,386 @@ export function ModelRegistryPanel({ canWrite = true }: { canWrite?: boolean }) 
       )}
 
       {providers.length === 0 && !addingProvider && (
-        <p className="m-muted">还没有供应商。先添加一家，再登记模型。</p>
+        <p className="text-[length:var(--text-meta-size)] text-text-secondary">
+          还没有供应商。先添加一家，再登记模型。
+        </p>
       )}
 
-      {providers.map((provider) => (
-        <div key={provider.id} className="m-provider">
-          {/* 卡内三段式：标题 → 元信息 → 次要操作。
-              操作全部收进右上角「⋯」——五个按钮平铺会把卡片变成按钮墙 */}
-          <div className="m-provider-head">
-            <div className="m-provider-title">
-              <span className="m-provider-name">{provider.name}</span>
-              {!provider.enabled && <StatusTag tone="warning" label="已停用" />}
-            </div>
-            {canWrite && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`${provider.name} 的操作`}
-                    title={`${provider.name} 的操作`}
-                  >
-                    <EllipsisVertical />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem
-                    disabled={!provider.api_key_configured || busy === `test:${provider.id}`}
-                    onSelect={() => testProviderMutation.mutate(provider)}
-                  >
-                    <RefreshCw size={14} />
-                    测试连接
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setEditingProvider(provider.id)
-                      // **密钥栏留空**：留空 = 不改。把掩码填进去会被当成新密钥
-                      setProviderEdit({
-                        name: provider.name,
-                        base_url: provider.base_url,
-                        api_key: '',
-                      })
-                    }}
-                  >
-                    编辑
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => startAddModel(provider)}>
-                    添加模型
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => toggleProviderMutation.mutate(provider)}>
-                    {provider.enabled ? '停用' : '启用'}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => setDeleteTarget({ kind: 'provider', provider })}
-                  >
-                    删除
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-
-          {/*
-            供应商卡上**只留"哪把钥匙"**（v0.53）。原先这一行还有「供应商类型」与
-            「N 个模型」，下面另起一行印 base_url——三样都不重复任何东西，但也没有
-            区分度：这一列里所有供应商都是同一类，模型数量下面那份清单里数得出来，
-            而 base_url 是实现细节（要看要改去「编辑」）。用户圈的就是这一块。
-            掩码密钥留着：同一个供应商配了几把钥匙时，它是唯一能分辨的那一条。
-          */}
-          <p className="m-provider-meta">
-            <span className="tabular">
-              {provider.api_key_configured ? provider.api_key_hint : '未配密钥'}
-            </span>
-          </p>
-
-          {editingProvider === provider.id && (
-            <div className="m-form-card">
-              <div className="m-form-grid">
-                <Field label="名称" htmlFor={`provider-edit-name-${provider.id}`}>
-                  <Input
-                    id={`provider-edit-name-${provider.id}`}
-                    value={providerEdit.name}
-                    onChange={(event) =>
-                      setProviderEdit((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </Field>
-                <div className="m-field-wide">
-                  <Field label="接口地址" htmlFor={`provider-edit-url-${provider.id}`}>
-                    <Input
-                      id={`provider-edit-url-${provider.id}`}
-                      value={providerEdit.base_url}
-                      onChange={(event) =>
-                        setProviderEdit((current) => ({ ...current, base_url: event.target.value }))
-                      }
-                    />
-                  </Field>
-                </div>
-                <div className="m-field-wide">
-                  <Field label="API Key" htmlFor={`provider-edit-key-${provider.id}`}>
-                    <Input
-                      id={`provider-edit-key-${provider.id}`}
-                      type="password"
-                      value={providerEdit.api_key}
-                      onChange={(event) =>
-                        setProviderEdit((current) => ({ ...current, api_key: event.target.value }))
-                      }
-                      placeholder="留空表示不修改"
-                    />
-                  </Field>
-                </div>
-              </div>
-              <div className="m-form-actions">
-                <Button onClick={() => setEditingProvider('')}>取消</Button>
-                <Button
-                  disabled={busy === `provider:${provider.id}`}
-                  onClick={() => updateProviderMutation.mutate(provider)}
-                >
-                  保存
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {addingModelFor === provider.id && (
-            <div className="m-form-card">
-              <div className="m-form-grid">
-                <Field label="模型 ID" htmlFor={`model-id-${provider.id}`}>
-                  {/* 候选来自上游探测（**不落库**）+ 预设建议；手写这条路一直在。
-                      用原生 `datalist`：可搜索、可手写、键盘可达，且没有额外的浮层要维护 */}
-                  <Input
-                    id={`model-id-${provider.id}`}
-                    list={`model-options-${provider.id}`}
-                    value={modelDraft.model_id}
-                    onChange={(event) => setModelId(event.target.value)}
-                    placeholder="选择或直接输入，如 BAAI/bge-m3"
-                  />
-                  <datalist id={`model-options-${provider.id}`}>
-                    {mergeModelOptions(availableOptions, presets, provider).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </datalist>
-                </Field>
-                <Field label="显示名" optional htmlFor={`model-label-${provider.id}`}>
-                  <Input
-                    id={`model-label-${provider.id}`}
-                    value={modelDraft.label}
-                    onChange={(event) =>
-                      setModelDraft((current) => ({ ...current, label: event.target.value }))
-                    }
-                    placeholder="对话主力"
-                  />
-                </Field>
-                <Field label="向量维度" optional htmlFor={`model-dim-${provider.id}`}>
-                  <Input
-                    id={`model-dim-${provider.id}`}
-                    value={modelDraft.dim}
-                    onChange={(event) =>
-                      setModelDraft((current) => ({ ...current, dim: event.target.value }))
-                    }
-                    placeholder="仅嵌入模型需要"
-                  />
-                </Field>
-                <div className="m-field-wide field">
-                  <span className="field-label">能力</span>
-                  <div className="m-cap-row">
-                    {Object.entries(capabilities).map(([key, label]) => (
-                      <CheckRow
-                        key={key}
-                        checked={modelDraft.capabilities.includes(key)}
-                        onCheckedChange={() => toggleCapability(setModelDraft, key)}
-                      >
-                        {label}
-                      </CheckRow>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              {/* 候选来自上游探测：说清"有没有的选"，失败/为空都指明手写这条出路 */}
-              <p className="m-source-note">
-                {loadingAvailable
-                  ? '正在从供应商拉取候选模型…'
-                  : availableError
-                    ? `拉取候选失败：${availableError}。可直接输入模型 ID。`
-                    : availableModels.length > 0
-                      ? `已拉取到 ${formatCount(availableModels.length)} 个候选，可搜索选择，也可直接输入。`
-                      : '供应商没有返回模型列表，手动填写模型 ID。'}
-                {!loadingAvailable && (
-                  <button
-                    type="button"
-                    className="m-source-refresh"
-                    onClick={() => void loadAvailable(provider)}
-                  >
-                    重新拉取
-                  </button>
-                )}
-              </p>
-              <div className="m-form-actions">
-                <Button onClick={() => setAddingModelFor('')}>取消</Button>
-                <Button
-                  disabled={busy === 'model:create' || !modelDraft.model_id.trim()}
-                  onClick={() => registerModelMutation.mutate(provider.id)}
-                >
-                  登记
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {modelsOf(provider.id).length > 0 ? (
-            <ul className="m-model-list">
-              {modelsOf(provider.id).map((model) => (
-                <li key={model.id} className="m-model-row">
-                  <div className="m-model-title">
-                    <span className="m-model-name">{model.label || model.model_id}</span>
-                    {/*
-                      名字旁边**只留"另一份信息"**（v0.53，用户圈着这一串说"同一个东西
-                      说两遍"）：模型 id 与用途原先也印在这里，而两样都已经在别处说过一遍
-                      ——名字本身就是 id（或它的短形式），用途是右边那枚胶囊。最刺眼的是
-                      `Qwen/Qwen3.5-4B` 那种没有单独显示名的模型：标题与副标题一字不差。
-                      维度留着：它不重复任何东西。
-                    */}
-                    {model.dim && (
-                      <span className="m-model-meta">
-                        <span className="tabular">{model.dim} 维</span>
+      {providers.length > 0 && (
+        <div className="stagger grid items-start gap-4 xl:grid-cols-2">
+          {providers.map((provider) => {
+            const state = providerBadge(provider)
+            return (
+              <article key={provider.id} className="surface-card flex flex-col overflow-hidden">
+                {/* 卡头一行：供应商名 + 一枚状态徽章；右边是"哪把钥匙"与行内菜单。
+                    操作全收进「⋯」——五个按钮平铺会把卡片变成按钮墙 */}
+                <header className="flex items-center gap-3 px-4 py-3">
+                  <h3 className="min-w-0 truncate">{provider.name}</h3>
+                  <Badge variant={state.variant}>{state.label}</Badge>
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {provider.api_key_configured && (
+                      <span className="tabular font-mono text-[length:var(--text-micro-size)] text-text-tertiary">
+                        {provider.api_key_hint}
                       </span>
                     )}
+                    {canWrite && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`${provider.name} 的操作`}
+                            title={`${provider.name} 的操作`}
+                          >
+                            <EllipsisVertical />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem
+                            disabled={
+                              !provider.api_key_configured || busy === `test:${provider.id}`
+                            }
+                            onSelect={() => testProviderMutation.mutate(provider)}
+                          >
+                            <RefreshCw size={14} />
+                            测试连接
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setEditingProvider(provider.id)
+                              // **密钥栏留空**：留空 = 不改。把掩码填进去会被当成新密钥
+                              setProviderEdit({
+                                name: provider.name,
+                                base_url: provider.base_url,
+                                api_key: '',
+                              })
+                            }}
+                          >
+                            编辑
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => startAddModel(provider)}>
+                            添加模型
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => toggleProviderMutation.mutate(provider)}
+                          >
+                            {provider.enabled ? '停用' : '启用'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => setDeleteTarget({ kind: 'provider', provider })}
+                          >
+                            删除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
-                  {/*
-                    正被哪些用途用着：一眼能看出"删了会影响什么"。
-                    两处口径：
-                    1. 这一格说的是**这个模型的角色**，不是"一切正常"——原先借 success
-                       的绿胶囊当角色色，于是同一张卡里绿色同时表示"已连接""已选定"
-                       与"正被某用途使用"，三种意思一件颜色；
-                    2. 没有任何用途的模型**显式写「未指定」**，不留空位：一列里几行有
-                       标记、几行空白，空白会被读成"没渲染出来"。
-                  */}
-                  {model.bound_slots.length > 0
-                    ? model.bound_slots.map((slot) => (
-                        <StatusTag key={slot} tone="neutral" label={`用于${slotLabel(slot)}`} />
-                      ))
-                    : [<StatusTag key="unbound" tone="neutral" label="未指定" />]}
-                  {canWrite && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`${model.label || model.model_id} 的操作`}
-                          title={`${model.label || model.model_id} 的操作`}
-                        >
-                          <EllipsisVertical />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            setEditingModel(model.id)
-                            setModelEdit({
-                              model_id: model.model_id,
-                              label: model.label,
-                              dim: model.dim === null ? '' : String(model.dim),
-                              capabilities: [...model.capabilities],
-                            })
-                          }}
-                        >
-                          编辑
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() => setDeleteTarget({ kind: 'model', model })}
-                        >
-                          删除
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                </header>
 
-                  {editingModel === model.id && (
-                    <div className="m-form-card m-model-edit">
-                      <div className="m-form-grid">
-                        <Field label="模型 ID" htmlFor={`model-edit-id-${model.id}`}>
+                {editingProvider === provider.id && (
+                  <div className={INLINE_FORM}>
+                    <div className="m-form-grid">
+                      <Field label="名称" htmlFor={`provider-edit-name-${provider.id}`}>
+                        <Input
+                          id={`provider-edit-name-${provider.id}`}
+                          value={providerEdit.name}
+                          onChange={(event) =>
+                            setProviderEdit((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <div className="m-field-wide">
+                        <Field label="接口地址" htmlFor={`provider-edit-url-${provider.id}`}>
                           <Input
-                            id={`model-edit-id-${model.id}`}
-                            value={modelEdit.model_id}
+                            id={`provider-edit-url-${provider.id}`}
+                            value={providerEdit.base_url}
                             onChange={(event) =>
-                              setModelEdit((current) => ({
+                              setProviderEdit((current) => ({
                                 ...current,
-                                model_id: event.target.value,
+                                base_url: event.target.value,
                               }))
                             }
                           />
                         </Field>
-                        <Field label="显示名" htmlFor={`model-edit-label-${model.id}`}>
-                          <Input
-                            id={`model-edit-label-${model.id}`}
-                            value={modelEdit.label}
-                            onChange={(event) =>
-                              setModelEdit((current) => ({ ...current, label: event.target.value }))
-                            }
-                          />
-                        </Field>
-                        <Field label="向量维度" htmlFor={`model-edit-dim-${model.id}`}>
-                          <Input
-                            id={`model-edit-dim-${model.id}`}
-                            value={modelEdit.dim}
-                            onChange={(event) =>
-                              setModelEdit((current) => ({ ...current, dim: event.target.value }))
-                            }
-                          />
-                        </Field>
-                        <div className="m-field-wide field">
-                          <span className="field-label">能力</span>
-                          <div className="m-cap-row">
-                            {Object.entries(capabilities).map(([key, label]) => (
-                              <CheckRow
-                                key={key}
-                                checked={modelEdit.capabilities.includes(key)}
-                                onCheckedChange={() => toggleCapability(setModelEdit, key)}
-                              >
-                                {label}
-                              </CheckRow>
-                            ))}
-                          </div>
-                        </div>
                       </div>
-                      <div className="m-form-actions">
-                        <Button onClick={() => setEditingModel('')}>取消</Button>
-                        <Button
-                          disabled={busy === `model:${model.id}`}
-                          onClick={() => updateModelMutation.mutate(model)}
-                        >
-                          保存
-                        </Button>
+                      <div className="m-field-wide">
+                        <Field label="API Key" htmlFor={`provider-edit-key-${provider.id}`}>
+                          <Input
+                            id={`provider-edit-key-${provider.id}`}
+                            type="password"
+                            value={providerEdit.api_key}
+                            onChange={(event) =>
+                              setProviderEdit((current) => ({
+                                ...current,
+                                api_key: event.target.value,
+                              }))
+                            }
+                            placeholder="留空表示不修改"
+                          />
+                        </Field>
                       </div>
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            addingModelFor !== provider.id && <p className="m-muted">还没有登记模型。</p>
-          )}
+                    <div className="m-form-actions justify-end">
+                      <Button variant="secondary" onClick={() => setEditingProvider('')}>
+                        取消
+                      </Button>
+                      <Button
+                        disabled={busy === `provider:${provider.id}`}
+                        onClick={() => updateProviderMutation.mutate(provider)}
+                      >
+                        保存
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {addingModelFor === provider.id && (
+                  <div className={INLINE_FORM}>
+                    <div className="m-form-grid">
+                      <Field label="模型 ID" htmlFor={`model-id-${provider.id}`}>
+                        {/* 候选来自上游探测（**不落库**）+ 预设建议；手写这条路一直在。
+                      用原生 `datalist`：可搜索、可手写、键盘可达，且没有额外的浮层要维护 */}
+                        <Input
+                          id={`model-id-${provider.id}`}
+                          list={`model-options-${provider.id}`}
+                          value={modelDraft.model_id}
+                          onChange={(event) => setModelId(event.target.value)}
+                          placeholder="选择或直接输入，如 BAAI/bge-m3"
+                        />
+                        <datalist id={`model-options-${provider.id}`}>
+                          {mergeModelOptions(availableOptions, presets, provider).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </datalist>
+                      </Field>
+                      <Field label="显示名" optional htmlFor={`model-label-${provider.id}`}>
+                        <Input
+                          id={`model-label-${provider.id}`}
+                          value={modelDraft.label}
+                          onChange={(event) =>
+                            setModelDraft((current) => ({
+                              ...current,
+                              label: event.target.value,
+                            }))
+                          }
+                          placeholder="对话主力"
+                        />
+                      </Field>
+                      <Field label="向量维度" optional htmlFor={`model-dim-${provider.id}`}>
+                        <Input
+                          id={`model-dim-${provider.id}`}
+                          value={modelDraft.dim}
+                          onChange={(event) =>
+                            setModelDraft((current) => ({ ...current, dim: event.target.value }))
+                          }
+                          placeholder="仅嵌入模型需要"
+                        />
+                      </Field>
+                      <div className="m-field-wide field">
+                        <span className="field-label">能力</span>
+                        <div className="m-cap-row">
+                          {Object.entries(capabilities).map(([key, label]) => (
+                            <CheckRow
+                              key={key}
+                              checked={modelDraft.capabilities.includes(key)}
+                              onCheckedChange={() => toggleCapability(setModelDraft, key)}
+                            >
+                              {label}
+                            </CheckRow>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {/* 候选来自上游探测：说清"有没有的选"，失败/为空都指明手写这条出路 */}
+                    <p className="m-source-note">
+                      {loadingAvailable
+                        ? '正在从供应商拉取候选模型…'
+                        : availableError
+                          ? `拉取候选失败：${availableError}。可直接输入模型 ID。`
+                          : availableModels.length > 0
+                            ? `已拉取到 ${formatCount(availableModels.length)} 个候选，可搜索选择，也可直接输入。`
+                            : '供应商没有返回模型列表，手动填写模型 ID。'}
+                      {!loadingAvailable && (
+                        <button
+                          type="button"
+                          className="m-source-refresh"
+                          onClick={() => void loadAvailable(provider)}
+                        >
+                          重新拉取
+                        </button>
+                      )}
+                    </p>
+                    <div className="m-form-actions justify-end">
+                      <Button variant="secondary" onClick={() => setAddingModelFor('')}>
+                        取消
+                      </Button>
+                      <Button
+                        disabled={busy === 'model:create' || !modelDraft.model_id.trim()}
+                        onClick={() => registerModelMutation.mutate(provider.id)}
+                      >
+                        登记
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {modelsOf(provider.id).length > 0 ? (
+                  <ul className="m-0 list-none divide-y divide-border-hairline border-t border-border-hairline p-0">
+                    {modelsOf(provider.id).map((model) => (
+                      <li key={model.id}>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+                          {/* 名字旁边只留"另一份信息"：维度不重复任何东西 */}
+                          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                            <span className="truncate text-[length:var(--text-meta-size)] text-text-primary">
+                              {model.label || model.model_id}
+                            </span>
+                            {model.dim !== null && (
+                              <span className="tabular shrink-0 text-[length:var(--text-micro-size)] text-text-tertiary">
+                                {model.dim} 维
+                              </span>
+                            )}
+                          </div>
+                          {/* 这个模型的角色（删它之前要知道会影响什么）；没有用途就明写
+                              「未指定」，不留空位——一列里几行有标记、几行空白，空白会被
+                              读成"没渲染出来" */}
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {model.bound_slots.length > 0 ? (
+                              model.bound_slots.map((slot) => (
+                                <Badge key={slot} variant="secondary">
+                                  用于{slotLabel(slot)}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-[length:var(--text-micro-size)] text-text-tertiary">
+                                未指定
+                              </span>
+                            )}
+                          </div>
+                          {canWrite && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`${model.label || model.model_id} 的操作`}
+                                  title={`${model.label || model.model_id} 的操作`}
+                                >
+                                  <EllipsisVertical />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setEditingModel(model.id)
+                                    setModelEdit({
+                                      model_id: model.model_id,
+                                      label: model.label,
+                                      dim: model.dim === null ? '' : String(model.dim),
+                                      capabilities: [...model.capabilities],
+                                    })
+                                  }}
+                                >
+                                  编辑
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => setDeleteTarget({ kind: 'model', model })}
+                                >
+                                  删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+
+                        {editingModel === model.id && (
+                          <div className={INLINE_FORM}>
+                            <div className="m-form-grid">
+                              <Field label="模型 ID" htmlFor={`model-edit-id-${model.id}`}>
+                                <Input
+                                  id={`model-edit-id-${model.id}`}
+                                  value={modelEdit.model_id}
+                                  onChange={(event) =>
+                                    setModelEdit((current) => ({
+                                      ...current,
+                                      model_id: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </Field>
+                              <Field label="显示名" htmlFor={`model-edit-label-${model.id}`}>
+                                <Input
+                                  id={`model-edit-label-${model.id}`}
+                                  value={modelEdit.label}
+                                  onChange={(event) =>
+                                    setModelEdit((current) => ({
+                                      ...current,
+                                      label: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </Field>
+                              <Field label="向量维度" htmlFor={`model-edit-dim-${model.id}`}>
+                                <Input
+                                  id={`model-edit-dim-${model.id}`}
+                                  value={modelEdit.dim}
+                                  onChange={(event) =>
+                                    setModelEdit((current) => ({
+                                      ...current,
+                                      dim: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </Field>
+                              <div className="m-field-wide field">
+                                <span className="field-label">能力</span>
+                                <div className="m-cap-row">
+                                  {Object.entries(capabilities).map(([key, label]) => (
+                                    <CheckRow
+                                      key={key}
+                                      checked={modelEdit.capabilities.includes(key)}
+                                      onCheckedChange={() => toggleCapability(setModelEdit, key)}
+                                    >
+                                      {label}
+                                    </CheckRow>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="m-form-actions justify-end">
+                              <Button variant="secondary" onClick={() => setEditingModel('')}>
+                                取消
+                              </Button>
+                              <Button
+                                disabled={busy === `model:${model.id}`}
+                                onClick={() => updateModelMutation.mutate(model)}
+                              >
+                                保存
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  addingModelFor !== provider.id && (
+                    <p className="border-t border-border-hairline px-4 py-3 text-[length:var(--text-micro-size)] text-text-tertiary">
+                      还没有登记模型。
+                    </p>
+                  )
+                )}
+              </article>
+            )
+          })}
         </div>
-      ))}
+      )}
 
       {/* 删除供应商 / 删除模型：两者的后果不同，由上面两个 computed 按目标拼出来 */}
       <ConfirmDialog
@@ -778,7 +847,7 @@ export function ModelRegistryPanel({ canWrite = true }: { canWrite?: boolean }) 
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && confirmDelete.mutate(deleteTarget)}
       />
-    </div>
+    </section>
   )
 }
 

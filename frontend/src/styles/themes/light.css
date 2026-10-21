@@ -1,318 +1,180 @@
 /**
- * 浅色主题 Token（《前端设计规范》§2、《Kimi 设计 token 对照表》）。
+ * 浅色主题 Token —— **纸与墨 · 信号蓝**（2026-10 界面重做）。
  *
- * **本轮起取值以 Kimi 的线上样式表为准**：底色暖白 #fbfaf9、文字用 alpha 灰阶、
- * 品牌蓝 #1783ff。抓取方式、全部实测值与映射表见 docs/归档/调研/Kimi-设计token对照表.md。
+ * 视觉北极星：*安静的实验室，活着的仪表*。暖纸底、墨色字、一个钴蓝；
+ * 层级靠字号、留白和一层极浅的投影，不靠满屏的 1px 灰线。
  *
- * 说明一处翻案：上一版明确拒绝过暖米白（理由是"生成式设计最扎堆的一套"）。
- * 本轮按"全面对齐 Kimi"的要求改为采用它的暖白——这是有意的取舍，
- * 不再靠"避开撞脸"来立个性，改为靠信息密度与克制的层级来立。
+ * ## 三层结构（顺序不能倒）
  *
- * 文件分两层，顺序不能倒：
- * 1. **Kimi token 是源**——用它的名字、抄它的值；
- * 2. **KYLAB 别名在下**——组件继续用 --bg-canvas / --text-primary 这些旧名字，
- *    只是把它们指向 Kimi 的值。
+ * 1. **源色板**（`--palette-*`）——只有这一节写十六进制；
+ * 2. **语义别名**（`--bg-*` / `--text-*` / `--border-*` / `--status-*` …）——组件只认这些；
+ * 3. **派生**（阴影、色阶）——由前两层算不出来、但必须跟着主题走的量。
  *
- * 这样分层是为了"换肤只改一处"：近百个组件已经全部走 var()，
- * 只要别名还在，改造就不需要动任何 .vue 文件。
+ * ## 对比度契约（不是审美偏好，是硬要求）
  *
- * ---------------------------------------------------------------- 对比度
- * 照抄 Kimi 的代价必须写明（规范 §2.4 已同步放宽）：
- *   Labels-Primary   16.88:1   Labels-Secondary  5.68:1
- *   Labels-Tertiary   3.35:1   Labels-Quaternary 2.11:1
- * Kimi 的三级灰只有 3.35:1，四级灰 2.11:1，都低于原先要求的 4.5:1。
- * 这是它"安静"观感的来源，我们照抄；但不让可读性一刀切掉，因此加了
- * **用途约束**（不改任何色值）：正文/表单标签/表头/按钮文字一律 Primary 或 Secondary；
- * Tertiary 只给可略过的元信息；Quaternary 只给禁用态与占位符。
+ * - 正文 / 表单标签 / 表头 / 按钮文字：≥ 4.5:1
+ * - 元信息（13.5px 二级墨色）：≥ 4.5:1
+ * - 占位文字与图标：≥ 3:1（WCAG 2.2 SC 1.4.11）
  *
- * **2026-09-24 第三批 A 起，中性灰不再照抄**：实测下来这两档不达标的地方恰恰是
- * "要被读到的"文本（列表摘要与日期、任务表的次级读数、侧栏计数、图注、占位文字），
- * 而"用途约束"在真实页面里守不住——这些位置本来就是正文口径的 12–14px。
- * 所以新增 `--Labels-Tertiary-text` / `--Labels-Quaternary-text` 两个**达标档**
- * （同色相，只压深；见下面第二节），别名 `--text-tertiary` / `--text-quaternary`
- * 指向它们；Kimi 的原值仍留在第一节，供对照与回溯。
- * **一处已知代价**：三级灰提到 4.5+ 之后与二级灰（0.6）的层级差从 0.15 收到 0.05，
- * 两级在同一屏上会靠得比较近——下一轮若要把层级重新拉开，方向是把二级灰也往上抬，
- * 而不是把三级灰压回去（那会把可读性又还回去）。
- *
- * 还有一处**唯一的增补**：Kimi 把品牌蓝只当填充用（按钮底、气泡底，上面压白字），
- * 所以它没有"蓝字"这一档。而 #1783ff 当文字只有 3.52:1，不合格。
- * 因此多出 --accent-text（同色相压深，见第二节：白底 5.37:1、徽标底 4.75:1）。
- * 语义色同理：深色主题下 Kimi 的原值本身就达标（5.08:1 起），浅色下才需要压深，
- * 所以这一组偏离只在本文件。
+ * 实测（白面 #FFFFFF 上）：
+ *   --text-primary   #14161A → 17.4:1
+ *   --text-secondary rgba(20,22,26,.70) → #616368 ≈ 6.0:1
+ *   --text-tertiary  rgba(20,22,26,.60) → #6E7074 ≈ 4.8:1
+ *   --text-quaternary rgba(20,22,26,.47) → #8B8D91 ≈ 3.3:1
+ *   --accent         #2F54EB → 白字压在上面 5.6:1
+ *   --accent-text    #2140C8 → 白底 8.6:1
  */
 
 [data-theme='light'] {
   color-scheme: light;
 
   /* ================================================================
-   * 一、Kimi token（源）
+   * 一、源色板（只在这里写死值）
    * ================================================================ */
 
-  /* ---- 底色阶梯：页面底是暖白，抬起来的那层才是纯白 ---- */
-  --Bg-GroundPC: #fbfaf9;
-  --Bg-Primary: #fff;
-  --Bg-Primary70: #ffffffb3;
-  --Bg-Primary90: #ffffffe6;
-  --Bg-Secondary: #f5f5f5;
-  --Bg-Secondary90: #f5f5f5e6;
-  --Bg-Tertiary: #fff;
-  --Bg-Tertiary90: #ffffffe6;
-  --Bg-Quaternary: #fff;
+  /* 纸：暖、微黄、不灰。比旧版的 #fbfaf9 深一档——白面才浮得起来 */
+  --palette-paper: #f1eee8;
+  --palette-white: #fff;
+  --palette-paper-deep: #e9e5dc;
+  --palette-warm-50: #f8f6f1;
 
-  /* ---- 成组容器：浅色下"组底是灰、组内卡片是白" ---- */
-  --BgGp-Primary: #f5f5f5;
-  --BgGp-Primary70: #f5f5f5b3;
-  --BgGp-Primary90: #f5f5f5e6;
-  --BgGp-Secondary: #fff;
-  --BgGp-Secondary90: #ffffffe6;
-  --BgGp-Tertiary: #f5f5f5;
+  --palette-ink: #14161a;
 
-  /* ---- 文字标签：**全是 alpha**，压在地色上自己带暖调 ---- */
-  --Labels-Primary: #000000e6;
-  --Labels-Primary-hover: #000000e6;
-  --Labels-Primary-active: #000000e7;
-  --Labels-Secondary: #00000099;
-  --Labels-Secondary-hover: #0000009c;
-  --Labels-Secondary-active: #0000009e;
-  --Labels-Tertiary: #00000073;
-  --Labels-Tertiary-hover: #00000077;
-  --Labels-Tertiary-active: #0000007a;
-  --Labels-Quaternary: #0000004d;
-  --Labels-Quaternary-hover: #00000052;
-  --Labels-Quaternary-active: #00000055;
+  /* 信号蓝：钴蓝。旧版照抄 Kimi 的亮蓝 #1783ff 当填充，
+     这一版把色相往靛蓝推 12°，更"仪器"、更少"聊天工具"。 */
+  --palette-cobalt: #2f54eb;
+  --palette-cobalt-deep: #2140c8;
+  --palette-cobalt-darker: #1b37ab;
+  --palette-cobalt-soft: #edf1fe;
 
-  /* ---- 分割线：只有一档 S1。alpha 合成到暖白上 ≈ #dbdad9，
-     比原来那个 #ededec 明显更深——这是 Kimi 界面"分得清"的原因之一 ---- */
-  --Separators-S1: #00000021;
-  --Separators-S1-hover: #00000028;
-  --Separators-S1-active: #0000002c;
+  --palette-cyan: #17b0b8;
+  --palette-amber: #e8a33d;
+  --palette-violet: #8b5cf6;
 
-  /* ---- 填充阶梯：四档，每档带 hover/active ---- */
-  --Fills-F1: #00000008;
-  --Fills-F1-hover: #0000000f;
-  --Fills-F1-active: #00000014;
-  --Fills-F2: #0000000d;
-  --Fills-F2-hover: #00000014;
-  --Fills-F2-active: #00000019;
-  --Fills-F3: #00000026;
-  --Fills-F3-hover: #0000002d;
-  --Fills-F3-active: #00000031;
-  --Fills-F4: #00000040;
-  --Fills-F4-hover: #00000045;
-  --Fills-F4-active: #00000049;
+  --palette-green: #0e9f6e;
+  --palette-green-deep: #0b7a55;
+  --palette-orange: #d98a1f;
+  /* 警告字色：比原值再深一档。它常压在 `--status-warning-soft` 的浅琥珀底上，
+     原值实测 4.36:1（12px 要 ≥4.5）；压深后 ≥5.5:1。 */
+  --palette-orange-deep: #8a5600;
+  --palette-red: #e5484d;
+  /* 危险字色：比填充色深一档。徽章/状态点常压在 `--status-danger-soft` 的浅红底上，
+     而失败行整行本身也有淡红底——两层叠起来时原值只有约 4.3:1，压深后 ≥5:1。 */
+  --palette-red-deep: #b0242e;
 
-  /* ---- 色彩：**这几个是填充用的**，当文字要取下面第二节的 *-text 档 ---- */
-  --Colors-KMBlue: #1783ff;
-  --Colors-KMBlue-hover: #167ff7;
-  --Colors-KMBlue-active: #167cf2;
-  --Colors-Red: #ff3849;
-  --Colors-Red-hover: #f73647;
-  --Colors-Red-active: #f23545;
-  --Colors-PositiveGreen: #16c456;
-  --Colors-PositiveGreen-hover: #15be53;
-  --Colors-PositiveGreen-active: #15ba52;
-  --Colors-Orange: #ff9500;
-  --Colors-Orange-hover: #f79100;
-  --Colors-Orange-active: #f28e00;
-  --Colors-Yellow: #ffd230;
-  --Colors-Yellow-hover: #f7cc2f;
-  --Colors-Yellow-active: #f2c82e;
-  --Colors-Purple: #985ffb;
-  --Colors-Purple-hover: #935cf3;
-  --Colors-Purple-active: #905aee;
+  /* ================================================================
+   * 二、语义别名（组件只认这些名字）
+   * ================================================================ */
 
-  /* ---- 语义色的低饱和底：胶囊与提示条用 ---- */
-  --Others-LightBlueBg: #e8f3ff;
-  --Others-LightBlueBg-hover: #e1ecf7;
-  --Others-LightBlueBg-active: #dce7f2;
-  --Others-LightGreenBg: #16c4561a;
-  --Others-LightGreenBg-hover: #11964220;
-  --Others-LightGreenBg-active: #0e803825;
-  --Others-LightYellowBg: #ffc80033;
-  --Others-LightRedBg: #ff4d4d1a;
-  --Others-LightOrangeBg: #ff95001a;
-  --Others-KMBlue10: #1783ff1a;
-  --Others-KMBlue10-hover: #1264c320;
-  --Others-KMBlue10-active: #0f56a725;
-  --Others-TextSelected: #1783ff33;
-  --Others-SubLayerBg: #00000014;
+  /* ---- 面 ---- */
+  --bg-canvas: var(--palette-paper);
+  --bg-surface: var(--palette-white);
+  /* 内容卡这一层（应用壳里那张"窗"）。浅色下与 `--bg-surface` 同色：
+     卡片靠投影分开，不需要第二档明度。深色下两者差一档——见 dark.css。 */
+  --bg-sheet: var(--palette-white);
+  --bg-subtle: var(--palette-warm-50);
+  /* 悬停 / 选中的 alpha 填充：叠在纸、白、浅底上都对 */
+  --bg-hover: rgb(24 20 12 / 4.5%);
+  --bg-active: rgb(24 20 12 / 8%);
+  --bg-selected: rgb(24 20 12 / 6%);
+  --bg-header: rgb(255 255 255 / 78%);
+  --bg-group: var(--palette-warm-50);
+  --bg-overlay: var(--palette-white);
+  --bg-menu: var(--palette-white);
+  --bg-elevated: var(--palette-white);
+  /* 选中项的品牌蓝底（导航当前项用这一档的 8%，面积小，不做主色块） */
+  --bg-accent-soft: rgb(47 84 235 / 9%);
 
-  /* ---- 遮罩与气泡 ---- */
-  --MaskBg-Base: #0006;
-  --MaskBg-Base-hover: #0000006b;
-  --MaskBg-Base-active: #0000006e;
-  --MaskBg-Light: #0000001a;
-  --Others-BubbleGray_PC: #f5f5f5;
-  --Others-BubbleGray_PC-hover: #eee;
-  --Others-BubbleGray_PC-active: #e9e9e9;
+  /* ---- 墨 ---- */
+  --text-primary: var(--palette-ink);
+  --text-secondary: rgb(20 22 26 / 70%);
+  --text-tertiary: rgb(20 22 26 / 60%);
+  --text-quaternary: rgb(20 22 26 / 47%);
+  --text-inverse: var(--palette-white);
 
-  /* ---- 弹层与按钮：Kimi 的弹层底带一点蓝调（#f3f5fc），不是纯白 ---- */
-  --modal-bg: #f3f5fc;
-  --modal-border: #e5e5e5;
-  --modal-content: #e0ecffcc;
-  --modal-header-color: #f5f9fff2;
-  --button-bg: #fff;
-  --button-bg-hover: #e5e7ed;
-  --button-border-color: #e5e5e5;
-  --button-color: #060607;
+  /* ---- 线 ---- */
+  --border-hairline: #e5e0d5;
+  --border: #e0dbcf;
+  --border-strong: #cdc6b8;
+  --border-subtle: rgb(24 20 12 / 6%);
 
-  /* ---- 恒定色：两套主题同值，不随主题变 ---- */
+  /* ---- 品牌 ---- */
+  --accent: var(--palette-cobalt);
+  --accent-hover: var(--palette-cobalt-deep);
+  --accent-active: var(--palette-cobalt-darker);
+  --accent-text: var(--palette-cobalt-deep);
+  --accent-soft: var(--palette-cobalt-soft);
+  --accent-contrast: var(--palette-white);
+  --accent-selected: rgb(47 84 235 / 16%);
+
+  /* 第二强调色只给"检索 / 趋势"这类数据，不进任何控件 */
+  --accent-2: var(--palette-cyan);
+  --accent-2-text: #0b7c84;
+  --accent-2-soft: rgb(23 176 184 / 12%);
+
+  /* ---- 徽章 ---- */
+  --badge-bg: var(--palette-cobalt-soft);
+  --badge-text: var(--palette-cobalt-deep);
+
+  /* ---- 状态 ---- */
+  --status-success: var(--palette-green-deep);
+  --status-warning: var(--palette-orange-deep);
+  --status-danger: var(--palette-red-deep);
+  --status-info: var(--palette-cobalt-deep);
+
+  --danger-soft: rgb(229 72 77 / 10%);
+  --status-success-soft: rgb(14 159 110 / 10%);
+  --status-warning-soft: rgb(217 138 31 / 12%);
+  --status-danger-soft: rgb(229 72 77 / 10%);
+  --status-info-soft: var(--palette-cobalt-soft);
+  --status-neutral-soft: var(--palette-warm-50);
+
+  /* ---- 控件 ---- */
+  --button-primary-bg: var(--palette-cobalt);
+  --button-primary-bg-hover: var(--palette-cobalt-deep);
+  --button-primary-text: var(--palette-white);
+  --button-secondary-bg: var(--palette-white);
+  --button-secondary-border: var(--border);
+  --button-disabled-bg: #ece8df;
+  --button-disabled-text: #a8a49a;
+  --button-disabled-border: #e2ddd2;
+
+  --meter-track: #e8e3d8;
+  --separator: var(--text-tertiary);
+  --menu-item-text: var(--text-primary);
+  --menu-desc-text: var(--text-secondary);
+
+  /* ---- 数据可视化 ---- */
+  --chart-1: var(--palette-cobalt);
+  --chart-2: var(--palette-cyan);
+  --chart-3: var(--palette-amber);
+  --chart-4: var(--palette-violet);
+  --chart-grid: rgb(24 20 12 / 7%);
+
+  /* 活跃度四档：空值是"纸的下一档"，不是灰 */
+  --heat-0: #eae5da;
+  --heat-1: #c3d0fa;
+  --heat-2: #7c97f5;
+  --heat-3: #2f54eb;
+
+  /* ================================================================
+   * 三、派生：阴影与遮罩
+   *
+   * 投影用**暖黑**（不是纯黑的低透明度）：纯黑落在暖纸上会发灰。
+   * 三档：卡片 / 抬起 / 浮层。静态内容也有卡片那一层——
+   * 这一版靠投影分块，而不是靠描边。
+   * ================================================================ */
+  --shadow-card: 0 1px 2px rgb(31 26 15 / 5%), 0 12px 28px -20px rgb(31 26 15 / 22%);
+  --shadow-raised: 0 2px 4px rgb(31 26 15 / 6%), 0 20px 44px -24px rgb(31 26 15 / 30%);
+  --shadow-popover: 0 2px 6px rgb(31 26 15 / 6%), 0 16px 48px -12px rgb(31 26 15 / 22%);
+  --shadow-float: var(--shadow-popover);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 70%);
+  --overlay-scrim: rgb(20 18 12 / 44%);
+
+  /* 图表与图片容器的底（比纸再深一档，让图有地方"坐"） */
+  --bg-sunken: var(--palette-paper-deep);
+
+  /* 常量 */
   --Always-Black: #000;
   --Always-White: #fff;
-  --Always-WhiteSecondary: #ffffffd6;
-  --Always-WhiteTertiary: #ffffff8f;
-  --Always-WhiteQuaternary: #ffffff6b;
-  --Always-TransparencyWhite15: #ffffff26;
-  --Always-TransparencyDarkFill: #0009;
-  --Always-TransparencyTagFill: #454545b3;
-
-  /* ================================================================
-   * 二、文字档：浅色下的必要偏离（色相不变，只调明度）
-   * 实测：原填充色当文字全部不合格（1.39:1 ~ 3.75:1），压深后均 ≥4.5:1。
-   * 蓝字档第二轮（第三批 A）又压深了一小档：`--accent-text` 还要当**徽标字**用，
-   * 而徽标底下垫着蓝的 10% 底，上一版在那个底上只有 4.17:1。现值实测：
-   *   白底 5.37 / 暖白底 5.16 / 徽标底 4.75
-   * ================================================================ */
-  --Colors-KMBlue-text: #0065dd;
-  --Colors-Red-text: #e90014;
-  --Colors-PositiveGreen-text: #0f853a;
-  --Colors-Orange-text: #a96300;
-  --Colors-Yellow-text: #8e6f00;
-  --Colors-Purple-text: #8a4afa;
-
-  /**
-   * 中性灰的达标档（第三批 A）。两档都是"只压深、不加色相"，与上面语义色同一做法。
-   *
-   * 为什么必须动：三级灰/四级灰在浅色下最弱，而它们落在的正是要被读到的位置——
-   * 笔记列表的摘要与日期（3.15–3.27:1）、侧栏与任务表的次级读数（3.31–3.4:1）、
-   * 列表头的计数与「＋」（约 2:1）、输入框占位文字（2.11:1）。
-   * 压深后的实测值（`.shots/audit-round-c.cjs`，两套主题逐页跑）：
-   *
-   *   三级灰 #0000008c：白底 4.76 / 暖白底 4.68 / 浅灰底 4.63 / 选中底 4.56
-   *   四级灰 #00000070：白底 3.23 / 暖白底 3.17 / 浅灰底 3.19
-   *
-   * 取的是"最不利底色上仍达标"的那一档：三级灰按 ≥4.5:1（13–14px 正文口径），
-   * 四级灰按 ≥3:1（占位文字，WCAG 对占位符的要求与图标同档）。
-   */
-  --Labels-Tertiary-text: #0000008c;
-  --Labels-Quaternary-text: #00000070;
-
-  /* ================================================================
-   * 三、KYLAB 别名——组件只认这些名字
-   * ================================================================ */
-
-  --bg-canvas: var(--Bg-GroundPC);
-  --bg-surface: var(--Bg-Primary);
-  --bg-subtle: var(--Bg-Secondary);
-  /* hover 与选中改用 alpha 填充：叠在任何底上都对，不必为每种底色各配一个值 */
-  --bg-hover: var(--Fills-F1);
-  --bg-active: var(--Fills-F3);
-  /* **当前项**（侧栏选中的导航/会话）用 Fills-F2，不用品牌色底。
-     Kimi 的实测值如此：`.next-sidebar-nav-item.router-link-active` 与
-     `.next-sidebar-history-item.is-active` 都是 `Fills-F2`，文字始终
-     `Labels-Primary`。蓝色只在**小面积**上出现（徽章、未读点、info）。
-     我们此前给选中项铺浅蓝底——那是"像 Kimi 的颜色、不像 Kimi 的界面"。 */
-  --bg-selected: var(--Fills-F2);
-  --bg-header: var(--Bg-Secondary);
-  /* 成组容器里的那一层（Kimi 的 `BgGp-Secondary`）：浅色下是白，
-     深色下比画布亮一档。侧栏的「新对话」块按钮用它。 */
-  --bg-group: var(--BgGp-Secondary);
-  /* 弹层表面：带一点蓝调，不用纯白 */
-  --bg-overlay: var(--modal-bg);
-
-  --text-primary: var(--Labels-Primary);
-  --text-secondary: var(--Labels-Secondary);
-  /* 三级灰与四级灰指向**达标档**（第三节那两档的实测值写在第二节注释里） */
-  --text-tertiary: var(--Labels-Tertiary-text);
-  --text-quaternary: var(--Labels-Quaternary-text);
-
-  --border-hairline: var(--Separators-S1);
-  --border: var(--Separators-S1);
-  --border-strong: var(--Separators-S1-active);
-  /* 发丝线：与深色同为 6%，只是翻转基底——Kimi 浅色的 `.chat-editor-content`
-     描边实测就是 `rgba(0,0,0,.06)`，与深色的 `rgba(255,255,255,.06)` 对称。 */
-  --border-subtle: rgb(0 0 0 / 6%);
-
-  /* 菜单项的主行用 Primary、副标题用 Tertiary——Kimi 的 `.name` / `.desc` 实测如此。
-     **副标题走达标档**：那行是 13px 的说明文字（"选它会得到什么"），属于要被读到的口径。 */
-  --menu-item-text: var(--Labels-Primary);
-  --menu-desc-text: var(--Labels-Tertiary-text);
-
-  /* 进度条空槽：用 F3（压纸白 ≈ #d9d9d9）。原先那档太浅，
-     而"共 6 段、走到第 3 段"这条信息不能只靠文字撑。 */
-  --meter-track: var(--Fills-F3);
-  --separator: var(--text-tertiary);
-
-  /* 品牌色：靛蓝 → Kimi 亮蓝。两档分工——`--accent` 是**填充**（进度条、环形图、
-     勾选框、小面积强调），`--accent-text` 是**文字**（同色相压深，实测白底 5.38:1、
-     徽标底 4.75:1，见第二节）。
-     `--accent-soft` 是它的 10% 底，仍属品牌色这一族，不是"另一种蓝"。 */
-  --accent: var(--Colors-KMBlue);
-  --accent-hover: var(--Colors-KMBlue-hover);
-  --accent-text: var(--Colors-KMBlue-text);
-  --accent-soft: var(--Others-KMBlue10);
-
-  /**
-   * 选中底与选中描边（文本选中、词条聚焦、选中项）。
-   *
-   * 第三批 A 把它从 Kimi 的 `Others-TextSelected`（#1783ff33，冷蓝）**换成中性的
-   * `Fills-F3`**：评审的跨页共性问题 3 说"蓝色有四套取值，而全站底色是暖中性"。
-   * 现在品牌蓝只剩两个身份——`--accent`（填充）与 `--accent-text`（文字），
-   * 选中一律走中性的 Fills 阶梯（与 `--bg-selected` 同源，只是档位更重一点，
-   * 因为它还要当文本选中底与描边）。Kimi 的 `--Others-TextSelected` 原值保留在第一节。
-   */
-  --accent-selected: var(--Fills-F3);
-
-  --accent-2: var(--Colors-Purple);
-  --accent-2-text: var(--Colors-Purple-text);
-  --accent-2-soft: #985ffb1a;
-
-  /* 徽章：蓝字 + 蓝的 10% 底 + 4px 方角（Kimi 的小标记一律如此）。
-     字色用**加深档**而不是原色——原色当 12px 文字只有 3.52:1，
-     而"填充色与文字色分开"这条纪律我已经在主题里立过了，这里照它办。 */
-  --badge-bg: var(--Others-KMBlue10);
-  --badge-text: var(--Colors-KMBlue-text);
-
-  /* 语义色：底色用 Kimi 原值，文字用同色相的达标档 */
-  --status-success: var(--Colors-PositiveGreen-text);
-  --status-warning: var(--Colors-Orange-text);
-  --status-danger: var(--Colors-Red-text);
-  --status-info: var(--Colors-KMBlue-text);
-  --danger-soft: var(--Others-LightRedBg);
-
-  --status-success-soft: var(--Others-LightGreenBg);
-  --status-warning-soft: var(--Others-LightYellowBg);
-  --status-danger-soft: var(--Others-LightRedBg);
-  --status-info-soft: var(--Others-LightBlueBg);
-  --status-neutral-soft: var(--Bg-Secondary);
-
-  /* 主按钮：**墨色实心，不是品牌蓝**。
-     这是对齐 Kimi 时最容易搞反的一条。它的 `--button-bg` 与
-     `.send-button-container`、`.kimi-button.primary`、`.action-card-button.primary`
-     全都取 `Labels-Primary`（浅色下近黑、深色下近白），而 `Colors-KMBlue`
-     当背景只出现在**极小的语义标记**上（未读点、日历的今天、info 态按钮）。
-     也就是说它的用色纪律是：**动作靠墨色，状态靠中性 alpha，蓝只做小面积强调**。
-     我们此前把主按钮做成蓝底，于是"像 Kimi 的颜色、不像 Kimi 的界面"。 */
-  --button-primary-bg: var(--Labels-Primary);
-  --button-primary-bg-hover: var(--Labels-Primary-hover);
-  --button-primary-text: var(--Bg-Primary);
-
-  /* 禁用态仍用实色，不用 opacity：半透明会把前景与背景一起推向对方 */
-  /* 禁用态：**主按钮禁用时是 `Fills-F3`，不是 `Bg-Secondary`**（与深色同构）。
-     Kimi 的 `.km-button-primary[disabled]` 实测底 18% 白 / 文字 26% 白（深色）；
-     浅色翻转基底，同一档 alpha 落在 `#00000026`。 */
-  --button-disabled-bg: var(--Fills-F3);
-  --button-disabled-text: var(--Labels-Quaternary);
-  --button-disabled-border: var(--Separators-S1);
-
-  /* 浮层：静态内容不用阴影，只有真正浮起来的才用 */
-  --shadow-popover: 0 4px 12px rgb(0 0 0 / 10%);
-  --overlay-scrim: var(--MaskBg-Base);
-
-  /* 活跃度色阶：Kimi 未暴露对应族，保留自定义（四档显式色值，图表层要能直接解析） */
-  --heat-0: #eeeff1;
-  --heat-1: #b9cdf5;
-  --heat-2: #6fa8f5;
-  --heat-3: #1783ff;
 }

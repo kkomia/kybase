@@ -201,8 +201,14 @@ describe('读数的文字与悬浮说明', () => {
 
 /* ------------------------------------------------------------------ 卡片上的那一段 */
 
+/**
+ * 2026-10 界面重做之后，卡片上不再有"第二根检索命中线"：入库与检索命中是
+ * **同一件事的两种**（库在长 / 库在被用），合成一条 30 天活动线 + 一行读数
+ * 「入库 N 篇 · 检索 M 次」。所以这里断的是"命中数进了读数、进了同一条线"，
+ * 取数口径（一趟请求覆盖全部库、带的是 90 天窗口）一个字没变。
+ */
 describe('卡片上的检索命中趋势', () => {
-  it('一趟请求覆盖全部卡片，每座库各拿自己那条曲线（没记录的写「无命中」）', async () => {
+  it('一趟请求覆盖全部卡片，每座库的命中数进读数（没记录的写 0 次）', async () => {
     listKbsMock.mockResolvedValue({
       items: [makeKB({ id: 'kb-1' }), makeKB({ id: 'kb-2', name: '没人问过的库' })],
     })
@@ -230,27 +236,25 @@ describe('卡片上的检索命中趋势', () => {
 
     const { container } = renderView()
 
-    // 读数：kb-1 有 5 条候选；kb-2 不在 `by_kb` 里 = 这 90 天没记录 = 无命中
-    expect(await screen.findByText('5 条')).toBeInTheDocument()
-    expect(await screen.findByText('无命中')).toBeInTheDocument()
-    expect(screen.getAllByText(`近 ${SEARCH_TREND_DAYS} 天检索命中`)).toHaveLength(2)
-    // **不是应收敛掉的 5 条里的那个 0**：读数写的是候选，不是"读不到"
-    expect(screen.queryByText('0 条')).toBeNull()
+    // 入库这一读是成功空结果（0 篇），所以读数里能单独看出命中数：kb-1 5 次、kb-2 0 次
+    expect(await screen.findByText('入库 0 篇 · 检索 5 次')).toBeInTheDocument()
+    expect(await screen.findByText('入库 0 篇 · 检索 0 次')).toBeInTheDocument()
+    expect(screen.getAllByText('近 30 天活动')).toHaveLength(2)
 
     // 一次请求，不是每库一次（入库那根才是每库一次）
     await waitFor(() => expect(searchHitsMock).toHaveBeenCalledTimes(1))
     expect(searchHitsMock).toHaveBeenCalledWith(SEARCH_TREND_DAYS)
 
-    const sparks = Array.from(container.querySelectorAll('.kb-trend-hits .kb-spark'))
+    const sparks = Array.from(container.querySelectorAll('.kb-card-activity .kb-spark'))
     expect(sparks).toHaveLength(2)
-    // 有命中的那座：补零后的连续曲线（90 天那一格画全）；没记录的那座：压在底部的平线
-    expect(sparks[0].getAttribute('viewBox')).toBe(`0 0 ${SEARCH_TREND_DAYS} 28`)
+    // 有命中的那座：补零后的连续曲线（30 天那一格画全）；没记录的那座：压在底部的平线
+    expect(sparks[0].getAttribute('viewBox')).toBe('0 0 30 40')
     expect(sparks[0].classList.contains('kb-spark-empty')).toBe(false)
-    expect(sparks[1].getAttribute('viewBox')).toBe(`0 0 ${SEARCH_TREND_DAYS} 28`)
+    expect(sparks[1].getAttribute('viewBox')).toBe('0 0 30 40')
     expect(sparks[1].classList.contains('kb-spark-empty')).toBe(true)
   })
 
-  it('读数那一行挂悬浮说明：候选与返回不一样时把两个数都写出来', async () => {
+  it('读数那一行挂悬浮说明：候选与返回不一样时把命中数也写清楚', async () => {
     listKbsMock.mockResolvedValue({ items: [makeKB({ id: 'kb-1' })] })
     searchHitsMock.mockResolvedValue(
       makeHits({
@@ -271,25 +275,23 @@ describe('卡片上的检索命中趋势', () => {
 
     renderView()
 
-    const value = await screen.findByTitle('候选 5 条，返回 2 条')
-    expect(value.textContent).toBe('5 条')
+    const value = await screen.findByTitle(/候选 5 条，返回 2 条/)
+    expect(value.textContent).toBe('入库 0 篇 · 检索 5 次')
   })
 
-  it('这一读失败时写「—」（读不到不是 0），列表页也不再摆一行红字', async () => {
+  it('这一读失败时检索数写「—」（读不到不是 0），列表页也不再摆一行红字', async () => {
     listKbsMock.mockResolvedValue({ items: [makeKB({ id: 'kb-1' })] })
     searchHitsMock.mockRejectedValue(new Error('服务暂时不可用'))
 
     renderView()
 
     expect(await screen.findByText('产品手册')).toBeInTheDocument()
-    // 命中那一根读失败 → 「—」；入库那一根这一读是成功的空结果 → 「无入库」
-    expect(await screen.findByText('—')).toBeInTheDocument()
-    expect(screen.getByText('无入库')).toBeInTheDocument()
-    expect(screen.queryByText('无命中')).toBeNull()
-    expect(screen.queryByText('服务暂时不可用')).toBeNull()
+    // 命中那一份读失败 → 检索数写「—」；入库这一读是成功的空结果 → 0 篇
+    expect(await screen.findByText(/入库 0 篇 · 检索 — 次/)).toBeInTheDocument()
+    expect(screen.queryByText(/服务暂时不可用/)).toBeNull()
   })
 
-  it('行形态（> 12 个库）不画趋势图，命中趋势这一趟请求也不发', async () => {
+  it('行形态（> 12 个库）不画活动线，命中趋势这一趟请求也不发', async () => {
     listKbsMock.mockResolvedValue({
       items: Array.from({ length: 13 }, (_, index) =>
         makeKB({ id: `kb-${index}`, name: `库 ${index}` }),
@@ -299,7 +301,7 @@ describe('卡片上的检索命中趋势', () => {
     const { container } = renderView()
 
     await waitFor(() => expect(container.querySelectorAll('.kb-row-link')).toHaveLength(13))
-    expect(container.querySelectorAll('.kb-trend-hits')).toHaveLength(0)
+    expect(container.querySelectorAll('.kb-card-activity')).toHaveLength(0)
     expect(searchHitsMock).not.toHaveBeenCalled()
   })
 })

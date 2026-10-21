@@ -1,19 +1,22 @@
 /**
- * 「近 90 天入库」迷你趋势图的用例（`features/knowledge/ingestTrend.ts` + `Sparkline.tsx`
- * + 卡片上那一段）。
+ * 「近 30 天活动」迷你趋势图的用例（`features/knowledge/ingestTrend.ts` + `Sparkline.tsx`
+ * + 卡片底部那一条线）。
  *
- * 三块：
+ * 四块：
  *
  * 1. **聚合**（纯函数）：按天计数、窗口对齐今天（**本地日**）、窗口外与解析不出的不计；
- * 2. **空数据形态**：一条都没有时给的是全零平线 + 「无入库」，而且**每张卡都占着同一块
- *    `.kb-trend`**——趋势图不许把卡片撑得忽高忽低；
- * 3. **卡片上的接线**：每库一次请求（`limit=200` 起手，倒序下够到窗口就停）、行形态
- *    一个请求都不发、读不到时写「—」而不是 0（0 是一句结论，读不到不是）。
+ * 2. **空数据形态**：一条都没有时读数是「入库 0 篇 · 检索 0 次」、线是一条压在底部的平线，
+ *    而且**每张卡都占着同一块 `.kb-card-activity`**——趋势图不许把卡片撑得忽高忽低；
+ * 3. **卡片上的接线**：每库一次请求（`limit=200` 起手，倒序下够到窗口就停）、
+ *    行形态一个请求都不发、读不到时读数写「—」而不是 0（0 是一句结论，读不到不是）；
+ * 4. **被截断的入库数带 `≥`**：翻到上限也只统计了最近 600 篇，读数必须说"只多不少"。
  *
- * 卡片上**第二根**趋势线（近 90 天检索命中）有自己的用例文件
- * （`knowledge-search-trend.test.tsx`）：它的口径、取数与这根完全不同。这里只把
- * 命中趋势的取数钉成空结果——不为断言它，只为让这一页**不落到没预备的请求上**
- * （判定与计数才不被那边带偏）。
+ * ## 2026-10 界面重做改了口径
+ *
+ * 旧卡片上摆两根 90 天的线（入库 / 检索命中）、读数四行、颜色两种；现在合成**一条
+ * 30 天的活动线**、一行读数「入库 N 篇 · 检索 M 次」。同一文件里聚合与取数的断言
+ * （按天计数、分页次数、行形态不发请求）**一个字没改**——行为没变，只有呈现换了。
+ * 检索命中趋势自己的口径在 `knowledge-search-trend.test.tsx`；这里把它钉成空结果。
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
@@ -221,7 +224,7 @@ describe('入库节奏的聚合', () => {
 /* ------------------------------------------------------------------ 卡片上的那一段 */
 
 describe('卡片上的趋势图', () => {
-  it('每库各拉一次、如实写「近 90 天入库 N 篇」（入库这一根不叫检索命中）', async () => {
+  it('每库各拉一次，读数写「入库 N 篇 · 检索 M 次」', async () => {
     listKbsMock.mockResolvedValue({
       items: [
         makeKB({ id: 'kb-1', name: '产品手册' }),
@@ -235,7 +238,7 @@ describe('卡片上的趋势图', () => {
               makeDoc({ id: 'd1', created_at: daysAgoISO(0) }),
               makeDoc({ id: 'd2', created_at: daysAgoISO(0) }),
               makeDoc({ id: 'd3', created_at: daysAgoISO(12) }),
-              // 窗口外的老文档：拉回来了也不该算进这 90 天
+              // 窗口外的老文档：拉回来了也不该算进这 30 天
               makeDoc({ id: 'd4', created_at: daysAgoISO(200) }),
             ]
           : [makeDoc({ id: 'd5', created_at: daysAgoISO(2) })],
@@ -246,25 +249,21 @@ describe('卡片上的趋势图', () => {
 
     renderView()
 
-    expect(await screen.findByText('3 篇')).toBeInTheDocument()
-    expect(await screen.findByText('1 篇')).toBeInTheDocument()
-    // 两根线各写各的口径：这是**入库**那一根（「N 篇」），检索命中那根是另一行、
-    // 另一个单位（「N 条」），也走另一条接口（见 `knowledge-search-trend.test.tsx`）
-    expect(screen.getAllByText(`近 ${INGEST_TREND_DAYS} 天入库`)).toHaveLength(2)
-    expect(screen.getAllByText(`近 ${INGEST_TREND_DAYS} 天检索命中`)).toHaveLength(2)
-    expect(screen.getAllByText('无命中')).toHaveLength(2)
-    expect(screen.queryByText('无入库')).toBeNull()
+    // 入库与检索命中合成一行：入库是"这个库在长"，检索命中是"这个库在被用"
+    expect(await screen.findByText('入库 3 篇 · 检索 0 次')).toBeInTheDocument()
+    expect(await screen.findByText('入库 1 篇 · 检索 0 次')).toBeInTheDocument()
+    expect(screen.getAllByText('近 30 天活动')).toHaveLength(2)
     // 每库一次，起手一页 200 篇（十几个库就是十几次）
     expect(listDocsMock).toHaveBeenCalledTimes(2)
     expect(listDocsMock).toHaveBeenNthCalledWith(1, 'kb-1', { limit: 200, offset: 0 })
     expect(listDocsMock).toHaveBeenNthCalledWith(2, 'kb-2', { limit: 200, offset: 0 })
   })
 
-  it('一条入库都没有：全零平线 + 「无入库」，而且每张卡**都占着同一块位置**', async () => {
+  it('一条活动都没有：读数全零、平线，而且每张卡**都占着同一块位置**', async () => {
     listKbsMock.mockResolvedValue({
       items: [makeKB({ id: 'kb-1', name: 'A 库' }), makeKB({ id: 'kb-2', name: 'B 库' })],
     })
-    // 后端给不出创建时间（老数据 / 未记录）：如实说"无入库"，不编几条出来
+    // 后端给不出创建时间（老数据 / 未记录）：如实说 0，不编几条出来
     listDocsMock.mockResolvedValue({
       items: [makeDoc({ id: 'd1', created_at: null }), makeDoc({ id: 'd2', created_at: null })],
       total: 2,
@@ -274,30 +273,29 @@ describe('卡片上的趋势图', () => {
 
     const { container } = renderView()
 
-    await waitFor(() => expect(screen.getAllByText('无入库')).toHaveLength(2))
-    // 两根线各占一块 `.kb-trend`（图高由 CSS 定死，卡片不会被撑高）
-    expect(container.querySelectorAll('.kb-trend')).toHaveLength(4)
-    expect(container.querySelectorAll('.kb-spark-empty')).toHaveLength(4)
-    // 空数据也把 90 天那一格画全（一条压在底部的平线），而不是一块空白
+    await waitFor(() => expect(screen.getAllByText('入库 0 篇 · 检索 0 次')).toHaveLength(2))
+    // 每张卡一块活动区、一条 30 天 × 40 高 的线（图高由 CSS 定死，卡片不会被撑高）
+    expect(container.querySelectorAll('.kb-card-activity')).toHaveLength(2)
     const spans = Array.from(container.querySelectorAll('.kb-spark'))
-    expect(spans).toHaveLength(4)
-    for (const svg of spans) expect(svg.getAttribute('viewBox')).toBe(`0 0 ${INGEST_TREND_DAYS} 28`)
+    expect(spans).toHaveLength(2)
+    for (const svg of spans) expect(svg.getAttribute('viewBox')).toBe('0 0 30 40')
+    // 全零时线是"空的"，但仍画出来（一根压在底部的平线），不是一块空白
+    expect(container.querySelectorAll('.kb-spark-empty')).toHaveLength(2)
   })
 
-  it('这一读失败时写「—」（读不到不是 0），列表页也不再摆一行红字', async () => {
+  it('这一读失败时入库数写「—」（读不到不是 0），列表页也不再摆一行红字', async () => {
     listKbsMock.mockResolvedValue({ items: [makeKB({ id: 'kb-1', name: '产品手册' })] })
     listDocsMock.mockRejectedValue(new Error('服务暂时不可用'))
 
     renderView()
 
     expect(await screen.findByText('产品手册')).toBeInTheDocument()
-    // 只有入库这一根读失败（命中趋势那一份给的是空结果）：'—' 只该出现一次
-    expect(await screen.findByText('—')).toBeInTheDocument()
-    expect(screen.queryByText('无入库')).toBeNull()
+    // 只有入库这一根读失败（命中趋势那一份给的是空结果）：入库数写「—」，检索仍是真读数
+    expect(await screen.findByText(/入库 — 篇 · 检索 0 次/)).toBeInTheDocument()
     expect(screen.queryByText('服务暂时不可用')).toBeNull()
   })
 
-  it('一页盖不住窗口就继续翻（倒序），翻到上限才把读数写成「≥N 篇」', async () => {
+  it('一页盖不住窗口就继续翻（倒序），翻到上限时读数带「≥」', async () => {
     listKbsMock.mockResolvedValue({ items: [makeKB({ id: 'kb-1', name: '产品手册' })] })
     // 90 天内的文档远超上限：三页（600 篇）全是今天的，怎么也盖不住窗口
     listDocsMock.mockImplementation(async (_kbId, filter = {}) => {
@@ -314,7 +312,7 @@ describe('卡片上的趋势图', () => {
 
     renderView()
 
-    expect(await screen.findByText('≥600 篇')).toBeInTheDocument()
+    expect(await screen.findByText('入库 ≥600 篇 · 检索 0 次')).toBeInTheDocument()
     expect(listDocsMock.mock.calls.map((call) => call[1])).toEqual([
       { limit: 200, offset: 0 },
       { limit: 200, offset: 200 },
@@ -345,11 +343,11 @@ describe('卡片上的趋势图', () => {
 
     renderView()
 
-    expect(await screen.findByText('199 篇')).toBeInTheDocument()
+    expect(await screen.findByText('入库 199 篇 · 检索 0 次')).toBeInTheDocument()
     expect(listDocsMock).toHaveBeenCalledTimes(1)
   })
 
-  it('行形态（> 12 个库）不画趋势图，也就一个文档请求都不发', async () => {
+  it('行形态（> 12 个库）不画活动线，也就一个文档请求都不发', async () => {
     listKbsMock.mockResolvedValue({
       items: Array.from({ length: 13 }, (_, index) =>
         makeKB({ id: `kb-${index}`, name: `库 ${index}` }),
@@ -359,7 +357,8 @@ describe('卡片上的趋势图', () => {
     const { container } = renderView()
 
     await waitFor(() => expect(container.querySelectorAll('.kb-row-link')).toHaveLength(13))
-    expect(container.querySelectorAll('.kb-trend')).toHaveLength(0)
+    expect(container.querySelectorAll('.kb-card-activity')).toHaveLength(0)
+    expect(container.querySelectorAll('.kb-spark')).toHaveLength(0)
     expect(listDocsMock).not.toHaveBeenCalled()
     // 命中趋势也一样：行形态连那一趟请求都不该发
     expect(searchHitsMock).not.toHaveBeenCalled()

@@ -50,11 +50,14 @@ import './misc.css'
 
 export function PageShell({
   title,
+  subtitle,
   actions,
   children,
 }: {
   /** 空串 = 不画页标题（能力页刻意不要它，左侧菜单已经写着「能力」）。 */
   title: string
+  /** 标题下面那一行说明：这一页是做什么的 / 现在是什么状态。可不给。 */
+  subtitle?: ReactNode
   actions?: ReactNode
   children: ReactNode
 }) {
@@ -62,7 +65,10 @@ export function PageShell({
     <div className="page-shell">
       {(title || actions) && (
         <header className="m-page-head">
-          {title ? <h1 className="m-page-title">{title}</h1> : <span />}
+          <div className="m-page-heading">
+            {title ? <h1 className="m-page-title">{title}</h1> : <span />}
+            {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
+          </div>
           {actions && <div className="m-page-actions">{actions}</div>}
         </header>
       )}
@@ -275,8 +281,12 @@ export function StatusTag({
   title?: string
 }) {
   return (
-    <Badge shape="pill" variant={TAG_VARIANTS[tone]} title={title}>
-      {live && <span className="m-dot m-dot-live" aria-hidden="true" />}
+    <Badge shape="pill" variant={TAG_VARIANTS[tone]} title={title} className="gap-1.5">
+      {live ? (
+        <span className="status-dot status-dot-live" aria-hidden="true" />
+      ) : (
+        <span className="status-dot opacity-60" aria-hidden="true" />
+      )}
       {label}
     </Badge>
   )

@@ -1,261 +1,153 @@
 /**
- * 深色主题 Token（《前端设计规范》§2、《Kimi 设计 token 对照表》）。
+ * 深色主题 Token —— 与浅色同构，逐项对应（浅色是"纸"，深色是"石墨"）。
  *
- * 与浅色同构，逐项对应；两套 theme 的层级方向一致（深色下"抬起来的那层更亮"，
- * 不是把浅色反相）。标签同样是 alpha 白灰阶：浅色是黑透明、深色是白透明。
+ * 层级方向一致：**抬起来的那层更亮**，不是把浅色反相。
+ * 投影在深色里几乎看不见，所以层级改由"面差 + 一圈发丝光"承担：
+ * 卡片底比画布亮一档，边线用 10% 白。
  *
- * 与浅色的差别：**语义色**（红/绿/橙/黄）深色下的原值本身就达标，不必另开文字档
- * （Kimi 的蓝 5.08:1、红 5.32:1、绿 7.67:1、橙 8.64:1、黄 12.28:1）。
+ * ## 对比度契约（与浅色同一套）
  *
- * **但"达标"要按它落在哪一层底上算，2026-09-24 第三批 A 实测下来有两处不够**：
- *  - 品牌蓝当文字：5.08:1 是"页面底"上的数；顶栏（`Bg-Secondary` #1f1f1f）4.72:1，
- *    菜单底（`Bg-Tertiary` #292929）只有 **4.16:1**——而 13–14px 的门槛是 4.5:1。
- *    浅色那边"蓝字要压深"的老规矩，在深色这边是"蓝字要提亮"，同样是对 Kimi 原值的
- *    必要偏离，见下面第二节的 `--Colors-KMBlue-text`。
- *  - 中性灰（三级灰 0.42 白、四级灰 0.26 白）：页面底 4.08:1 / 2.35:1，
- *    同样不够，另开 `--Labels-Tertiary-text` / `--Labels-Quaternary-text`。
+ * - 正文 / 表单标签 / 表头 / 按钮文字：≥ 4.5:1
+ * - 元信息（13.5px 二级墨色）：≥ 4.5:1
+ * - 占位文字与图标：≥ 3:1（WCAG 2.2 SC 1.4.11）
+ *
+ * 实测（面 #16181C 上）：
+ *   --text-primary   #F2F0EA → 15.6:1
+ *   --text-secondary rgba(242,240,234,.72) → 7.2:1
+ *   --text-tertiary  rgba(242,240,234,.58) → 5.2:1
+ *   --text-quaternary rgba(242,240,234,.42) → 3.3:1
+ *   --accent         #4b63f0 → 白字压在上面 5.0:1
+ *   --accent-text    #a9bbff → 面底 7.9:1
  */
 
 [data-theme='dark'] {
   color-scheme: dark;
 
   /* ================================================================
-   * 一、Kimi token（源）
+   * 一、源色板
    * ================================================================ */
 
-  --Bg-GroundPC: #181817;
-  --Bg-Primary: #121212;
-  --Bg-Primary70: #121212b3;
-  --Bg-Primary90: #121212e6;
-  --Bg-Secondary: #1f1f1f;
-  --Bg-Secondary90: #1f1f1fe6;
-  --Bg-Tertiary: #292929;
-  --Bg-Tertiary90: #292929e6;
-  --Bg-Quaternary: #4d4d4d;
+  --palette-graphite: #0d0e10;
+  --palette-sheet: #14161a;
+  --palette-slate: #1a1d22;
+  --palette-slate-raised: #20242a;
+  --palette-slate-high: #262b32;
+  --palette-mist: #f2f0ea;
 
-  /* 成组容器：深色下组底是最深的一层，组内卡片更亮 */
-  --BgGp-Primary: #121212;
-  --BgGp-Primary70: #121212b3;
-  --BgGp-Primary90: #121212e6;
-  --BgGp-Secondary: #1f1f1f;
-  --BgGp-Secondary90: #1f1f1fe6;
-  --BgGp-Tertiary: #292929;
+  --palette-cobalt: #4b63f0;
+  --palette-cobalt-hover: #5c73ff;
+  --palette-cobalt-text: #a9bbff;
+  --palette-cobalt-soft: rgb(75 99 240 / 16%);
 
-  /* 文字标签：alpha 白灰阶。实测对比度见 light.css 文件头 */
-  --Labels-Primary: #ffffffd6;
-  --Labels-Primary-hover: #ffffffd8;
-  --Labels-Primary-active: #ffffffda;
-  --Labels-Secondary: #ffffff8f;
-  --Labels-Secondary-hover: #ffffff94;
-  --Labels-Secondary-active: #ffffff9a;
-  --Labels-Tertiary: #ffffff6b;
-  --Labels-Tertiary-hover: #ffffff72;
-  --Labels-Tertiary-active: #ffffff7a;
-  --Labels-Quaternary: #ffffff42;
-  --Labels-Quaternary-hover: #ffffff4c;
-  --Labels-Quaternary-active: #ffffff55;
+  --palette-cyan: #2ecad2;
+  --palette-amber: #f0b25a;
+  --palette-violet: #a78bfa;
 
-  /* 分割线：alpha 合成到 #181817 上 ≈ #343433 */
-  --Separators-S1: #ffffff1f;
-  --Separators-S1-hover: #ffffff2a;
-  --Separators-S1-active: #ffffff35;
+  --palette-green: #3dd68c;
+  --palette-orange: #f5a524;
+  /* 比 #ff6b6b 亮一档：失败行整行也有淡红底，两层叠起来时原值只有约 4.2:1 */
+  --palette-red: #ff7a7a;
 
-  --Fills-F1: #ffffff0d;
-  --Fills-F1-hover: #ffffff19;
-  --Fills-F1-active: #ffffff25;
-  --Fills-F2: #ffffff1a;
-  --Fills-F2-hover: #ffffff25;
-  --Fills-F2-active: #ffffff30;
-  --Fills-F3: #ffffff2e;
-  --Fills-F3-hover: #ffffff38;
-  --Fills-F3-active: #ffffff43;
-  --Fills-F4: #ffffff40;
-  --Fills-F4-hover: #ffffff49;
-  --Fills-F4-active: #ffffff53;
+  /* ================================================================
+   * 二、语义别名
+   * ================================================================ */
 
-  /* 色彩：深色下**提亮**而不是压深（与整体层级方向一致） */
-  --Colors-KMBlue: #1a88ff;
-  --Colors-KMBlue-hover: #258eff;
-  --Colors-KMBlue-active: #3194ff;
-  --Colors-Red: #ff4756;
-  --Colors-Red-hover: #ff505e;
-  --Colors-Red-active: #ff5967;
-  --Colors-PositiveGreen: #16c456;
-  --Colors-PositiveGreen-hover: #22c75e;
-  --Colors-PositiveGreen-active: #2dca67;
-  --Colors-Orange: #ff9f0a;
-  --Colors-Orange-hover: #ffa416;
-  --Colors-Orange-active: #ffa923;
-  --Colors-Yellow: #ffd230;
-  --Colors-Yellow-hover: #ffd43a;
-  --Colors-Yellow-active: #ffd745;
-  --Colors-Purple: #a16bff;
-  --Colors-Purple-hover: #a672ff;
-  --Colors-Purple-active: #aa7aff;
+  --bg-canvas: var(--palette-graphite);
+  /* 深色需要三档：画布 → 内容卡（sheet）→ 卡 / 面板（surface）。
+     浅色只需要两档（纸 → 白），卡片靠投影分开。 */
+  --bg-sheet: var(--palette-sheet);
+  --bg-surface: var(--palette-slate);
+  --bg-subtle: var(--palette-slate-raised);
+  --bg-hover: rgb(255 255 255 / 5.5%);
+  --bg-active: rgb(255 255 255 / 10%);
+  --bg-selected: rgb(255 255 255 / 7%);
+  --bg-header: rgb(22 24 28 / 82%);
+  --bg-group: var(--palette-slate-raised);
+  --bg-overlay: var(--palette-slate-raised);
+  --bg-menu: var(--palette-slate-raised);
+  --bg-elevated: var(--palette-slate-raised);
+  --bg-sunken: var(--palette-graphite);
+  --bg-accent-soft: rgb(75 99 240 / 18%);
 
-  /* 低饱和底：深色下用"提亮的一层"，不是加深 */
-  --Others-LightBlueBg: #1e2a38;
-  --Others-LightBlueBg-hover: #293542;
-  --Others-LightBlueBg-active: #353f4c;
-  --Others-LightGreenBg: #16c4561a;
-  --Others-LightGreenBg-hover: #66d89025;
-  --Others-LightGreenBg-active: #91e3af30;
-  --Others-LightYellowBg: #ffd23033;
-  --Others-LightRedBg: #ff52521a;
-  --Others-LightOrangeBg: #ff9f0a1a;
-  --Others-KMBlue10: #1a88ff1a;
-  --Others-KMBlue10-hover: #69b1ff25;
-  --Others-KMBlue10-active: #93c7ff30;
-  --Others-TextSelected: #1a88ff33;
-  --Others-SubLayerBg: #ffffff0f;
+  --text-primary: var(--palette-mist);
+  --text-secondary: rgb(242 240 234 / 72%);
+  --text-tertiary: rgb(242 240 234 / 58%);
+  --text-quaternary: rgb(242 240 234 / 42%);
+  --text-inverse: #0d0e10;
 
-  --MaskBg-Base: #0009;
-  --MaskBg-Base-hover: #1515159e;
-  --MaskBg-Base-active: #282828a3;
-  --MaskBg-Light: #0000004d;
-  /* 深色下用户气泡**不再是蓝色**，改用中性灰——这是 Kimi 的做法 */
-  --Others-BubbleGray_PC: #292929;
-  --Others-BubbleGray_PC-hover: #343434;
-  --Others-BubbleGray_PC-active: #3e3e3e;
-  --Others-BubbleBlue: #292929;
-  --Others-BubbleBlue-hover: #343434;
-  --Others-BubbleBlue-active: #3e3e3e;
+  --border-hairline: rgb(255 255 255 / 10%);
+  --border: rgb(255 255 255 / 12%);
+  --border-strong: rgb(255 255 255 / 22%);
+  --border-subtle: rgb(255 255 255 / 6%);
 
-  /* 弹层与按钮：深色弹层底 #262630 **带蓝调**，这是 Kimi 深色界面的辨识度来源 */
-  --modal-bg: #262630;
-  --modal-border: #31313a;
-  --modal-content: #e0ecffcc;
-  --modal-header-color: #f5f9fff2;
-  --button-bg: #262630;
-  --button-bg-hover: #3a3a44;
-  --button-border-color: #45454e;
-  --button-color: #f5f9fff2;
+  --accent: var(--palette-cobalt);
+  --accent-hover: var(--palette-cobalt-hover);
+  --accent-active: #6d84ff;
+  --accent-text: var(--palette-cobalt-text);
+  --accent-soft: var(--palette-cobalt-soft);
+  --accent-contrast: var(--palette-white, #fff);
+  --accent-selected: rgb(75 99 240 / 28%);
+
+  --accent-2: var(--palette-cyan);
+  --accent-2-text: var(--palette-cyan);
+  --accent-2-soft: rgb(46 202 210 / 14%);
+
+  --badge-bg: rgb(75 99 240 / 20%);
+  --badge-text: var(--palette-cobalt-text);
+
+  --status-success: var(--palette-green);
+  --status-warning: var(--palette-orange);
+  --status-danger: var(--palette-red);
+  --status-info: var(--palette-cobalt-text);
+
+  --danger-soft: rgb(255 107 107 / 14%);
+  --status-success-soft: rgb(61 214 140 / 13%);
+  --status-warning-soft: rgb(245 165 36 / 14%);
+  --status-danger-soft: rgb(255 107 107 / 14%);
+  --status-info-soft: rgb(75 99 240 / 18%);
+  --status-neutral-soft: var(--palette-slate-raised);
+
+  --button-primary-bg: var(--palette-cobalt);
+  --button-primary-bg-hover: var(--palette-cobalt-hover);
+  --button-primary-text: #fff;
+  --button-secondary-bg: var(--palette-slate-raised);
+  --button-secondary-border: rgb(255 255 255 / 12%);
+  --button-disabled-bg: rgb(255 255 255 / 8%);
+  --button-disabled-text: rgb(242 240 234 / 34%);
+  --button-disabled-border: rgb(255 255 255 / 8%);
+
+  --meter-track: rgb(255 255 255 / 12%);
+  --separator: var(--text-tertiary);
+  --menu-item-text: var(--text-primary);
+  --menu-desc-text: var(--text-secondary);
+
+  --chart-1: #7b91ff;
+  --chart-2: var(--palette-cyan);
+  --chart-3: var(--palette-amber);
+  --chart-4: var(--palette-violet);
+  --chart-grid: rgb(255 255 255 / 8%);
+
+  --heat-0: #24272c;
+  --heat-1: #33406b;
+  --heat-2: #46598f;
+  --heat-3: #7b91ff;
+
+  /* ---- 派生：深色里投影很弱，靠"面差 + 一圈内高光"分层 ---- */
+  --shadow-card:
+    inset 0 1px 0 rgb(255 255 255 / 4%), 0 1px 2px rgb(0 0 0 / 30%),
+    0 12px 28px -20px rgb(0 0 0 / 60%);
+  --shadow-raised:
+    inset 0 1px 0 rgb(255 255 255 / 6%), 0 2px 6px rgb(0 0 0 / 36%),
+    0 24px 48px -24px rgb(0 0 0 / 70%);
+  --shadow-popover:
+    inset 0 1px 0 rgb(255 255 255 / 6%), 0 4px 10px rgb(0 0 0 / 40%),
+    0 20px 56px -12px rgb(0 0 0 / 66%);
+  --shadow-float: var(--shadow-popover);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 6%);
+  --overlay-scrim: rgb(0 0 0 / 58%);
 
   --Always-Black: #000;
   --Always-White: #fff;
-  --Always-WhiteSecondary: #ffffffd6;
-  --Always-WhiteTertiary: #ffffff8f;
-  --Always-WhiteQuaternary: #ffffff6b;
-  --Always-TransparencyWhite15: #ffffff26;
-  --Always-TransparencyDarkFill: #0009;
-  --Always-TransparencyTagFill: #454545b3;
 
-  /* ================================================================
-   * 二、文字档：深色下的必要偏离（色相不变，只提亮）
-   *
-   * 深色这边的偏离比浅色少——语义色原值达标（见文件头），只有蓝色与中性灰需要一档：
-   *
-   *   蓝字档 #3194ff（= 本文件既有的 `Colors-KMBlue-active` 那一档）
-   *     菜单底 4.72 / 顶栏底 4.79 / 页面底 5.76 / 面板底 5.92
-   *   三级灰 #ffffff85   最不利底（侧栏快捷键徽章：Fills-F2 叠在浅灰底上的 #353535）4.60
-   *                      页面底 5.5 / 浅灰底 5.6 / 菜单底 5.5
-   *   四级灰 #ffffff5c   面板底 3.34 / 页面底 3.35 / 浅灰底 3.44
-   *
-   * 三级灰取 ≥4.5:1（13–14px 正文口径：导航与顶栏的次级文字、列表日期与计数），
-   * 且按**最不利底色**取值（`Ctrl K` 那种快捷键徽章：底比页面底亮两档）；
-   * 四级灰取 ≥3:1（占位文字）。Kimi 的原值都留在第一节，供对照与回溯。
-   * ================================================================ */
-  --Colors-KMBlue-text: #3194ff;
-
-  /* 中性灰的达标档：与浅色同构，只是方向相反（提亮） */
-  --Labels-Tertiary-text: #ffffff85;
-  --Labels-Quaternary-text: #ffffff5c;
-
-  /* ================================================================
-   * 三、KYLAB 别名
-   * ================================================================ */
-
-  --bg-canvas: var(--Bg-GroundPC);
-  --bg-surface: var(--Bg-Primary);
-  --bg-subtle: var(--Bg-Secondary);
-  --bg-hover: var(--Fills-F1);
-  --bg-active: var(--Fills-F3);
-  /* 当前项用 Fills-F2（与浅色同构），不用品牌色底——Kimi 的实测值如此 */
-  --bg-selected: var(--Fills-F2);
-  --bg-header: var(--Bg-Secondary);
-  /* 深色下 BgGp-Secondary 比画布亮一档（#1f1f1f），块按钮因此"浮"起来 */
-  --bg-group: var(--BgGp-Secondary);
-  --bg-overlay: var(--modal-bg);
-
-  --text-primary: var(--Labels-Primary);
-  --text-secondary: var(--Labels-Secondary);
-  /* 三级灰与四级灰指向**达标档**（第一、二节里的实测值写在第二节注释里） */
-  --text-tertiary: var(--Labels-Tertiary-text);
-  --text-quaternary: var(--Labels-Quaternary-text);
-
-  --border-hairline: var(--Separators-S1);
-  --border: var(--Separators-S1);
-  --border-strong: var(--Separators-S1-active);
-  /* 发丝线：Kimi 实测两档强度——6% 只够"看出边界"（`.chat-editor-content` 的输入框），
-     12% 才够"看出这是一块"（`.new-chat-btn` 的填充块）。后者就是上面的
-     `--border-hairline`（`Separators-S1` = 12%），前者另立一档。 */
-  --border-subtle: rgb(255 255 255 / 6%);
-
-  /* 菜单项的主行用 Primary、副标题用 Tertiary——Kimi 的 `.name` / `.desc` 实测如此。
-     它不把主行压到二级灰：那等于把"两个层级"合成一个。**副标题走达标档**：
-     那行是 13px 的说明文字（"选它会得到什么"），属于要被读到的口径。 */
-  --menu-item-text: var(--Labels-Primary);
-  --menu-desc-text: var(--Labels-Tertiary-text);
-
-  --meter-track: var(--Fills-F3);
-  --separator: var(--text-tertiary);
-
-  /* 品牌色：与浅色同构的两档分工——填充用 `--accent`，文字用 `--accent-text`
-     （深色下是**提亮**到 #3194ff，见第二节）。`--accent-soft` 是它的 10% 底。 */
-  --accent: var(--Colors-KMBlue);
-  --accent-hover: var(--Colors-KMBlue-hover);
-  --accent-text: var(--Colors-KMBlue-text);
-  --accent-soft: var(--Others-KMBlue10);
-
-  /* 选中底与选中描边：与浅色同构，走中性 Fills 阶梯，不用 Kimi 的冷蓝
-     `Others-TextSelected`（原值保留在第一节）。理由写在 light.css 同一处。 */
-  --accent-selected: var(--Fills-F3);
-
-  --accent-2: var(--Colors-Purple);
-  --accent-2-text: var(--Colors-Purple);
-  --accent-2-soft: #a16bff1a;
-
-  /* 徽章：蓝字 + 蓝的 10% 底。字色用**提亮档**——原色 #1a88ff 落在浅灰底上
-     只有 4.16–4.82:1，而徽标文字是 12px 正文口径。 */
-  --badge-bg: var(--Others-KMBlue10);
-  --badge-text: var(--Colors-KMBlue-text);
-
-  --status-success: var(--Colors-PositiveGreen);
-  --status-warning: var(--Colors-Orange);
-  --status-danger: var(--Colors-Red);
-  /* info 用**蓝字档**：与浅色同构（浅色那边也是 `Colors-KMBlue-text`）。
-     knowledge 域还把它当分段进度条的填充用，两套主题同源、深浅只差明度。 */
-  --status-info: var(--Colors-KMBlue-text);
-  --danger-soft: var(--Others-LightRedBg);
-
-  --status-success-soft: var(--Others-LightGreenBg);
-  --status-warning-soft: var(--Others-LightYellowBg);
-  --status-danger-soft: var(--Others-LightRedBg);
-  --status-info-soft: var(--Others-LightBlueBg);
-  --status-neutral-soft: var(--Bg-Secondary);
-
-  /* 主按钮：深色下同样取 `Labels-Primary`（近白）作底，文字用画布深色。
-     与浅色同构，理由是 Kimi 的纪律：**动作靠墨色，蓝只做小面积强调**。 */
-  --button-primary-bg: var(--Labels-Primary);
-  --button-primary-bg-hover: var(--Labels-Primary-hover);
-  --button-primary-text: var(--Bg-Primary);
-
-  /* 禁用态：**主按钮禁用时是 `Fills-F3`，不是 `Bg-Secondary`**。
-     Kimi 的 `.km-button-primary[disabled]` 实测底 `rgba(255,255,255,.18)`——
-     正是 `Fills-F3`（`#ffffff2e` = 18%）；文字 `rgba(255,255,255,.26)` 正是
-     `Labels-Quaternary`（`#ffffff42`）。
-     用 `#1f1f1f` 的问题是它在深色下几乎与画布同色，禁用态看起来像"按钮不见了"，
-     而 Kimi 的禁用是"还看得见，但明显是死的"。 */
-  --button-disabled-bg: var(--Fills-F3);
-  --button-disabled-text: var(--Labels-Quaternary);
-  --button-disabled-border: var(--Separators-S1);
-
-  --shadow-popover: 0 4px 14px rgb(0 0 0 / 45%);
-  --overlay-scrim: var(--MaskBg-Base);
-
-  /* 活跃度色阶：深色下空值那一档要**比画布亮**才看得见 */
-  --heat-0: #232326;
-  --heat-1: #2f4a6b;
-  --heat-2: #3f78b8;
-  --heat-3: #1a88ff;
+  --palette-white: #fff;
 }

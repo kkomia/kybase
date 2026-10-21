@@ -1,65 +1,43 @@
 /**
- * 导航侧栏（《前端设计规范》§5）——从 kylab 前端的侧栏裁出来的**知识库版**。
- *
- * 结构（壳做减法之后只剩这三块）：
+ * 导航侧栏 —— 知识库管理台的**工作台分栏**。
  *
  * ```
- * 品牌位（环行星标 + 折叠开关）
- * 主导航：所有知识库 / 概览 / 任务中心 / 接入 / 模型 / API 密钥（**顶层**项，没有父分组）
- * 页脚：账号（头像 + 名字 → 向上展开的菜单）
+ * ╭ kybase（字标）              ◧ ╮   ← 品牌位 + 折叠开关
+ * │                              │
+ * │  工作台                       │   ← 分区标签（12px、三级墨色、字距 .06em）
+ * │   ▎概览                       │   ← 当前项：品牌蓝底 + 左侧那道 3px 指示条
+ * │    所有知识库                  │
+ * │    任务中心                    │
+ * │                              │
+ * │  接入与配置                    │
+ * │    接入                       │
+ * │    模型                       │
+ * │    API 密钥                   │
+ * │                              │
+ * │  ╭ ● kkomia  管理员  ⌄ ╮      │   ← 账号（向上展开）
+ * ╰──────────────────────────────╯
  * ```
  *
- * ## 与 kylab 那份的差别：agent 语义的入口一律不要
+ * ## 三处设计决定
  *
- * 这一份前端是知识库服务的独立管理台，**没有**会话 / 笔记 / 记忆 / 能力 / 项目 / 工作区，
- * 所以上游侧栏里那几段整块摘掉了（不是"按条件隐藏"——它们在这里根本不存在）：
+ * 1. **分两组**：前三项是"日常看什么"，后三项是"外面怎么接进来"。
+ *    旧版六项平铺，读起来是一串没有重心的入口；分组标签用 12px 的灰字，
+ *    只做"这里换了一件事"的提示，不抢导航项的位置；
+ * 2. **当前项用品牌蓝的 9% 底 + 一道指示条**：蓝在这一版里只出现在
+ *    "动作 / 当前 / 数据"三处，导航当前项正是"当前"——这是它唯一一次
+ *    以面积出现的地方（9% 底，仍然很轻）；
+ * 3. **指示条是滑动的**：换页时那道 3px 的竖条**平滑滑到新位置**，
+ *    而不是在旧位置消失、在新位置出现。这是"动感"里最容易被察觉的一处：
+ *    它把"我换了一页"变成一次位移，而不是一次闪烁。
  *
- * | 上游有 | 这里 | 为什么 |
- * | --- | --- | --- |
- * | 「新建会话」+ 快捷键盘提示 | 无 | 没有对话页；`/chat` 在这份路由表里不存在 |
- * | 主导航：笔记 / 记忆 / 能力 | 无 | agent 语义，页面与数据面都留在 kylab |
- * | 项目节 + 对话节（含会话行、行菜单、展开/归档） | 无 | 会话、项目、工作区都是 agent 本机数据 |
- * | 历史会话面板（`ConversationHistoryPanel`） | 无 | 同上；`AppShell` 里那一段也一并摘掉 |
- * | 全局快捷键（`chat.new` / `layout.toggleSidebar`） | 无 | 那段绑定住在 kylab 的 chat 域与设置域的快捷键注册表里，随会话面一起留下；折叠开关照旧在品牌位那颗按钮上（`useSidebar`） |
+ * ## 折叠态
  *
- * 留下的三件事一件没少：**品牌位（含折叠）**、**主导航**、
- * **账号区**（头像 / 主题 / 退出登录，见 `AccountMenu`）。
- *
- * ## 主导航：固定几项、**拍平成顶层**
- *
- * 上游把知识库那几条挂在「知识库」这个可折叠父分组下面。而这一份界面**整个就是知识库控制台**，
- * 父分组除了把"这里是知识库"再说一遍之外不提供任何层级信息，还白占一行与一次折叠动作
- * ——所以分组头连同它的箭头、展开态、以及"收起时才点亮"的那个组级选中态一起删掉，
- * 子项提成顶层导航项（`NAV_ITEMS`），行样式沿用导航项那一套（`NAV_ROW`）。
- *
- * 各项**无条件渲染**：连不上的处置在页面自己身上（页面进页时那条读会报它自己的错）。
- * 顺序：所有知识库（`/knowledge-bases`）/ 概览（`/`，exact）/ 任务中心（`/tasks`）/
- * 接入（`/tools`）/ 模型（`/models`）/ API 密钥（`/api-keys`）；后三项是 2026-10-09 补的
- * 对外能力面（见 `NAV_ITEMS` 那张表）。选中态**各算各的**（`isActive`），不再有"整组亮起来"那一条。
- *
- * ## 图标：Remix Icon（与上游同一套）
- *
- * | 位置 | 图标 |
- * | --- | --- |
- * | 所有知识库 | `book-2-line` |
- * | 概览 | `dashboard-line` |
- * | 任务中心 | `task-line` |
- * | 接入 | `tools-line` |
- * | 模型 | `cpu-line` |
- * | API 密钥 | `key-2-line` |
- * | 品牌标 | 环行星（`features/chat/ui/Logo.tsx` 的 `mark`） |
- * | 折叠开关 | 自绘（`./icons.tsx`，用户给的 iconfont 原稿） |
- *
- * ## 折叠态的两处取值**必须在调用点写**
- *
- * 图标居中那两值（`gap-0 px-[14px]`）原先写在 `layout.css` 的
- * `.ly-sidebar-collapsed .ly-nav-item` 里，靠"那份文件没有 `@layer`"才压得过工具类；
- * 收层之后**层序与优先级无关**，层里的声明压不过工具类，留在 CSS 里等于从来没生效
- * （图标会偏左、gap 也不归零）。所以它们表达在 `NAV_ROW_COLLAPSED`。
+ * 宽度从 256 → 72，文字用 `max-width` 收到 0（不用 `display: none`：那是瞬时的，
+ * 宽度动画会断在它身上）。分区标签换成一条发丝线；导航项只剩图标，整行居中。
+ * 折叠开关自己跟着右缘滑到正中——它的绝对定位位置在两种状态下恰好都是右边距 16px。
  */
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
-
-import { preloadPage } from '@/app/routes'
 import {
   RiBook2Line,
   RiCpuLine,
@@ -69,6 +47,7 @@ import {
   RiToolsLine,
 } from '@remixicon/react'
 
+import { preloadPage } from '@/app/routes'
 import { Logo } from '@/features/chat/ui/Logo'
 import { cn } from '@/lib/utils'
 
@@ -78,136 +57,86 @@ import { useSidebar } from './useSidebar'
 import './layout.css'
 
 /**
- * 导航行：40px 高、圆角 12、图标 18、gap 6（都来自 `tokens.css` 的侧栏那一组）。
- * 静止态就用主文字色——它们是主导航，读起来不该像"次要信息"。
+ * 主导航。`page` 是懒加载入口名（划过/聚焦时预热那一页的代码）。
+ * 图标用 Remix Icon，与仓储里其它地方同一套。
  */
-const NAV_ROW =
-  'ly-nav-item flex min-h-[var(--nav-height)] items-center gap-1.5 overflow-hidden rounded-[var(--radius-nav)] px-2 text-[length:var(--text-meta-size)] leading-5 text-text-primary no-underline transition-[gap,padding] duration-[var(--motion-slow)] ease-in-out hover:bg-[var(--bg-hover)]'
-
-/**
- * 折叠态的导航行：图标居中。
- *
- * 左右 14px = (44 − 16) ÷ 2：44 是折叠栏（60）减掉 nav 的 `px-2` 两侧，16 是图标盒。
- * 折叠开关的过渡靠 `transition-[gap,padding]`（在 `NAV_ROW` 上），换类名就能平滑滑过去。
- */
-const NAV_ROW_COLLAPSED = 'gap-0 px-[14px]'
-
-/**
- * 主导航：**固定几项**，**无条件渲染**（上游 R5 的口径照搬）。
- *
- * | 位置 | 页面 | 为什么在这里 |
- * | --- | --- | --- |
- * | 所有知识库 | `/knowledge-bases` | 库清单，进来的第一站 |
- * | 概览 | `/` | 驾驶舱，与上游同一落地页 |
- * | 任务中心 | `/tasks` | 流水线任务与运行负载 |
- * | 接入 | `/tools` | 怎么接上（地址 / 密钥 / 客户端片段 / 验证 / 排障）+ 对外有什么工具 |
- * | 模型 | `/models` | 用途绑哪个模型（出题 / 摘要走「对话生成」那一格）+ 供应商与模型登记；写入口只认管理员 |
- * | API 密钥 | `/api-keys` | 管长期密钥；端点只认管理员，成员进去看到受限态 |
- *
- * 前三项是「知识库这个控制台」的日常面；后三项（接入 / 模型 / API 密钥）是**对外能力**
- * 那一面，2026-10-09 补进来时排在后面：它们回答的是"外面怎么接进来"与"模型从哪儿来"，
- * 与改库、看任务不同一件事。其中 `/tools` 那一项 2026-10-10 从「工具」改成「接入」：
- * 那一页的主体已经换成"照着接"（见 `features/misc/tools/ToolsPage`），工具清单退成第二档。
- * 「API 密钥」原来挂在账号菜单上（`AccountMenu`）——它够日常、又要有自己的地址栏入口，
- * 所以搬成这一页；账号菜单里只剩头像与主题（翻转那一项）。
- *
- * 顺序与图标：前三条照上游「知识库」那一组原样搬过来，只是不再有父分组（见文件头）。
- * 这一栏**不列每个库的名字**：库可能几十个，全铺在侧栏上正是"知识库占的地方太多"的根源
- * （上游原话）。
- *
- * `motion` 是这一项的**悬停动效族**（v0.18：一项一个动作，取的是"这个图标画的是什么"
- * 该有的动作）。这一份只留下 `slide`（书脊滑进来）那一族——它是 `layout.css` 里唯一还有
- * 关键帧的：另外三族（气泡落下 / 便签放上 / 记忆歪头）服务的图标长在 agent 域，
- * 随那些条目一并删了。拍平之前它长在分组头那颗书脊图标上，现在**跟着那颗图标留在
- * 「所有知识库」这一项**；另外几项挂一个没有关键帧的类名等于"悬停没反应"，
- * 所以它们的 `motion` 是 `undefined`——不是漏了。
- *
- * `page` 是这一项对应的**懒加载入口名**（`app/routes.ts` 的 `PAGES`）：划过/聚焦时按它
- * 预热那一页的代码。**必须逐项写自己的**——写死某一个的话，划过「工具」预热的是知识库
- * 那一页，点进去照旧等一次 chunk。
- */
-const NAV_ITEMS = [
+const NAV_GROUPS = [
   {
-    to: '/knowledge-bases',
-    label: '所有知识库',
-    icon: RiBook2Line,
-    exact: true,
-    motion: 'slide',
-    page: 'knowledgeBases',
-  },
-  // 「概览」= 驾驶舱，住 `/`（与上游一致：落地页就是概览，书签不用改）。
-  // `/dashboard` 只是同一页的旧入口，在路由表里是一条重定向。
-  {
-    to: '/',
-    label: '概览',
-    icon: RiDashboardLine,
-    exact: true,
-    motion: undefined,
-    page: 'dashboard',
+    label: '工作台',
+    items: [
+      { to: '/', label: '概览', icon: RiDashboardLine, exact: true, page: 'dashboard' },
+      {
+        to: '/knowledge-bases',
+        label: '所有知识库',
+        icon: RiBook2Line,
+        exact: true,
+        page: 'knowledgeBases',
+      },
+      { to: '/tasks', label: '任务中心', icon: RiTaskLine, exact: false, page: 'tasks' },
+    ],
   },
   {
-    to: '/tasks',
-    label: '任务中心',
-    icon: RiTaskLine,
-    exact: false,
-    motion: undefined,
-    page: 'tasks',
-  },
-  {
-    to: '/tools',
-    label: '接入',
-    icon: RiToolsLine,
-    exact: false,
-    motion: undefined,
-    page: 'tools',
-  },
-  {
-    to: '/models',
-    label: '模型',
-    icon: RiCpuLine,
-    exact: false,
-    motion: undefined,
-    page: 'models',
-  },
-  {
-    to: '/api-keys',
-    label: 'API 密钥',
-    icon: RiKey2Line,
-    exact: false,
-    motion: undefined,
-    page: 'apiKeys',
+    label: '接入与配置',
+    items: [
+      { to: '/tools', label: '接入', icon: RiToolsLine, exact: false, page: 'tools' },
+      { to: '/models', label: '模型', icon: RiCpuLine, exact: false, page: 'models' },
+      { to: '/api-keys', label: 'API 密钥', icon: RiKey2Line, exact: false, page: 'apiKeys' },
+    ],
   },
 ] as const
+
+/** 指示条自身的高度（16px）与它在导航项里的垂直居中偏移。 */
+const INDICATOR_HEIGHT = 16
 
 export function SideNav() {
   const location = useLocation()
   const { collapsed, toggleSidebar } = useSidebar()
 
+  const navRef = useRef<HTMLElement>(null)
+  const [indicator, setIndicator] = useState<{ y: number } | null>(null)
+
   function isActive(to: string, exact: boolean): boolean {
     return exact ? location.pathname === to : location.pathname.startsWith(to)
   }
 
+  /**
+   * 量当前项的位置，让那道指示条滑过去。
+   *
+   * 用 `getBoundingClientRect` 的差值（而不是 `offsetTop`）：导航项的祖先里有
+   * `position: relative` 的那一层是 nav 自己，差值法不依赖中间有几层定位上下文。
+   * 依赖里带 `collapsed`：折叠时行高不变、但左右 padding 变了，位置也要重算。
+   */
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const el = nav.querySelector<HTMLElement>('[data-nav-active="true"]')
+    if (!el) {
+      setIndicator(null)
+      return
+    }
+    const navTop = nav.getBoundingClientRect().top
+    const rect = el.getBoundingClientRect()
+    setIndicator({ y: rect.top - navTop + (rect.height - INDICATOR_HEIGHT) / 2 })
+  }, [location.pathname, collapsed])
+
   return (
     <aside
-      className={
+      className={cn(
+        'ly-sidebar flex flex-col bg-canvas',
         collapsed
-          ? 'ly-sidebar ly-sidebar-collapsed flex w-[var(--sidebar-collapsed-width)] flex-[0_0_var(--sidebar-collapsed-width)] flex-col bg-[var(--bg-canvas)]'
-          : 'ly-sidebar flex w-[var(--sidebar-width)] flex-[0_0_var(--sidebar-width)] flex-col overflow-hidden bg-[var(--bg-canvas)]'
-      }
+          ? 'ly-sidebar-collapsed w-[var(--sidebar-collapsed-width)] flex-[0_0_var(--sidebar-collapsed-width)]'
+          : 'w-[var(--sidebar-width)] flex-[0_0_var(--sidebar-width)] overflow-hidden',
+      )}
       aria-label="侧栏"
     >
-      {/* 品牌位只放那颗**环行星**：完整的 "kylab" 字标在登录页与欢迎态上——
-          这一格只有 24px 宽的位置，字标在这么小的地方既读不出来、又跟下方的导航抢宽度。
-          右侧是折叠开关：折叠后行星标收起，只留那颗面板图标。
-          **两者都不用条件渲染摘掉**——摘掉是瞬时的、没法过渡；改用 max-width 收缩
-          （`.ly-collapsible`），宽度动画才连得上。 */}
-      <div className="relative flex min-h-[var(--sidebar-header-height)] items-center gap-2 pt-[15px] pr-4 pb-[9px] pl-4 text-text-primary">
-        <span className="ly-collapsible flex">
-          <Logo variant="mark" size={22} />
+      {/* 品牌位：展开时是字标（与登录页同一枚），折叠时只剩环行星 */}
+      <div className="relative flex h-[var(--sidebar-header-height)] items-center gap-2 px-5 text-text-primary">
+        <span className={cn('ly-collapsible flex items-center', collapsed && 'px-0')}>
+          {collapsed ? <Logo variant="mark" size={22} /> : <Logo variant="wordmark" size={19} />}
         </span>
         <button
           type="button"
-          className="absolute top-4 right-4 inline-flex size-7 items-center justify-center rounded-control text-text-tertiary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary"
+          className="absolute top-1/2 right-4 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-control)] text-text-tertiary transition-[color,background-color] duration-[var(--motion-fast)] hover:bg-[var(--bg-hover)] hover:text-text-primary"
           aria-label={collapsed ? '展开侧栏' : '收缩侧栏'}
           aria-expanded={!collapsed}
           title={collapsed ? '展开侧栏' : '收缩侧栏'}
@@ -217,39 +146,66 @@ export function SideNav() {
         </button>
       </div>
 
-      <nav className="flex flex-col px-2 pb-2" aria-label="主导航">
-        {/* **顶层**导航项（见 `NAV_ITEMS`），**不列库名**、**无条件渲染**：
-            没有父分组、没有箭头、没有展开态——这一栏整个就是知识库控制台（见文件头）。 */}
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            /* 划过就把**这一项自己那一页**的代码拉下来（照上游）。列表数据由页面自己进页时拉，
-               导航项不替它发请求。 */
-            onMouseEnter={() => preloadPage(item.page)}
-            onFocus={() => preloadPage(item.page)}
-            /* 选中态用**中性 alpha 底**（不是品牌色底，Kimi 的实测值），而且是类名不是内联样式：
-               内联样式会压过 `:hover`，鼠标划过当前项就没了反馈 */
-            className={cn(
-              NAV_ROW,
-              collapsed && NAV_ROW_COLLAPSED,
-              isActive(item.to, item.exact) && 'bg-[var(--bg-selected)]',
+      <nav ref={navRef} className="relative flex flex-col px-3 pb-2" aria-label="主导航">
+        {/* 滑动指示条：没有当前项时（例如 404 页）隐藏 */}
+        <span
+          className="ly-nav-indicator"
+          style={{
+            transform: `translateY(${indicator?.y ?? 0}px)`,
+            opacity: indicator ? 1 : 0,
+          }}
+          aria-hidden="true"
+        />
+
+        {NAV_GROUPS.map((group, groupIndex) => (
+          <div key={group.label} className="flex flex-col">
+            {collapsed ? (
+              groupIndex > 0 && (
+                <span className="mx-1 my-2 h-px bg-[var(--border-hairline)]" aria-hidden="true" />
+              )
+            ) : (
+              <span className="ly-collapsible px-2.5 pt-3 pb-1.5 text-[length:var(--text-c2-size)] font-medium tracking-[0.08em] text-text-tertiary">
+                {group.label}
+              </span>
             )}
-            aria-current={isActive(item.to, item.exact) ? 'page' : undefined}
-            title={collapsed ? item.label : undefined}
-          >
-            <item.icon
-              size={18}
-              className={item.motion ? `ly-nav-motion-${item.motion} shrink-0` : 'shrink-0'}
-              aria-hidden="true"
-            />
-            <span className="ly-collapsible">{item.label}</span>
-          </Link>
+
+            {group.items.map((item) => {
+              const active = isActive(item.to, item.exact)
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onMouseEnter={() => preloadPage(item.page)}
+                  onFocus={() => preloadPage(item.page)}
+                  data-nav-active={active ? 'true' : undefined}
+                  aria-current={active ? 'page' : undefined}
+                  title={collapsed ? item.label : undefined}
+                  className={cn(
+                    'ly-nav-item group relative flex min-h-[38px] items-center gap-2.5 rounded-[var(--radius-nav)] px-2.5 text-[length:var(--text-meta-size)] font-medium no-underline transition-[background-color,color,padding,gap] duration-[var(--motion-slow)] ease-out',
+                    active
+                      ? 'bg-[var(--bg-accent-soft)] text-text-primary'
+                      : 'text-text-secondary hover:bg-[var(--bg-hover)] hover:text-text-primary',
+                    collapsed && 'justify-center gap-0 px-0',
+                  )}
+                >
+                  <item.icon
+                    size={18}
+                    className={cn(
+                      'shrink-0 transition-colors duration-[var(--motion-fast)]',
+                      active ? 'text-accent' : 'text-text-tertiary group-hover:text-text-secondary',
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className="ly-collapsible truncate">{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
         ))}
       </nav>
 
-      {/* 页脚：**没有上分隔线**，内边距 8px——侧栏里一条分割线都没有，区块之间靠留白分块。 */}
-      <div className="ly-sidebar-foot mt-auto p-2">
+      {/* 页脚：账号（向上展开的菜单）。没有分隔线——区块之间靠留白分块 */}
+      <div className="mt-auto px-2 pb-2">
         <AccountMenu />
       </div>
     </aside>

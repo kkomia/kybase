@@ -59,13 +59,13 @@ import {
   type ImpactReport,
 } from '@/api/documents'
 import { createFolder, deleteFolder, listFolders, renameFolder, type Folder } from '@/api/folders'
-import { MeterBar, SkeletonRows, StatusTag } from '@/features/knowledge/composites'
+import { EmptyState, MeterBar, SkeletonRows, StatusTag } from '@/features/knowledge/composites'
 import { DocumentDrawer } from '@/features/knowledge/DocumentDrawer'
 import { KbSearchPanel } from '@/features/knowledge/KbSearchPanel'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { ShareDialog } from '@/features/knowledge/ShareDialog'
 import { messageOf, notify, useKnowledgeBases, usePolling } from '@/features/knowledge/store'
-import { ConfirmDialog } from '@/features/misc/shared/composites'
+import { ConfirmDialog, Notice } from '@/features/misc/shared/composites'
 import { useOperatorStore } from '@/lib/operator'
 import {
   documentSourceLabel,
@@ -800,6 +800,20 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
   const pageCount = Math.max(1, Math.ceil(total / DOCUMENT_PAGE_SIZE))
 
   /**
+   * 页头那一行说明：**这一份库现在是什么状态**（多少篇文档、几个目录、最近动过）。
+   * 与列表页的 `subtitle` 同一个口径：一句话，不写"本页用于……"。
+   */
+  const metaLine = knowledgeBase
+    ? [
+        `${formatCount(total)} 篇文档`,
+        hasFolders ? `${formatCount(folders.length)} 个目录` : '',
+        `最近更新 ${formatRelativeTime(knowledgeBase.last_activity)}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
+
+  /**
    * 出题列文案：生成中 > 已出题条数 > 未生成 > 还没切块（出不了题）。
    *
    * **单位不写在格子里（单位上提）**：列头就叫「问题」，右边紧挨的「切块」列同样
@@ -839,25 +853,62 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
 
   return (
     <div className="page-shell">
-      {/* 页头：标题 + **紧贴标题的**设置齿轮。
-          旧前端把它放在 `PageHeader` 的 `title-suffix` 槽里，注释写明理由：
-          "它是'这个库本身'的入口，不是页面的动作"——放进右侧动作区会被读成后者。
-          所以这里也**不给 h1 `flex: 1`**：那会把齿轮推到页面的右缘去
-          （对照记录 §3 第 3 条）。齿轮的显示条件与旧版一致：`can_write`。 */}
-      <div className="kb-title-row">
-        <h1>{knowledgeBase?.name ?? '知识库'}</h1>
-        {knowledgeBase?.can_write ? (
-          <KnowledgeBaseSettings kb={knowledgeBase} onChanged={onKbChanged} />
-        ) : null}
-      </div>
+      {/*
+        页头（与 `PageShell` 同一个 `.m-page-head` 结构，但这一页要自己排）：
+        库名 28px + 紧贴它的设置齿轮 + 一行元信息；右侧是**页面级动作**，
+        其中「上传文档」是这一页的主动作（进库之后大多数人的下一步就是往里放东西）。
 
-      {error ? <p className="kb-error-line">{error}</p> : null}
+        齿轮留在标题同一行、**不给标题 `flex: 1`**——它是"这个库本身"的入口，
+        放进右侧动作区会被读成"页面的动作"（对照记录 §3 第 3 条）。
+      */}
+      <header className="m-page-head">
+        <div className="m-page-heading kb-title-row">
+          <h1 className="m-page-title">{knowledgeBase?.name ?? '知识库'}</h1>
+          {knowledgeBase?.can_write ? (
+            <KnowledgeBaseSettings kb={knowledgeBase} onChanged={onKbChanged} />
+          ) : null}
+          {metaLine ? <p className="page-subtitle">{metaLine}</p> : null}
+        </div>
+        <div className="m-page-actions">
+          {/* 与「按文件名过滤」区分开：这一颗开的是检索面板（语义 + BM25），
+              查的是库里的正文，不是当前这一页的文件名 */}
+          <Button
+            variant="secondary"
+            disabled={documents.length === 0}
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search aria-hidden="true" />
+            按内容检索
+          </Button>
+          {/* Wiki 入口只在库形态选了「向量检索 + Wiki」时出现 */}
+          {knowledgeBase?.wiki_enabled ? (
+            <Button variant="secondary" onClick={() => void navigate(`/kb/${kbId}/wiki`)}>
+              <Library aria-hidden="true" />
+              Wiki
+            </Button>
+          ) : null}
+          {/* 分享入口只对 owner / 管理员出现：can_manage 由后端算 */}
+          {knowledgeBase?.can_manage ? (
+            <Button variant="secondary" onClick={() => setShareOpen(true)}>
+              <Share2 aria-hidden="true" />
+              分享
+            </Button>
+          ) : null}
+          {/* 只读分享的成员看得到内容，但没有写入口。上传是这一页的主动作 */}
+          {knowledgeBase?.can_write ? (
+            <Button variant="default" onClick={() => setUploadOpen(true)}>
+              <Upload aria-hidden="true" />
+              上传文档
+            </Button>
+          ) : null}
+        </div>
+      </header>
+
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
       {/* 只读分享：看得到内容但没有写入口（`can_write` 由后端按调用者身份算）。 */}
       {knowledgeBase && !knowledgeBase.can_write ? (
-        <p className="kb-readonly-note">
-          这是别人分享给你的库，你是只读权限：可以检索与查看，不能上传或删除。
-        </p>
+        <Notice>这是别人分享给你的库，你是只读权限：可以检索与查看，不能上传或删除。</Notice>
       ) : null}
 
       {/*
@@ -1127,40 +1178,6 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
                 </Button>
               ) : null}
             </div>
-
-            <div className="kb-toolbar-actions">
-              {/* 与「按文件名过滤」区分开：这一颗开的是检索面板（语义 + BM25），
-                  查的是库里的正文，不是当前这一页的文件名 */}
-              <Button
-                variant="secondary"
-                disabled={documents.length === 0}
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search aria-hidden="true" />
-                按内容检索
-              </Button>
-              {/* Wiki 入口只在库形态选了「向量检索 + Wiki」时出现 */}
-              {knowledgeBase?.wiki_enabled ? (
-                <Button variant="secondary" onClick={() => void navigate(`/kb/${kbId}/wiki`)}>
-                  <Library aria-hidden="true" />
-                  Wiki
-                </Button>
-              ) : null}
-              {/* 分享入口只对 owner / 管理员出现：can_manage 由后端算 */}
-              {knowledgeBase?.can_manage ? (
-                <Button variant="secondary" onClick={() => setShareOpen(true)}>
-                  <Share2 aria-hidden="true" />
-                  分享
-                </Button>
-              ) : null}
-              {/* 只读分享的成员看得到内容，但没有写入口 */}
-              {knowledgeBase?.can_write ? (
-                <Button variant="secondary" onClick={() => setUploadOpen(true)}>
-                  <Upload aria-hidden="true" />
-                  上传文档
-                </Button>
-              ) : null}
-            </div>
           </div>
 
           {loading && documents.length === 0 ? <SkeletonRows variant="list" rows={4} /> : null}
@@ -1296,15 +1313,13 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
                 </div>
 
                 <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                  {/* 空范围也照常给表头与数据区，只是第一行换成一句说明 */}
+                  {/* 空范围也照常给表头与数据区，只是第一行换成空态（现有 `EmptyState`） */}
                   {documents.length === 0 ? (
                     <li className="kb-doc-group">
-                      <div className="kb-doc-row panel-row kb-doc-empty">
-                        <span className="kb-doc-empty-text">{emptyTitle}</span>
-                        <span className="kb-doc-empty-hint">
-                          {limits.formatHint}；单文件上限 {limits.maxMb}MB。
-                        </span>
-                      </div>
+                      <EmptyState
+                        title={emptyTitle}
+                        hint={`${limits.formatHint}；单文件上限 ${limits.maxMb}MB。`}
+                      />
                     </li>
                   ) : null}
 

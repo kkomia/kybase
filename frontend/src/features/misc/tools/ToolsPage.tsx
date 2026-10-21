@@ -27,6 +27,9 @@
  *
  * 参数只列**名字 + 必填标记**，参数的说明挂了 `title`（没写说明就不挂）：
  * 参数多的工具（检索）列成一行已经很长，把说明摊开会把这一列撑成一段正文。
+ *
+ * 版式上这一页只有两层：页头（标题 + 一句现状 + 刷新）是主角；下面每一档里，
+ * 信息用 `.surface-card`、清单用 `.panel`，两者都不再套第二层卡片。
  */
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
@@ -34,11 +37,12 @@ import { Link } from 'react-router'
 
 import { getToolCatalogue } from '@/api/tools'
 import { copyText } from '@/lib/clipboard'
+import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs'
 
 import { TOOLS_QUERY_KEY } from '../queryKeys'
-import { EmptyState, ErrorLine, PageShell, SkeletonBlock, StatusTag } from '../shared/composites'
+import { EmptyState, ErrorLine, PageShell, SkeletonBlock } from '../shared/composites'
 import { notifyError, notifySuccess } from '../shared/toast'
 import { AccessPanel } from './AccessPanel'
 
@@ -46,11 +50,29 @@ function messageOf(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
 
+/** 信息卡里的一行：左栏 120px 标签 + 右栏内容（与「接入」档的信息卡同一口径）。 */
+const INFO_ROW = 'grid grid-cols-1 gap-x-5 gap-y-1.5 sm:grid-cols-[120px_minmax(0,1fr)]'
+
+/** 信息卡里的标签格：13.5px、二级墨色——它是"这一行是什么"，不是值。 */
+const INFO_LABEL = 'text-[length:var(--text-meta-size)] leading-6 text-text-secondary'
+
 export function ToolsPage() {
   const catalogue = useQuery({ queryKey: TOOLS_QUERY_KEY, queryFn: getToolCatalogue })
 
   const data = catalogue.data
   const tools = data?.items ?? []
+
+  /**
+   * 页头那行现状：**只写算得出来的部分**——地址是不是服务端给的、有几个对外工具。
+   * 密钥数量要另打一次 `/api-keys`，这一页不为了凑一句副标题多发一个请求。
+   */
+  const subtitle = catalogue.isLoading
+    ? '正在读取工具面…'
+    : catalogue.isError
+      ? '工具面读取失败，刷新重试'
+      : data
+        ? `${data.mcp_endpoint ? 'MCP 地址已配置' : '服务端未给 MCP 地址'} · ${tools.length} 个对外工具`
+        : '正在读取工具面…'
 
   /** 指纹要能整串复制走：接入方拿它跟自己对的那一版核。 */
   async function copyFingerprint(): Promise<void> {
@@ -65,6 +87,7 @@ export function ToolsPage() {
   return (
     <PageShell
       title="接入"
+      subtitle={subtitle}
       actions={
         <Button variant="secondary" onClick={() => void catalogue.refetch()}>
           <RefreshCw size={14} />
@@ -72,9 +95,8 @@ export function ToolsPage() {
         </Button>
       }
     >
-      {/* 正文那一层与 `TasksPage` **同一结构**（页面自己写一层 `page-shell-body`），
-          间距与任务中心那一页一致。 */}
-      <div className="page-shell-body">
+      {/* 读不到时页头已经说了状态，这里只留一行具体原因；读到了才展开两档。 */}
+      <div className="flex flex-col gap-6">
         {catalogue.isError && <ErrorLine>{messageOf(catalogue.error, '读不到工具清单')}</ErrorLine>}
         {catalogue.isLoading && <SkeletonBlock variant="list" rows={4} />}
 
@@ -85,105 +107,112 @@ export function ToolsPage() {
               <TabsTrigger value="tools">工具</TabsTrigger>
             </TabsList>
 
-            {/* 每一档自己竖排（`.m-tab-pane` 给段间距）：档内不止一段，缺了这层上下会黏在一起 */}
-            <TabsContent value="access" className="m-tab-pane">
+            {/* 每一档自己竖排：档内的几段之间隔一档 32px，段内再紧凑一点 */}
+            <TabsContent value="access" className="mt-4 flex flex-col gap-8">
               <AccessPanel endpoint={data.mcp_endpoint} />
             </TabsContent>
 
-            <TabsContent value="tools" className="m-tab-pane">
-              <section className="m-block">
-                <h2 className="m-block-title">工具面</h2>
-                <div className="panel">
-                  <ul className="m-list">
-                    <li className="m-list-item">
-                      <div className="m-list-row">
-                        <div className="m-row-lines">
-                          <span className="m-row-label">工具面指纹</span>
-                          <code className="m-row-value">{data.surface_fingerprint}</code>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          aria-label="复制工具面指纹"
-                          onClick={() => void copyFingerprint()}
-                        >
-                          复制
-                        </Button>
+            <TabsContent value="tools" className="mt-4 flex flex-col gap-8">
+              <section className="flex flex-col gap-3">
+                <h2 className="section-label">工具面</h2>
+                <div className="surface-card px-5">
+                  <div className={`${INFO_ROW} py-4`}>
+                    <span className={INFO_LABEL}>工具面指纹</span>
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <code className="min-w-0 break-all font-mono text-[length:var(--text-meta-size)] leading-6 text-text-primary">
+                        {data.surface_fingerprint}
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="shrink-0"
+                        aria-label="复制工具面指纹"
+                        onClick={() => void copyFingerprint()}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className={`${INFO_ROW} border-t border-[var(--border-hairline)] py-4`}>
+                    <span className={INFO_LABEL}>随附技能</span>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[length:var(--text-meta-size)] leading-6 text-text-primary">
+                          {data.skill.name}
+                        </span>
+                        {data.skill.transports.map((transport) => (
+                          <Badge key={transport} variant="secondary">
+                            {transport.toUpperCase()}
+                          </Badge>
+                        ))}
                       </div>
-                    </li>
-                    <li className="m-list-item">
-                      <div className="m-list-row">
-                        <div className="m-row-lines">
-                          <span className="m-row-label">
-                            {data.skill.name}
-                            {data.skill.transports.map((transport) => (
-                              <StatusTag key={transport} label={transport.toUpperCase()} />
-                            ))}
-                          </span>
-                          <span className="m-row-value">{data.skill.summary}</span>
-                          <span className="m-row-value">{data.skill.path}</span>
-                        </div>
-                      </div>
-                    </li>
-                  </ul>
+                      <span className="text-[length:var(--text-meta-size)] leading-6 text-text-secondary">
+                        {data.skill.summary}
+                      </span>
+                      <code className="break-all font-mono text-[length:var(--text-micro-size)] text-text-tertiary">
+                        {data.skill.path}
+                      </code>
+                    </div>
+                  </div>
                 </div>
-                <p className="m-muted">工具面一变此值就变。</p>
+                <p className="text-hint">工具面一变此值就变。</p>
               </section>
 
-              <section className="m-block">
-                <h2 className="m-block-title">对外工具</h2>
+              <section className="flex flex-col gap-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 className="section-label">对外工具</h2>
+                  <span className="tabular text-[length:var(--text-micro-size)] text-text-tertiary">
+                    {tools.length} 个
+                  </span>
+                </div>
                 {tools.length === 0 ? (
                   <EmptyState title="还没有工具" hint="这个服务还没有对外工具。" />
                 ) : (
                   <div className="panel">
                     {/* 表头与行**引用同一套列宽类**（`.m-tool-col-*`）：两处各写一份就会错位 */}
-                    <div className="panel-head m-list-head min-w-[560px]" aria-hidden="true">
+                    <div className="panel-head m-list-head min-w-[720px]" aria-hidden="true">
                       <span className="m-tool-col-name">工具</span>
                       <span className="m-tool-col-perm">权限</span>
                       <span className="m-tool-col-params">参数</span>
                     </div>
-                    <ul className="m-list">
+                    <ul className="m-list stagger">
                       {tools.map((tool) => (
-                        <li key={tool.name} className="m-list-item">
-                          <div className="m-tool-row panel-row min-w-[560px]">
-                            <span className="m-tool-col-name">
-                              <span className="m-row-label">
-                                {tool.label}
-                                <span className="m-tool-id">{tool.name}</span>
-                              </span>
-                              <span className="m-row-value">{tool.summary}</span>
+                        <li key={tool.name} className="panel-row m-tool-row min-w-[720px]">
+                          <span className="m-tool-col-name">
+                            <span className="m-row-label">
+                              {tool.label}
+                              <span className="m-tool-id">{tool.name}</span>
                             </span>
-                            <span className="m-tool-col-perm">
-                              <StatusTag
-                                tone={tool.requires_write ? 'warning' : 'neutral'}
-                                label={tool.requires_write ? '需要读写' : '只读'}
-                              />
-                            </span>
-                            <span className="m-tool-col-params">
-                              {tool.params.length === 0 ? (
-                                <span className="m-row-value">无参数</span>
-                              ) : (
-                                tool.params.map((param) => (
-                                  <span
-                                    key={param.name}
-                                    className="m-tool-param"
-                                    title={param.summary || undefined}
-                                  >
-                                    {param.name}
-                                    {param.required && (
-                                      <span className="m-tool-param-required">必填</span>
-                                    )}
-                                  </span>
-                                ))
-                              )}
-                            </span>
-                          </div>
+                            <span className="m-row-value">{tool.summary}</span>
+                          </span>
+                          <span className="m-tool-col-perm">
+                            <Badge variant={tool.requires_write ? 'warning' : 'secondary'}>
+                              {tool.requires_write ? '需要读写' : '只读'}
+                            </Badge>
+                          </span>
+                          <span className="m-tool-col-params">
+                            {tool.params.length === 0 ? (
+                              <span className="m-row-value">无参数</span>
+                            ) : (
+                              tool.params.map((param) => (
+                                <span
+                                  key={param.name}
+                                  className="m-tool-param"
+                                  title={param.summary || undefined}
+                                >
+                                  {param.name}
+                                  {param.required && <Badge variant="warning">必填</Badge>}
+                                </span>
+                              ))
+                            )}
+                          </span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
-                <p className="m-muted">
+                <p className="text-[length:var(--text-meta-size)] leading-[var(--line-ui)] text-text-secondary">
                   一把密钥可以只开其中一部分工具，在 <Link to="/api-keys">API 密钥</Link> 里勾选。
                 </p>
               </section>

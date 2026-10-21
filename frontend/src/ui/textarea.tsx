@@ -18,7 +18,7 @@ function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
       data-slot="textarea"
       data-focus-ring="self"
       className={cn(
-        'flex field-sizing-content min-h-16 w-full resize-y rounded-control border border-border bg-surface px-3 py-2 text-[length:var(--text-body-size)] text-text-primary transition-[color,box-shadow,border-color] outline-none placeholder:text-text-quaternary hover:border-[var(--text-quaternary)] focus:ring-[2px] focus:ring-inset focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:border-[var(--button-disabled-border)] disabled:bg-[var(--button-disabled-bg)] disabled:text-[var(--button-disabled-text)] aria-invalid:border-status-danger',
+        'flex field-sizing-content min-h-20 w-full resize-y rounded-[var(--radius-input)] border border-[var(--border)] bg-surface px-3 py-2.5 text-[length:var(--text-body-size)] text-text-primary shadow-[0_1px_1px_rgb(31_26_15/3%)] transition-[color,box-shadow,border-color,background-color] outline-none placeholder:text-text-quaternary hover:border-[var(--border-strong)] focus:border-[var(--accent)] focus:ring-[3px] focus:ring-[var(--accent-selected)] disabled:cursor-not-allowed disabled:border-[var(--button-disabled-border)] disabled:bg-[var(--button-disabled-bg)] disabled:text-[var(--button-disabled-text)] aria-invalid:border-status-danger',
         className,
       )}
       {...props}

@@ -33,6 +33,7 @@ import {
   type StatusTone,
 } from '@/features/knowledge/composites'
 import { messageOf, notify, useKnowledgeBases, usePolling } from '@/features/knowledge/store'
+import { Notice } from '@/features/misc/shared/composites'
 import { formatCount, formatDate, formatRelativeTime } from '@/lib/format'
 import {
   AlertDialog,
@@ -377,48 +378,61 @@ export function WikiView({ kbId: kbIdProp }: WikiViewProps) {
 
   return (
     <div className="page-shell">
-      <div className="kb-head-actions">
-        {/*
-          面包屑：Wiki 挂在某个库下，回库里的入口要一直在（旧前端同一个位置）。
-          路径要靠一行读出来，所以整行**不折行**：窄的时候只压缩库名（末尾省略号），
-          箭头与 `Wiki` 是路径的落点，永远留着（评审 K18：原先折成"名称 / › / Wiki"三行，
-          三行缩进还不一致，路径语义就没了）。库名放 `title` 里，压到看不见时还能悬停读全文。
-        */}
-        <h1
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            minWidth: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <Link
-            to={`/kb/${kbId}`}
-            title={kbName}
-            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+      {/* 页头与别的页同一套结构（`.m-page-head`）：左边是"库名 › Wiki"这条路径
+          （它本身就是这一页的标题），右边是这一页的状态与主动作。 */}
+      <header className="m-page-head">
+        <div className="m-page-heading">
+          {/*
+            面包屑：Wiki 挂在某个库下，回库里的入口要一直在（旧前端同一个位置）。
+            路径要靠一行读出来，所以整行**不折行**：窄的时候只压缩库名（末尾省略号），
+            箭头与 `Wiki` 是路径的落点，永远留着（评审 K18：原先折成"名称 / › / Wiki"三行，
+            三行缩进还不一致，路径语义就没了）。库名放 `title` 里，压到看不见时还能悬停读全文。
+          */}
+          {/* `display: flex` / `white-space: nowrap` 写在行内而不是只靠类：
+              这两条是"路径不许折行"的硬约束，用例也直接读这行样式（`toHaveStyle`）。 */}
+          <h1
+            className="m-page-title kb-wiki-crumb"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+            }}
           >
-            {kbName}
-          </Link>
-          <ChevronRight
-            size={13}
-            aria-hidden="true"
-            style={{ flex: '0 0 auto', margin: '0 var(--space-1)' }}
-          />
-          <span style={{ flex: '0 0 auto' }}>Wiki</span>
-        </h1>
-        {overview ? (
-          <StatusTag label={statusView.label} tone={statusView.tone} running={statusView.running} />
-        ) : null}
-        {overview?.enabled ? (
-          <Button variant="default" disabled={busyGenerating} onClick={requestGenerate}>
-            <RefreshCw aria-hidden="true" />
-            {generateLabel}
-          </Button>
-        ) : null}
-      </div>
+            <Link
+              to={`/kb/${kbId}`}
+              title={kbName}
+              className="kb-wiki-crumb-name"
+              style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {kbName}
+            </Link>
+            <ChevronRight
+              size={13}
+              aria-hidden="true"
+              style={{ flex: '0 0 auto', margin: '0 var(--space-1)' }}
+            />
+            <span style={{ flex: '0 0 auto' }}>Wiki</span>
+          </h1>
+        </div>
+        <div className="m-page-actions">
+          {overview ? (
+            <StatusTag
+              label={statusView.label}
+              tone={statusView.tone}
+              running={statusView.running}
+            />
+          ) : null}
+          {overview?.enabled ? (
+            <Button variant="default" disabled={busyGenerating} onClick={requestGenerate}>
+              <RefreshCw aria-hidden="true" />
+              {generateLabel}
+            </Button>
+          ) : null}
+        </div>
+      </header>
 
-      {error ? <p className="kb-error-line">{error}</p> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
       {loading ? <SkeletonRows variant="list" rows={5} /> : null}
 
@@ -437,7 +451,7 @@ export function WikiView({ kbId: kbIdProp }: WikiViewProps) {
         <>
           {/* 失败原因原样给出来：用户才知道是额度、模型还是内容的问题 */}
           {overview.status === 'failed' && overview.last_error ? (
-            <p className="kb-error-line">{overview.last_error}</p>
+            <Notice tone="error">{overview.last_error}</Notice>
           ) : null}
 
           {/* 正在生成且还没有页面：给"在动"的画面，而不是一个空状态 */}

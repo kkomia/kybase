@@ -124,24 +124,22 @@ export function LoginPage() {
 
   return (
     <div className="m-login">
+      {/* 背景那两样都是品牌自身的几何：一条极淡的行星轨道线 + 一片纸上的光。
+          它们不是装饰性动画（没有任何运动），只是让"一整页空"变成"一张纸"。 */}
+      <div className="m-login-glow" aria-hidden="true" />
+      <div className="m-login-orbit" aria-hidden="true">
+        <Logo variant="mark" size={520} label="" />
+      </div>
+
       <div className="m-login-panel">
-        {/* 字标跟正文色（`Logo` 里全是 `currentColor`），不另给品牌色——
-            它在三处（登录页 / 侧栏 / 欢迎态）必须是同一个东西 */}
-        <div className="flex items-center text-text-primary">
-          <Logo variant="wordmark" size={34} />
+        <div className="flex items-center gap-2.5 text-text-primary">
+          <Logo variant="wordmark" size={26} />
         </div>
 
-        <h1 className="m-login-title">{isSetup ? '创建管理员账号' : '登录'}</h1>
-        {/* 登录态**没有**标题下那行说明（规范 §5.1 删的就是这一类"这一页是什么"的小字）：
-            "账号要管理员开通"是失败时才需要知道的事，所以它并进下面的错误提示里。 */}
-        {/*
-          首态那一句**保留**（它是"第一次使用该点哪儿"的落点，不是解释登录页是什么），
-          但后半句"已有的知识库会归到这个账号名下"删掉——那是在讲账号建好之后会发生什么，
-          2026-09-24 按用户要求去掉解释性的那半句。
-          第一句保持逐字不变：`tests/misc-auth.test.tsx` 断的就是它（那条用例不在本泳道，
-          不该由这里改）。
-        */}
-        {isSetup && <p className="m-login-hint">第一次使用：创建管理员账号即可进入。</p>}
+        <div className="m-login-heading">
+          <h1 className="m-login-title">{isSetup ? '创建管理员账号' : '登录'}</h1>
+          {isSetup && <p className="m-login-hint">第一次使用：创建管理员账号即可进入。</p>}
+        </div>
 
         <form
           className="m-form"
@@ -202,8 +200,7 @@ export function LoginPage() {
           {localError && (
             <p className="m-login-error" role="alert">
               {localError}
-              {/* 本产品不开放注册：**登录失败时**才把"账号从哪来"说清楚
-                  （原来是标题下的一行常驻说明，规范 §5.1 那一类）。 */}
+              {/* 本产品不开放注册：**登录失败时**才把"账号从哪来"说清楚 */}
               {!isSetup && (
                 <span className="mt-1 block text-text-secondary">
                   账号由管理员在设置里开通，请联系管理员。
@@ -212,12 +209,20 @@ export function LoginPage() {
             </p>
           )}
 
-          <Button className="w-full" type="submit" disabled={submit.isPending}>
+          <Button
+            className="mt-[var(--space-1)] w-full"
+            size="lg"
+            type="submit"
+            disabled={submit.isPending}
+          >
             {submit.isPending ? '请稍候…' : isSetup ? '创建并进入' : '登录'}
           </Button>
         </form>
 
         {currentUser && !isSetup && <p className="m-login-hint">当前已登录：{currentUser.name}</p>}
+
+        {/* 卡片底部的一句产品定位：不解释这一页是什么，只说是哪套服务 */}
+        <p className="m-login-foot">KYBASE 知识库服务 · 自托管</p>
       </div>
     </div>
   )

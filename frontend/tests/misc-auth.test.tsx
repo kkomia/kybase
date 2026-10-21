@@ -62,7 +62,7 @@ describe('登录页', () => {
     renderMisc(<LoginPage />)
 
     // 字标用仓库里那个 `Logo`：可读名就是它自带的产品名
-    expect(await screen.findByRole('img', { name: 'KYLAB 知识库' })).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: 'KYBASE 知识库' })).toBeInTheDocument()
     // 规范 §5.1：标题下那行"用管理员为你开通的账号登录。"已删
     expect(screen.queryByText(/用管理员为你开通的账号登录/)).not.toBeInTheDocument()
   })

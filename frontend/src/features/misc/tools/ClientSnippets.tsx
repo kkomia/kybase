@@ -18,6 +18,9 @@
  *
  * 复制统一走 `lib/clipboard` 那条两级路（先异步剪贴板、失败退 `execCommand`），
  * 成败各推一条通知——按钮点了不吭声，用户只会再点一次。
+ *
+ * 版式：一段片段 = 一小行标题与复制按钮（`justify-between`）+ 一块深一档的等宽面。
+ * 片段之间只用间距分层，不把每段包成卡片；「通用表单」那几格是一张信息卡里的行。
  */
 import { useState } from 'react'
 
@@ -44,6 +47,12 @@ const CLIENTS = [
 
 type ClientKey = (typeof CLIENTS)[number]['key']
 
+/** 「通用表单」里的一行：左栏 120px 字段名 + 右栏值（与接入档的信息卡同一口径）。 */
+const FIELD_ROW = 'grid grid-cols-1 gap-x-5 gap-y-1 py-3 sm:grid-cols-[120px_minmax(0,1fr)]'
+
+/** 字段名那一格：13.5px、二级墨色。 */
+const FIELD_LABEL = 'text-[length:var(--text-meta-size)] leading-6 text-text-secondary'
+
 async function copy(value: string): Promise<void> {
   if (await copyText(value)) {
     notifySuccess('已复制')
@@ -55,20 +64,33 @@ async function copy(value: string): Promise<void> {
 /** 一段片段：标题行（标签 + 复制）、位置、整段可复制的代码块。 */
 function SnippetBlock({ snippet }: { snippet: Snippet }) {
   return (
-    <div className="m-snippet">
-      <div className="m-snippet-head">
-        <span className="m-snippet-title">{snippet.label}</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[length:var(--text-meta-size)] font-medium text-text-primary">
+          {snippet.label}
+        </span>
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
+          className="shrink-0"
           aria-label={`复制${snippet.label}`}
           onClick={() => void copy(snippet.text)}
         >
           复制
         </Button>
       </div>
-      {snippet.where && <span className="m-snippet-where">{snippet.where}</span>}
-      <pre className="m-code-block">{snippet.text}</pre>
+      {snippet.where && (
+        <span className="break-all font-mono text-[length:var(--text-micro-size)] text-text-tertiary">
+          {snippet.where}
+        </span>
+      )}
+      {/*
+        深一档的面 + 等宽 12.5px / 行高 1.7：它是"照抄"的主角，所以比正文更沉一点。
+        `m-code-block` 保留（整段横向滚动、不折行；测试按 `pre.m-code-block` 取整段原文）。
+      */}
+      <pre className="m-code-block rounded-[var(--radius-row)] bg-[var(--bg-subtle)] text-[12.5px] leading-[1.7]">
+        {snippet.text}
+      </pre>
     </div>
   )
 }
@@ -77,8 +99,8 @@ export function ClientSnippets({ endpoint, token }: { endpoint: string; token: s
   const [client, setClient] = useState<ClientKey>('codex')
 
   return (
-    <Tabs value={client} onValueChange={(next) => setClient(next as ClientKey)}>
-      <TabsList aria-label="客户端">
+    <Tabs value={client} onValueChange={(next) => setClient(next as ClientKey)} className="gap-4">
+      <TabsList aria-label="客户端" className="max-w-full max-sm:h-auto max-sm:flex-wrap">
         {CLIENTS.map((item) => (
           <TabsTrigger key={item.key} value={item.key}>
             {item.label}
@@ -86,45 +108,49 @@ export function ClientSnippets({ endpoint, token }: { endpoint: string; token: s
         ))}
       </TabsList>
 
-      <TabsContent value="codex" className="m-client-tab">
+      <TabsContent value="codex" className="flex flex-col gap-5">
         {codexSnippets(endpoint, token).map((snippet) => (
           <SnippetBlock key={snippet.label} snippet={snippet} />
         ))}
       </TabsContent>
 
-      <TabsContent value="json" className="m-client-tab">
+      <TabsContent value="json" className="flex flex-col gap-5">
         {jsonSnippets(endpoint, token).map((snippet) => (
           <SnippetBlock key={snippet.label} snippet={snippet} />
         ))}
       </TabsContent>
 
-      <TabsContent value="generic" className="m-client-tab">
-        <span className="m-snippet-where">{GENERIC_WHERE}</span>
-        <div className="panel">
-          <ul className="m-list">
-            {genericFields(endpoint, token).map((field) => (
-              <li key={field.label} className="m-list-item">
-                <div className="m-list-row">
-                  <div className="m-row-lines">
-                    <span className="m-row-label">{field.label}</span>
-                    <span className="m-row-value">{field.value}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={`复制${field.label}`}
-                    onClick={() => void copy(field.value)}
-                  >
-                    复制
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+      <TabsContent value="generic" className="flex flex-col gap-3">
+        <span className="text-hint">{GENERIC_WHERE}</span>
+        <div className="surface-card px-5">
+          {genericFields(endpoint, token).map((field, index) => (
+            <div
+              key={field.label}
+              className={
+                index === 0 ? FIELD_ROW : `${FIELD_ROW} border-t border-[var(--border-hairline)]`
+              }
+            >
+              <span className={FIELD_LABEL}>{field.label}</span>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0 break-all font-mono text-[length:var(--text-meta-size)] leading-6 text-text-primary">
+                  {field.value}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  aria-label={`复制${field.label}`}
+                  onClick={() => void copy(field.value)}
+                >
+                  复制
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </TabsContent>
 
-      <TabsContent value="env" className="m-client-tab">
+      <TabsContent value="env" className="flex flex-col gap-5">
         {envSnippets(endpoint, token).map((snippet) => (
           <SnippetBlock key={snippet.label} snippet={snippet} />
         ))}

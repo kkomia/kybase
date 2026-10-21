@@ -30,18 +30,18 @@ export const SIDEBAR_COLLAPSED_STORAGE_KEY = 'kylab-sidebar-collapsed'
 export const SIDEBAR_TOGGLE_EVENT = 'kylab:sidebar-toggle'
 
 /**
- * "窄屏"的阈值（D29，2026-09-28 走查）。
+ * "窄屏"的阈值。
  *
- * 420px 实测过：侧栏 240px 时内容区只剩 **180px**、每行 **4.53 个字**、输入框那一行
- * 还会溢出（发送键落到视口外，点不到）。而折叠成图标栏（60px）之后内容区有 360px
- * ——那正是用户自己会去点的那一下（侧栏上那个折叠开关），所以**窄屏下把它当默认**。
+ * 2026-10 界面重做把这一档从 760 提到 **1024**：管理台的主要宽度档里，
+ * 900–1024 这一段展开侧栏后内容只剩 ~600px——热力图、文档表、仪表带都开始靠
+ * "缩小硬塞"，而折叠成图标栏（72px）之后内容区回到 ~800px，读起来是正常的。
+ * 420px 的实测口径没变：侧栏 240px 时内容区只剩 180px、每行 4.53 个字，
+ * 折叠之后才有 360px。
  *
- * `chat/runtime/shortcutPrefs.ts` 里按同一条约定各自写了一份（chat 域不能反向依赖 layout 域，
- * 那会成环；存储键当初也是这么各写一份的）——两处**必须是同一个值**。
- * **本仓库里只有这一份**（那个文件没有搬过来），取值照旧不动：这份前端与 kylab 前端
- * 同时开着时，不要让同一个窗口宽度有两套判断。
+ * 早先这一条要在 kylab 前端里也写一份（两套前端同时开着时同一窗口宽度不能有两套判断）；
+ * 那份前端已经不在这一版的范围里，本仓库只剩这一处。
  */
-export const SIDEBAR_NARROW_QUERY = '(max-width: 760px)'
+export const SIDEBAR_NARROW_QUERY = '(max-width: 1024px)'
 
 /** 现在是不是窄屏（**非组件代码**也能问；组件用 `useNarrowViewport` 订阅变化）。 */
 export function matchesNarrowViewport(): boolean {

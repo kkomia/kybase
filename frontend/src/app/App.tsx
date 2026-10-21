@@ -167,24 +167,29 @@ function BootSkeleton() {
     <div
       data-testid="app-boot-skeleton"
       aria-hidden="true"
-      className="flex h-dvh bg-[var(--bg-canvas)]"
+      className="flex h-dvh overflow-hidden bg-[var(--bg-canvas)]"
     >
       {/* 侧栏那一栏：宽屏才有（窄屏下真实的侧栏也是收起的）。与真实侧栏一样**不带分隔线**
-          ——边界靠"两块不同颜色的面"。 */}
-      <div className="hidden w-[var(--sidebar-width)] shrink-0 flex-col gap-[var(--space-2)] p-[var(--space-3)] sm:flex">
-        {[0, 1, 2, 3, 4].map((row) => (
+          ——边界靠"两块不同颜色的面"以及内容卡那一圈圆角。 */}
+      <div className="hidden w-[var(--sidebar-width)] shrink-0 flex-col gap-[6px] px-3 pt-4 sm:flex">
+        <span className="mb-4 block h-5 w-[72px] animate-pulse rounded-[6px] bg-[var(--bg-active)] motion-reduce:animate-none" />
+        {[0, 1, 2, 3, 4, 5].map((row) => (
           <span
             key={row}
-            className="block h-[28px] animate-pulse rounded-[var(--radius-control)] bg-[var(--bg-active)] motion-reduce:animate-none"
+            className="block h-[38px] animate-pulse rounded-[var(--radius-nav)] bg-[var(--bg-active)] motion-reduce:animate-none"
           />
         ))}
       </div>
-      {/* 内容那一栏：与真实内容区**同形**（抬起的卡片：上/右/下 6px、圆角 16、surface 底）——
-          内容到位时从灰块换成真东西不跳。 */}
-      <div className="my-[6px] mr-[6px] flex min-w-0 flex-1 flex-col gap-[var(--space-3)] overflow-hidden rounded-[var(--radius-panel)] bg-[var(--bg-surface)] p-[var(--page-gutter)]">
-        <span className="block h-[24px] w-[40%] animate-pulse rounded-[var(--radius-control)] bg-[var(--bg-active)] motion-reduce:animate-none" />
-        <span className="block h-[120px] animate-pulse rounded-[var(--radius-panel)] bg-[var(--bg-active)] motion-reduce:animate-none" />
-        <span className="block h-[120px] w-[70%] animate-pulse rounded-[var(--radius-panel)] bg-[var(--bg-active)] motion-reduce:animate-none" />
+      {/* 内容那一栏：与真实内容区**同形**（上/右/下 8px、圆角 22、白面 + 投影 + 顶栏一道）
+          ——内容到位时从灰块换成真东西不跳。 */}
+      <div className="my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-overlay)] border border-[var(--border-hairline)] bg-[var(--bg-surface)] shadow-[var(--shadow-card)]">
+        <span className="block h-[var(--topbar-height)] shrink-0 animate-pulse border-b border-[var(--border-hairline)] bg-[var(--bg-hover)] motion-reduce:animate-none" />
+        <div className="flex flex-col gap-[var(--space-4)] p-[var(--page-gutter)]">
+          <span className="block h-7 w-1/4 animate-pulse rounded-[var(--radius-control)] bg-[var(--bg-active)] motion-reduce:animate-none" />
+          <span className="block h-24 animate-pulse rounded-[var(--radius-panel)] bg-[var(--bg-active)] motion-reduce:animate-none" />
+          <span className="block h-56 animate-pulse rounded-[var(--radius-panel)] bg-[var(--bg-active)] motion-reduce:animate-none" />
+          <span className="block h-40 w-2/3 animate-pulse rounded-[var(--radius-panel)] bg-[var(--bg-active)] motion-reduce:animate-none" />
+        </div>
       </div>
     </div>
   )
@@ -204,7 +209,7 @@ function TitleSync() {
   const location = useLocation()
   useEffect(() => {
     const hit = TITLES.find(([pattern]) => pattern.test(location.pathname))
-    document.title = hit ? `${hit[1]} · KYLAB 知识库` : 'KYLAB 知识库'
+    document.title = hit ? `${hit[1]} · KYBASE 知识库` : 'KYBASE 知识库'
   }, [location.pathname])
   return null
 }

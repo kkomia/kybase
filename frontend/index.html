@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>KYLAB 知识库</title>
+    <title>KYBASE 知识库</title>
     <script>
       // 首屏前定主题与字号，避免深浅切换、字号跳变闪烁（与旧前端逐字一致：
       // 这份内联脚本是"用户看到的第一个像素"的一部分，两套前端要表现相同）
@@ -51,32 +51,40 @@
           style="
             display: none;
             flex-direction: column;
-            gap: 8px;
-            width: 240px;
-            flex: 0 0 240px;
-            padding: 12px;
-            border-right: 1px solid rgba(127, 127, 127, 0.18);
+            gap: 6px;
+            width: 256px;
+            flex: 0 0 256px;
+            padding: 16px 12px;
           "
         >
-          <span class="ky-boot-block" style="height: 28px"></span>
-          <span class="ky-boot-block" style="height: 28px"></span>
-          <span class="ky-boot-block" style="height: 28px"></span>
-          <span class="ky-boot-block" style="height: 28px"></span>
-          <span class="ky-boot-block" style="height: 28px"></span>
+          <span class="ky-boot-block" style="height: 20px; width: 72px; margin-bottom: 18px"></span>
+          <span class="ky-boot-block" style="height: 38px"></span>
+          <span class="ky-boot-block" style="height: 38px"></span>
+          <span class="ky-boot-block" style="height: 38px"></span>
+          <span class="ky-boot-block" style="height: 38px; margin-top: 18px"></span>
+          <span class="ky-boot-block" style="height: 38px"></span>
+          <span class="ky-boot-block" style="height: 38px"></span>
         </div>
         <div
           style="
             display: flex;
             flex: 1;
             min-width: 0;
+            margin: 8px 8px 8px 0;
+            border-radius: 22px;
+            overflow: hidden;
             flex-direction: column;
-            gap: 12px;
-            padding: 24px;
           "
         >
-          <span class="ky-boot-block" style="height: 24px; width: 40%"></span>
-          <span class="ky-boot-panel" style="height: 120px"></span>
-          <span class="ky-boot-panel" style="height: 120px; width: 70%"></span>
+          <span class="ky-boot-block" style="height: 56px; border-radius: 0; opacity: 0.5"></span>
+          <div
+            style="display: flex; flex: 1; flex-direction: column; gap: 16px; padding: 28px 32px"
+          >
+            <span class="ky-boot-block" style="height: 28px; width: 26%"></span>
+            <span class="ky-boot-panel" style="height: 96px"></span>
+            <span class="ky-boot-panel" style="height: 220px"></span>
+            <span class="ky-boot-panel" style="height: 160px; width: 70%"></span>
+          </div>
         </div>
       </div>
     </div>

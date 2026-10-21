@@ -21,6 +21,9 @@
  * - **地址不合法（含空）时整块配置片段退成空态**：地址是这些片段的唯一变量，坏值拼出来
  *   的是"照抄连不上"，所以字段级校验就够，不弹窗不推通知（用户可能正打到一半）；
  *   空态那两句说的是"填一次地址就能拿到片段"，而不是"服务端没配，所以没有"。
+ *
+ * 版式：服务地址与鉴权是两张**信息卡**（`.surface-card`，左栏 120px 标签 + 右栏内容），
+ * 片段是深一档的面，验证与排障回到画布上的行/表——这一段里没有卡片套卡片。
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -51,6 +54,15 @@ function freshKeyName(): string {
 function messageOf(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
+
+/** 信息卡里的一行：左栏 120px 标签 + 右栏内容。窄屏退成一列，标签在上。 */
+const INFO_ROW = 'grid grid-cols-1 gap-x-5 gap-y-1.5 sm:grid-cols-[120px_minmax(0,1fr)]'
+
+/** 信息卡里的标签格：13.5px、二级墨色。 */
+const INFO_LABEL = 'text-[length:var(--text-meta-size)] leading-6 text-text-secondary'
+
+/** 正文一档的说明文字：13.5px、二级墨色、行高按 UI 文案走。 */
+const BODY_TEXT = 'text-[length:var(--text-meta-size)] leading-[var(--line-ui)] text-text-secondary'
 
 /** 三步验证：往客户端里贴 → 重连 → 真用一次。每步都写"成功长什么样"。 */
 const STEPS: readonly { what: string; expect: string }[] = [
@@ -121,112 +133,110 @@ export function AccessPanel({ endpoint: served }: { endpoint: string | null }) {
   }
 
   return (
-    <>
-      <section className="m-block">
-        <h2 className="m-block-title">服务地址</h2>
-        <div className="panel">
-          <ul className="m-list">
-            <li className="m-list-item">
-              <div className="m-list-row">
-                <div className="m-row-lines">
-                  <span className="m-row-label">MCP 地址</span>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        className="flex-1"
-                        value={value}
-                        aria-label="MCP 地址"
-                        placeholder={ENDPOINT_PLACEHOLDER}
-                        spellCheck={false}
-                        aria-invalid={value.trim() !== '' && !endpoint ? true : undefined}
-                        onChange={(event) => edit(event.target.value)}
-                      />
-                      {endpoint && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          aria-label="复制服务地址"
-                          onClick={() => void copyValue(endpoint)}
-                        >
-                          复制
-                        </Button>
-                      )}
-                      {overridden && (
-                        <Button size="sm" variant="secondary" onClick={useServed}>
-                          用服务端的值
-                        </Button>
-                      )}
-                    </div>
-                    {!served && value.trim() === '' && (
-                      <span className="m-muted">服务端没给地址，你自己填一次。</span>
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-3">
+        <h2 className="section-label">服务地址</h2>
+        <div className="surface-card p-5">
+          <div className={INFO_ROW}>
+            <span className={INFO_LABEL}>MCP 地址</span>
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  className="w-auto min-w-0 flex-1 basis-[160px] font-mono text-[length:var(--text-meta-size)] break-all"
+                  value={value}
+                  aria-label="MCP 地址"
+                  placeholder={ENDPOINT_PLACEHOLDER}
+                  spellCheck={false}
+                  aria-invalid={value.trim() !== '' && !endpoint ? true : undefined}
+                  onChange={(event) => edit(event.target.value)}
+                />
+                {(endpoint || overridden) && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    {endpoint && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        aria-label="复制服务地址"
+                        onClick={() => void copyValue(endpoint)}
+                      >
+                        复制
+                      </Button>
                     )}
-                    {value.trim() !== '' && !endpoint && (
-                      <span className="m-form-error">填完整地址：以 http 或 https 开头。</span>
+                    {overridden && (
+                      <Button size="sm" variant="secondary" onClick={useServed}>
+                        用服务端的值
+                      </Button>
                     )}
                   </div>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section className="m-block">
-        <h2 className="m-block-title">鉴权</h2>
-        <div className="panel">
-          <ul className="m-list">
-            <li className="m-list-item">
-              <div className="m-list-row">
-                <div className="m-row-lines">
-                  <span className="m-row-label">请求头</span>
-                  <span className="m-row-value">Authorization: Bearer &lt;密钥&gt;</span>
-                </div>
-              </div>
-            </li>
-            <li className="m-list-item">
-              <div className="m-list-row">
-                <div className="m-row-lines">
-                  <span className="m-row-label">密钥</span>
-                  <span className="m-row-value">
-                    在 <Link to="/api-keys">API 密钥</Link> 页可以管范围与撤销。
-                  </span>
-                </div>
-                {isAdmin && (
-                  <Button disabled={create.isPending} onClick={() => create.mutate()}>
-                    {create.isPending ? '生成中…' : '新建接入用密钥'}
-                  </Button>
                 )}
               </div>
-            </li>
-          </ul>
-        </div>
-
-        {!isAdmin && <p className="m-muted">新建密钥要管理员，找管理员要一把再贴进来。</p>}
-
-        {issued && (
-          <div className="m-block">
-            <Notice tone="warn">明文只显示这一次，离开这张卡片就看不到了。</Notice>
-            <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={issued.token}
-                aria-label="接入密钥明文"
-                onFocus={(event) => event.target.select()}
-              />
-              <Button aria-label="复制明文密钥" onClick={() => void copyValue(issued.token)}>
-                复制
-              </Button>
-              <Button variant="secondary" onClick={() => setIssued(null)}>
-                我已保存
-              </Button>
+              {!served && value.trim() === '' && (
+                <p className="text-hint">服务端没给地址，你自己填一次。</p>
+              )}
+              {value.trim() !== '' && !endpoint && (
+                <p className="text-[length:var(--text-meta-size)] text-status-danger">
+                  填完整地址：以 http 或 https 开头。
+                </p>
+              )}
             </div>
-            <p className="m-muted">「{issued.name}」已创建。</p>
           </div>
-        )}
+        </div>
       </section>
 
-      <section className="m-block">
-        <h2 className="m-block-title">客户端配置片段</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="section-label">鉴权</h2>
+        <div className="surface-card px-5">
+          <div className={`${INFO_ROW} py-4`}>
+            <span className={INFO_LABEL}>请求头</span>
+            <code className="min-w-0 break-all font-mono text-[length:var(--text-meta-size)] leading-6 text-text-primary">
+              Authorization: Bearer &lt;密钥&gt;
+            </code>
+          </div>
+
+          <div className={`${INFO_ROW} border-t border-[var(--border-hairline)] py-4`}>
+            <span className={INFO_LABEL}>密钥</span>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className={BODY_TEXT}>
+                在 <Link to="/api-keys">API 密钥</Link> 页可以管范围与撤销。
+              </span>
+              {isAdmin && (
+                <Button disabled={create.isPending} onClick={() => create.mutate()}>
+                  {create.isPending ? '生成中…' : '新建接入用密钥'}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {issued && (
+            <div className="border-t border-[var(--border-hairline)] py-4">
+              <Notice tone="warn">明文只显示这一次，离开这张卡片就看不到了。</Notice>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  readOnly
+                  value={issued.token}
+                  aria-label="接入密钥明文"
+                  className="w-auto min-w-0 flex-1 basis-[200px] font-mono text-[length:var(--text-meta-size)] break-all"
+                  onFocus={(event) => event.target.select()}
+                />
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button aria-label="复制明文密钥" onClick={() => void copyValue(issued.token)}>
+                    复制
+                  </Button>
+                  <Button variant="secondary" onClick={() => setIssued(null)}>
+                    我已保存
+                  </Button>
+                </div>
+              </div>
+              <p className="mt-3 text-hint">「{issued.name}」已创建。</p>
+            </div>
+          )}
+        </div>
+
+        {!isAdmin && <p className="text-hint">新建密钥要管理员，找管理员要一把再贴进来。</p>}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="section-label">客户端配置片段</h2>
         {endpoint ? (
           <ClientSnippets endpoint={endpoint} token={token} />
         ) : (
@@ -236,29 +246,36 @@ export function AccessPanel({ endpoint: served }: { endpoint: string | null }) {
 
       {endpoint && (
         <>
-          <section className="m-block">
-            <h2 className="m-block-title">三步验证</h2>
-            <ol className="m-steps">
+          <section className="flex flex-col gap-3">
+            <h2 className="section-label">三步验证</h2>
+            <ol className="flex flex-col gap-3">
               {STEPS.map((step, index) => (
-                <li key={step.what} className="m-step">
-                  <span className="m-step-index" aria-hidden="true">
+                <li key={step.what} className="flex items-start gap-3">
+                  <span
+                    className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-pill bg-subtle text-[length:var(--text-micro-size)] text-text-secondary tabular"
+                    aria-hidden="true"
+                  >
                     {index + 1}
                   </span>
-                  <div className="m-step-body">
-                    <span className="m-row-label">{step.what}</span>
-                    <span className="m-row-value">成功：{step.expect}</span>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[length:var(--text-meta-size)] leading-6 text-text-primary">
+                      {step.what}
+                    </span>
+                    <span className="text-[length:var(--text-micro-size)] leading-[var(--line-ui)] text-text-secondary">
+                      成功：{step.expect}
+                    </span>
                   </div>
                 </li>
               ))}
             </ol>
           </section>
 
-          <section className="m-block">
-            <h2 className="m-block-title">排障</h2>
+          <section className="flex flex-col gap-3">
+            <h2 className="section-label">排障</h2>
             <div className="panel">
               <table className="m-trouble">
                 <thead>
-                  <tr>
+                  <tr className="bg-[var(--bg-subtle)]">
                     <th>现象</th>
                     <th>先看这里</th>
                   </tr>
@@ -276,6 +293,6 @@ export function AccessPanel({ endpoint: served }: { endpoint: string | null }) {
           </section>
         </>
       )}
-    </>
+    </div>
   )
 }

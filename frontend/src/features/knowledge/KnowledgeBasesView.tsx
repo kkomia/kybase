@@ -22,19 +22,13 @@ import {
 } from '@/api/knowledgeBases'
 import { EmptyState, InfoTip, SkeletonRows } from '@/features/knowledge/composites'
 import { chunkingErrorOf, numberOr, parseIntOrNull } from '@/features/knowledge/chunking'
-import {
-  INGEST_TREND_DAYS,
-  TREND_MAX_ROWS,
-  useIngestTrends,
-  type IngestTrend,
-} from '@/features/knowledge/ingestTrend'
+import { TREND_MAX_ROWS, useIngestTrends, type IngestTrend } from '@/features/knowledge/ingestTrend'
 import { KnowledgeBaseSettings } from '@/features/knowledge/KnowledgeBaseSettings'
 import { RangeField } from '@/features/knowledge/RangeField'
 import {
-  SEARCH_TREND_DAYS,
-  searchTrendTextOf,
-  searchTrendTitleOf,
   useSearchTrends,
+  searchTrendTitleOf,
+  type SearchTrend,
 } from '@/features/knowledge/searchTrend'
 import { Sparkline } from '@/features/knowledge/Sparkline'
 import {
@@ -42,6 +36,7 @@ import {
   type SuggestedQuestionsValue,
 } from '@/features/knowledge/SuggestedQuestionsFields'
 import { messageOf, notify, useKnowledgeBases, useModelRegistry } from '@/features/knowledge/store'
+import { Notice, PageShell } from '@/features/misc/shared/composites'
 import { formatCount, formatRelativeTime } from '@/lib/format'
 import { Button } from '@/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/ui/dialog'
@@ -75,25 +70,36 @@ const SQ_DEFAULTS: SuggestedQuestionsValue = {
 const EMBEDDING_DEFAULT = '__default__'
 
 /**
- * 趋势图那一行（两根，同一个口径）的读数。
+ * 卡片底部那条活动线的时间窗：**30 天**。
  *
- * 读不到（还在路上 / 这一读失败）写「—」——与别处"没有结论"用的是同一个记号，
- * 而不是 0：`0` 是一句**结论**（"确实一条都没进 / 没命中"），没读到不是。
+ * 原先卡片上摆两根 90 天的线（入库 / 检索命中），读数四行、颜色两种，扫一眼读不完。
+ * 现在只有一条"这个库在被用"的线：两种事件都是活动，按天合并，单色（`--accent`）。
  */
-function trendTextOf(trend: IngestTrend | undefined): string {
-  if (trend?.status !== 'ready') return '—'
-  if (trend.total === 0) return '无入库'
-  return `${trend.truncated ? '≥' : ''}${formatCount(trend.total)} 篇`
-}
+const ACTIVITY_DAYS = 30
 
 /**
- * 读数被页数上限截住时的悬浮说明（卡片上放不下第二行字）。
+ * 近 30 天的活动曲线：入库篇数 + 检索命中条数，**按天相加**。
  *
- * 只有真截住才给：没截住时挂一句"只统计了最近 N 篇"是无中生有的免责声明。
+ * 两串趋势的口径都是"末位是今天、长度恒为天数"（见 `ingestTrend.ts` / `searchTrend.ts`），
+ * 所以从末尾对齐就够；还没读回来的那一串按 0 算（图上不补假数据，只是短一截）。
  */
-function trendTitleOf(trend: IngestTrend | undefined): string | undefined {
-  if (trend?.status !== 'ready' || !trend.truncated) return undefined
-  return `只统计了最近 ${TREND_MAX_ROWS} 篇文档，更早那几天的入库可能没算全`
+function activitySeriesOf(
+  ingest: IngestTrend | undefined,
+  search: SearchTrend | undefined,
+): number[] {
+  const ing = ingest?.status === 'ready' ? ingest.series.slice(-ACTIVITY_DAYS) : []
+  const hit = search?.status === 'ready' ? search.series.slice(-ACTIVITY_DAYS) : []
+  const length = Math.max(ing.length, hit.length)
+  return Array.from(
+    { length },
+    (_, index) => (ing[ing.length - length + index] ?? 0) + (hit[hit.length - length + index] ?? 0),
+  )
+}
+
+/** 窗口内的合计（读数用；读不到时给 `null`，界面写「—」）。 */
+function windowTotalOf(trend: { status: string; series: number[] } | undefined): number | null {
+  if (trend?.status !== 'ready') return null
+  return trend.series.slice(-ACTIVITY_DAYS).reduce((sum, value) => sum + value, 0)
 }
 
 export function KnowledgeBasesView() {
@@ -145,6 +151,20 @@ export function KnowledgeBasesView() {
 
   const hasItems = store.items.length > 0
   const useCards = store.items.length <= CARD_LIMIT
+
+  /**
+   * 页头那行说明：**这一页现在是什么状态**（几个库、多少篇文档），不是"本页用于……"。
+   * 数字来自列表接口一次带回的汇总，不额外发请求。
+   */
+  const documentTotal = store.items.reduce(
+    (sum, kb) => sum + (store.summaries[kb.id]?.count ?? 0),
+    0,
+  )
+  const subtitle = hasItems
+    ? `${formatCount(store.items.length)} 个知识库 · ${formatCount(documentTotal)} 篇文档`
+    : store.loading
+      ? '正在加载…'
+      : '现在还没有任何知识库'
 
   /**
    * 卡片上那两根趋势图的数据：**入库节奏**（`ingestTrend.ts`，逐库取文档时间）
@@ -218,94 +238,104 @@ export function KnowledgeBasesView() {
   }
 
   return (
-    <div className="page-shell">
-      <div className="kb-head-actions">
-        <h1 style={{ flex: 1 }}>知识库</h1>
+    <PageShell
+      title="知识库"
+      subtitle={subtitle}
+      actions={
         <Button variant="default" disabled={createBlocked} onClick={openCreate}>
           <Plus aria-hidden="true" />
           新建知识库
         </Button>
-      </div>
-
+      }
+    >
       {/* 建不了库时**页面级**就说清原因：等用户填完名字再报错，白填一遍。 */}
       {noEmbeddingModel ? (
-        <p className="kb-blocked-note">
+        <Notice tone="warn">
           还没有可用的嵌入模型，暂时无法新建知识库。请到「设置 → 模型注册」添加供应商并登记
           向量化模型，再到「设置 → 向量化」把它选为默认。
-        </p>
+        </Notice>
       ) : null}
 
-      {store.error ? <p className="kb-error-line">{store.error}</p> : null}
+      {store.error ? <Notice tone="error">{store.error}</Notice> : null}
 
-      {store.loading && !hasItems ? <SkeletonRows variant="card" rows={4} /> : null}
+      {store.loading && !hasItems ? <SkeletonRows variant="card" rows={4} layout="grid" /> : null}
 
       {/* 空态只说"现在没有"，不解释知识库是什么 */}
       {!store.loading && !hasItems ? <EmptyState title="还没有知识库" /> : null}
 
-      {/* 卡片网格：容器型对象、条目少，用卡片承载"挑一个进去"这个动作 */}
+      {/*
+        卡片网格：容器型对象、条目少，用卡片承载"挑一个进去"这个动作。
+        一张卡只有三行：**名字**（+ 设置）、一句元信息、一条 30 天活动线——
+        原先这里有四行读数与两根不同颜色的线，扫一眼读不完。
+      */}
       {hasItems && useCards ? (
-        <ul className="kb-cards">
-          {store.items.map((kb) => (
-            <li key={kb.id} className="kb-card-item">
-              <Link className="kb-card" to={`/kb/${kb.id}`}>
-                {/* 标题行只留**这个名字**：嵌入模型串原先也挂在这里，而它由供应商与
-                    库形态决定，同一批库里多半是同一个串（四张卡四个一样的 BAAI/bge-m3）。
-                    逐库看它该去详情/设置（「知识库设置 → 基本」里就有），卡片上不放。 */}
-                <span className="kb-card-head">
-                  <span className="kb-mark" aria-hidden="true">
-                    {initial(kb.name)}
-                  </span>
-                  <span className="kb-card-title">
-                    <span className="kb-name">{kb.name}</span>
-                  </span>
-                </span>
+        <ul className="kb-cards stagger">
+          {store.items.map((kb) => {
+            const ingest = trends[kb.id]
+            const search = searchTrends[kb.id]
+            const docCount = store.summaries[kb.id]?.count ?? null
+            const updatedAt = store.summaries[kb.id]?.updatedAt ?? null
+            const ingestTotal = windowTotalOf(ingest)
+            const hitTotal = windowTotalOf(search)
+            const truncatedNote =
+              ingest?.status === 'ready' && ingest.truncated
+                ? `；入库只统计了最近 ${TREND_MAX_ROWS} 篇文档，更早那几天可能没算全`
+                : ''
+            /**
+             * 读数里的入库数：**被截断时带 `≥`**（只统计了最近 N 篇，真实值只多不少）。
+             * 只用 title 提示不够——`≥` 是"这个数不是精确值"的可见信号，不该只活在悬停里。
+             */
+            const ingestLabel =
+              ingestTotal === null
+                ? '—'
+                : `${ingest?.status === 'ready' && ingest.truncated ? '≥' : ''}${formatCount(ingestTotal)}`
+            const activityTitle =
+              `近 ${ACTIVITY_DAYS} 天：入库 ${formatCount(ingestTotal)} 篇，` +
+              `检索命中 ${formatCount(hitTotal)} 次` +
+              // 收敛砍掉一部分时才补一句（"候选 45 条，返回 4 条"）：不砍就没有第二句话可说
+              (searchTrendTitleOf(search) ? `；${searchTrendTitleOf(search)}` : '') +
+              truncatedNote
+            return (
+              <li key={kb.id} className="kb-card-item">
+                <Link className="kb-card surface-card surface-card-interactive" to={`/kb/${kb.id}`}>
+                  {/* 第一行：**这个名字**（17px 600）。嵌入模型串由供应商与库形态决定，
+                      同一批库里多半是同一个串（四张卡四个 BAAI/bge-m3）——逐库看它去
+                      「知识库设置 → 基本」，卡片上不放。 */}
+                  <span className="kb-card-name">{kb.name}</span>
 
-                {/* 卡片主体用三样东西说清一个库：**一个数字 + 一段概述 + 近 90 天两条节奏** */}
-                <span className="kb-card-body">
-                  <span className="kb-doc-count">
-                    <span className="kb-doc-value tabular">
-                      {formatCount(store.summaries[kb.id]?.count ?? null)}
-                    </span>
-                    <span className="kb-doc-unit">篇文档</span>
+                  {/* 第二行：一句话元信息（13.5px 二级墨色）。两个数、一句话，可扫读。 */}
+                  <span className="kb-card-meta">
+                    <span className="tabular">{formatCount(docCount)}</span>
+                    {' 篇文档 · 最近更新 '}
+                    {formatRelativeTime(updatedAt)}
                   </span>
+
                   {/* 没写简介就整行不渲染：「暂无简介」是替一个空字段占的一行字 */}
                   {kb.description ? <span className="kb-description">{kb.description}</span> : null}
-                  {/* 两根迷你趋势图，各占一行、高度都由 CSS 定死：上面那根量"这个库在长"
-                      （近 90 天按天入库篇数），下面那根量"这个库在被用"（近 90 天按天检索
-                      命中候选数）。两条都只画真数据：一条都没有时是压在底部的平线 +
-                      「无入库」/「无命中」，不补占位。取数见 `ingestTrend.ts` / `searchTrend.ts`。 */}
-                  <span className="kb-trend">
-                    <span className="kb-trend-head">
-                      <span className="kb-trend-label">近 {INGEST_TREND_DAYS} 天入库</span>
-                      <span className="kb-trend-value tabular" title={trendTitleOf(trends[kb.id])}>
-                        {trendTextOf(trends[kb.id])}
-                      </span>
-                    </span>
-                    <Sparkline series={trends[kb.id]?.series ?? []} />
-                  </span>
-                  <span className="kb-trend kb-trend-hits">
-                    <span className="kb-trend-head">
-                      <span className="kb-trend-label">近 {SEARCH_TREND_DAYS} 天检索命中</span>
-                      <span
-                        className="kb-trend-value tabular"
-                        title={searchTrendTitleOf(searchTrends[kb.id])}
-                      >
-                        {searchTrendTextOf(searchTrends[kb.id])}
-                      </span>
-                    </span>
-                    <Sparkline series={searchTrends[kb.id]?.series ?? []} />
-                  </span>
-                </span>
 
-                <span className="kb-card-foot">
-                  最近更新 {formatRelativeTime(store.summaries[kb.id]?.updatedAt ?? null)}
-                </span>
-              </Link>
-              {/* 管理入口收在**卡片右下角**（与脚注同一行）：写权限才有（与后端"删库属于写"一致）。
-                  原先钉在右上角——那是整张卡最显要的右手位，还压着标题那一行。 */}
-              {kb.can_write ? <KnowledgeBaseSettings kb={kb} className="kb-menu-corner" /> : null}
-            </li>
-          ))}
+                  {/* 底部：一条**合并的 30 天活动线**（单色 `--accent`、40px、无坐标轴）。
+                      入库是"这个库在长"，检索命中是"这个库在被用"，都是活动，合成一条。 */}
+                  <span className="kb-card-activity">
+                    <span className="kb-activity-head">
+                      <span className="kb-activity-label">近 {ACTIVITY_DAYS} 天活动</span>
+                      {/* 读数只在这两条趋势真的读回来（或确认读失败）之后才写：
+                          加载中摆一个「—」会让人以为"这个库没有活动" */}
+                      {ingestTotal !== null || hitTotal !== null ? (
+                        <span className="kb-activity-total tabular" title={activityTitle}>
+                          入库 {ingestLabel} 篇 · 检索 {formatCount(hitTotal)} 次
+                        </span>
+                      ) : null}
+                    </span>
+                    <Sparkline series={activitySeriesOf(ingest, search)} height={40} />
+                  </span>
+                </Link>
+                {/* 管理入口在**第一行右端**（与库名同一行）：写权限才有（与后端"删库属于写"一致）。 */}
+                {kb.can_write ? (
+                  <KnowledgeBaseSettings kb={kb} className="kb-card-settings" />
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
       ) : null}
 
@@ -517,6 +547,6 @@ export function KnowledgeBasesView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   )
 }
