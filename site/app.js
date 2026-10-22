@@ -72,108 +72,108 @@
     access: [
       {
         name: 'list_knowledge_bases',
-        label: '列库',
-        summary: '列出当前 API Key 能看到的库，带文档数与嵌入模型。',
+        label: '列出知识库',
+        summary: '列出当前 API Key 可访问的知识库。',
         args: '无',
         returns: '[{ id, name, documents, embedding_model }]',
         example: '{}',
-        note: '顶层是数组；Key 限了库范围时只回范围内的库。',
+        note: '返回每座库的名称、文档数与嵌入模型。',
       },
       {
         name: 'create_knowledge_base',
-        label: '建库',
-        summary: '建一座新库，绑定一个已登记的嵌入模型。',
+        label: '创建知识库',
+        summary: '创建一个知识库，并绑定嵌入模型。',
         args: 'name* · description',
         returns: '{ id, name }',
         example: '{"name": "产品库", "description": "产品文档与手册"}',
-        note: '没登记嵌入模型时建库会被拒——服务不替你猜用哪个模型。',
+        note: '嵌入模型在「模型」页登记后即可选择。',
       },
       {
         name: 'add_data_source',
-        label: '挂来源',
-        summary: '登记 RSS 或网页源，让它进入后续的抓取与摄入。',
+        label: '添加数据源',
+        summary: '接入 RSS 或网页来源。',
         args: 'knowledge_base_id* · kind(rss | html)* · url* · name',
         returns: '{ id, name, note }',
         example: '{"knowledge_base_id": "kb_9f3c", "kind": "html", "url": "https://example.com/guide"}',
-        note: '登记不等于立刻抓取；内容出现时再查文档状态。',
+        note: '来源内容会进入后续的解析与索引流程。',
       },
     ],
     ingest: [
       {
         name: 'upload_document',
-        label: '上传',
-        summary: '传文件进库，异步摄入；重复文件直接告诉你。',
+        label: '上传文件',
+        summary: '上传文件，异步解析并建立索引。',
         args: 'knowledge_base_id* · filename* · content_base64*',
         returns: '{ document_id, name, is_duplicate, note }',
         example: '{"knowledge_base_id": "kb_9f3c", "filename": "部署手册-NAS.pdf", "content_base64": "<base64>"}',
-        note: 'MCP 单次 32 MB，REST 上传上限 200 MB；is_duplicate 为 true 时不会入第二份。',
+        note: 'MCP 单次 32 MB；REST 上传上限 200 MB。',
       },
       {
         name: 'get_document_status',
-        label: '看进度',
-        summary: '查一份文档走到哪一步，能不能搜。',
+        label: '查看状态',
+        summary: '查看文档的处理阶段与可检索状态。',
         args: 'document_id*',
         returns: '{ document_id, name, stage, chunks, error, searchable, note }',
         example: '{"document_id": "doc_1c7e"}',
-        note: 'searchable 按已落库切块算，不看阶段名；失败态能回到可重试的步骤。',
+        note: '返回阶段、切块数、错误信息和 searchable。',
       },
       {
         name: 'reparse_document',
-        label: '重解析',
-        summary: '清掉旧产物，从解析器重跑。换解析器或修页码时用它。',
+        label: '重新解析',
+        summary: '重新解析文档并生成新的索引。',
         args: 'document_id*',
         returns: '{ document_id, name, stage, task_id, note }',
         example: '{"document_id": "doc_1c7e"}',
-        note: '写操作，权限同删除；会重新消耗云端解析额度。',
+        note: '适用于更换解析器或重新计算页码。',
       },
     ],
     manage: [
       {
         name: 'list_documents',
-        label: '列文档',
-        summary: '按库列文档与状态，可按名称过滤。',
+        label: '列出文档',
+        summary: '列出知识库中的文档与状态。',
         args: 'knowledge_base_id* · query · limit',
         returns: '{ knowledge_base_id, total, documents[...], note }',
         example: '{"knowledge_base_id": "kb_9f3c", "limit": 20}',
-        note: '每项带 stage、searchable、disabled——管理动作在会话里就能做。',
+        note: '支持按名称过滤与数量限制。',
       },
       {
         name: 'get_document_content',
-        label: '取全文',
-        summary: '取解析产物或原件，两种格式随时切换。',
+        label: '读取内容',
+        summary: '读取文档的 Markdown 或原件。',
         args: 'document_id* · format(markdown | original)',
         returns: '{ document_id, name, format, media_type, text | base64, download_url? }',
         example: '{"document_id": "doc_1c7e", "format": "markdown"}',
-        note: 'download_url 需要部署同时配好对外基址与签名密钥，缺一个就不给这一项。',
+        note: '用 format 参数选择格式。',
       },
       {
         name: 'delete_document',
-        label: '删除',
-        summary: '把文档移进回收站，7 天内可恢复。',
+        label: '删除文档',
+        summary: '删除文档，保留 7 天可恢复。',
         args: 'document_id*',
         returns: '{ document_id, trash_id, restorable_until, note }',
         example: '{"document_id": "doc_1c7e"}',
-        note: '切块与向量立即清除，删完立刻搜不到。',
+        note: '删除后切块与向量立即移除。',
       },
     ],
     retrieve: [
       {
         name: 'search',
         label: '检索',
-        summary: '混合检索返回带出处的原文片段，不是生成好的回答。',
+        summary: '检索原文片段，返回判定、分布与出处。',
         args: 'query* · knowledge_base_ids · top_k · keep · min_score · per_doc · offset · filters',
         returns: '{ summary, distribution, decision, returned, offset, next_offset, hits[] }',
         example: '{"query": "嵌入模型怎么标定？", "knowledge_base_ids": ["kb_9f3c"], "keep": 4, "min_score": 0.531}',
-        note: '先读 summary / fit；命中太多就调 keep / min_score / per_doc 再查一次。',
+        note: '支持 keep、min_score、per_doc 与分页参数。',
       },
       {
         name: 'get_document_pages',
-        label: '按页取',
-        summary: '取一份文档某几页的原文；PDF 与图片类还给页图链接。',
+        label: '按页读取',
+        summary: '按页读取原文与页图。',
         args: 'document_id* · from_page · to_page*',
         returns: '{ total_pages, pages_reliable, pages[{ page, text, image_url? }] }',
         example: '{"document_id": "doc_1c7e", "from_page": 7, "to_page": 7}',
-        note: '一次最多 50 页；pages_reliable 为 false 时，别拿它当「第 N 页」引用。',
+        note: '单次最多 50 页；PDF 和图片支持页图链接。',
       },
     ],
   };
@@ -255,21 +255,18 @@
 
   const NOTE_CONTENT = {
     summary:
-      '<h3>先给判定，再给原文</h3><p>一句话说清候选多少、高于基线几条、收敛后留几条，以及收敛参数是谁建议的。' +
-      '<code>fit=none</code> 时它会明确说「资料大概答不了这个问题」，MCP 载荷另带一句 <code>note</code>。</p>',
+      '<h3>一句话说明结果</h3><p>候选数量、高于基线的条数、收敛后保留的条数，以及建议参数。</p>',
     distribution:
-      '<h3>分布和 fit 在同一次返回里</h3><p><code>fit</code> 是规则算出来的：<code>max</code> 低于基线是 <code>none</code>；' +
-      '<code>max</code> ≥ 基线 + 0.095 且 <code>median</code> ≥ 基线是 <code>strong</code>；其余 <code>weak</code>。' +
-      '没标定过的模型给 <code>unknown</code>，不自动收敛。基线按嵌入模型标定（bge-m3 为 0.531）。</p>',
+      '<h3>命中分布与 fit</h3><p><code>fit</code> 分为 <code>strong</code>、<code>weak</code>、<code>none</code>、<code>unknown</code>。' +
+      '基线按嵌入模型标定，BGE-M3 为 0.531。</p>',
     decision:
-      '<h3>「为什么只回了 4 条」要有答案</h3><p>记录本次实际生效的 <code>keep</code> / <code>min_score</code> / <code>per_doc</code>、' +
-      '谁给的 <code>decided_by</code>、丢掉多少 <code>dropped</code>，以及绕过阈值的词面命中 <code>unscored_kept</code>。</p>',
+      '<h3>本次检索的参数</h3><p>记录 <code>keep</code>、<code>min_score</code>、<code>per_doc</code>、<code>decided_by</code>、' +
+      '<code>dropped</code> 与 <code>unscored_kept</code>。</p>',
     hits:
-      '<h3>原文切片，不是摘要</h3><p>每条带 <code>text</code>、<code>page</code>、<code>heading_path</code>、<code>chunk_id</code>、' +
-      '<code>basis</code>、<code>similarity</code> 与 <code>lexical_score</code>。<code>page</code> 为 null 是如实的「没有可信页码」，不是缺字段。</p>',
+      '<h3>原文片段</h3><p>每条包含 <code>text</code>、<code>page</code>、<code>heading_path</code>、<code>chunk_id</code>、' +
+      '<code>basis</code> 与 <code>similarity</code>。</p>',
     next_offset:
-      '<h3>翻页不改判定</h3><p><code>offset</code> 只切「幸存者」名单；<code>summary</code> / <code>distribution</code> / <code>decision</code> 在每一页逐字相同。' +
-      '把 <code>next_offset</code> 填回 <code>offset</code> 继续，直到它变成 <code>null</code>。</p>',
+      '<h3>继续翻页</h3><p>将 <code>next_offset</code> 作为下一次请求的 <code>offset</code>，直到返回 <code>null</code>。</p>',
   };
 
   const answer = document.querySelector('[data-answer]');
@@ -340,9 +337,9 @@
         perDoc: 'null',
         decided: 'suggested',
         code: '{"keep": 4, "min_score": 0.531, "per_doc": null}',
-        text: '按分布建议收。三个旋钮原样带回，翻页时判定不变。',
+        text: '采用分布建议的参数。',
         count: '38 candidates · 4 survived',
-        verdict: '资料很对得上，按每篇最相关的收敛。',
+        verdict: '资料吻合度高，按每篇最相关的结果收敛。',
       },
       custom: {
         keep: '6',
@@ -350,9 +347,9 @@
         perDoc: '1',
         decided: 'model',
         code: '{"keep": 6, "min_score": 0.531, "per_doc": 1}',
-        text: 'Agent 把 per_doc 调成 1：跨文档各留一条，避免同一本书刷屏；keep 同步抬到 6。',
+        text: '每篇文档保留一条，keep 调整为 6。',
         count: '38 candidates · 6 survived',
-        verdict: '分布没变；变的是这次怎么收——同一批候选，换一个读法。',
+        verdict: '每篇文档只保留最相关的一条。',
       },
     };
 
@@ -387,8 +384,8 @@
         if (!modeNote) return;
         const labels = {
           hybrid: '向量 + 词面，RRF 融合',
-          vector: '只走向量通道；min_score 切这一路',
-          fulltext: '只走词面通道；min_score 不切它',
+          vector: '仅向量检索',
+          fulltext: '仅全文检索',
         };
         modeNote.textContent = labels[mode.dataset.mode] || labels.hybrid;
       });

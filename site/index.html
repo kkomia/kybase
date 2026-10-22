@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>kybase · 给 Agent 的知识库插件</title>
-<meta name="description" content="kybase 是给 Agent 用的知识库插件：MCP / Skill 一行接入，Agent 自己上传、解析、管理、检索 PDF 与 Word；命中带着原文切片、页码与标题路径回来，检索参数按分布自己调。MIT 自托管。" />
+<title>kybase · MCP 知识库服务</title>
+<meta name="description" content="kybase 是面向 AI Agent 的 MCP 知识库服务。上传 PDF 与 Word，Agent 可解析、管理并检索原文；命中带页码与标题路径，任何支持 MCP 的 Agent 都能接入。" />
 <meta name="theme-color" content="#0a0b0c" />
 <meta name="color-scheme" content="dark" />
 <link rel="canonical" href="https://kkomia.github.io/kybase/" />
@@ -29,8 +29,8 @@
 </script>
 <link rel="stylesheet" href="./styles.css" />
 <meta property="og:type" content="website" />
-<meta property="og:title" content="kybase · 给 Agent 的知识库插件" />
-<meta property="og:description" content="MCP / Skill 一行接入。上传、解析、管理、检索由 Agent 自己完成；每条命中带原文切片、页码与标题路径。" />
+<meta property="og:title" content="kybase · MCP 知识库服务" />
+<meta property="og:description" content="面向 AI Agent 的 MCP 知识库服务。上传 PDF 与 Word，检索带页码与标题路径的原文片段。" />
 <meta property="og:url" content="https://kkomia.github.io/kybase/" />
 <meta property="og:image" content="https://kkomia.github.io/kybase/assets/og.png" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -50,16 +50,16 @@
         <circle cx="46.6" cy="28" r="2.6" class="brand-dot" />
       </svg>
       <span class="brand-word">kybase</span>
-      <span class="brand-chip">MCP / SKILL 插件</span>
+      <span class="brand-chip">MCP / SKILL 服务</span>
     </a>
 
     <nav class="nav" aria-label="页面导航">
-      <a href="#tools">工具面</a>
+      <a href="#tools">工具</a>
       <a href="#answer">检索返回</a>
       <a href="#pages">页码</a>
       <a href="#formats">双格式</a>
       <a href="#tuning">调参</a>
-      <a href="#free">免费栈</a>
+      <a href="#free">解析服务</a>
       <a href="#deploy">部署</a>
     </nav>
 
@@ -71,12 +71,12 @@
     </div>
   </div>
   <nav class="mobile-nav" id="mobile-nav" aria-label="页面导航" hidden>
-    <a href="#tools">工具面</a>
+    <a href="#tools">工具</a>
     <a href="#answer">检索返回</a>
     <a href="#pages">页码</a>
     <a href="#formats">双格式</a>
     <a href="#tuning">调参</a>
-    <a href="#free">免费栈</a>
+    <a href="#free">解析服务</a>
     <a href="#deploy">部署</a>
   </nav>
 </header>
@@ -94,9 +94,8 @@
         </div>
         <div class="hero-side">
           <p class="lede">
-            给跑 <b>Claude Desktop / Cursor</b> 的开发者：kybase 是一个 MCP / Skill 插件，
-            Agent 在会话里就能上传、解析、管理、检索 PDF 与 Word；每条命中带着<b>原文切片、页码与标题路径</b>回来。
-            检索参数不写死：分布和 <code>suggested</code> 一起给出。
+            kybase 是一个 MCP 知识库服务。把 PDF 和 Word 交给它，Agent 就能在会话里完成上传、解析、管理和检索；
+            命中返回原文片段、页码与标题路径。任何支持 MCP 的 Agent 都能接入，也提供 REST 与 Skill。
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="#deploy">接入插件</a>
@@ -110,13 +109,13 @@
         </div>
       </div>
 
-      <div class="session" data-session role="figure" aria-label="Agent 在会话里通过 kybase 工具上传文件、等待索引并检索出带页码的原文">
+      <div class="session" data-session role="figure" aria-label="Agent 在 MCP 客户端中上传文件、等待索引并检索出带页码的原文">
         <div class="session-bar">
           <span class="s-dot" aria-hidden="true"></span>
-          <span class="s-title">Claude Desktop</span>
+          <span class="s-title">MCP 客户端</span>
           <span class="s-sep" aria-hidden="true"></span>
           <span class="s-url">kybase · http://kb.local:8765/mcp</span>
-          <span class="s-state"><i aria-hidden="true"></i>CONNECTED</span>
+          <span class="s-state"><i aria-hidden="true"></i>已连接</span>
         </div>
         <div class="session-body">
           <div class="thread">
@@ -148,17 +147,17 @@
                 <span class="hit-page">p.7 · similarity 0.712</span>
               </div>
               <p class="hit-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
-              <div class="hit-meta"><span>fit <b>strong</b></span><span>basis <b>vector</b></span><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
+              <div class="hit-meta"><span>fit <b>strong</b></span><span>向量通道</span><span>五、嵌入模型与维度</span><span>doc_1c7e#00007</span></div>
             </div>
 
             <div class="msg msg-agent">
               <span class="who">Agent</span>
-              <p class="bubble">答案是：<b>建议不超过 2000，推荐 1024</b>，超过后建不了 HNSW。<br /><span class="cite">— 部署手册-NAS.pdf, p.7 · 五、嵌入模型与维度</span><span class="caret" aria-hidden="true"></span></p>
+              <p class="bubble">答案是：<b>建议不超过 2000，推荐 1024</b>，超过后建不了 HNSW。<br /><span class="cite">来源：部署手册-NAS.pdf，p.7，五、嵌入模型与维度</span><span class="caret" aria-hidden="true"></span></p>
             </div>
           </div>
 
-          <aside class="toolrail" aria-label="工具面">
-            <div class="rail-head"><span>工具面</span><b>11</b></div>
+          <aside class="toolrail" aria-label="工具">
+            <div class="rail-head"><span>工具</span><b>11</b></div>
             <ol class="rail-list">
               <li>list_knowledge_bases</li>
               <li>create_knowledge_base</li>
@@ -182,11 +181,11 @@
       </div>
 
       <div class="hero-foot">
-        <p>演示会话：工具名与返回字段取自当前实现；文件、页码与数值为示例。</p>
-        <p class="hero-foot-r">200 MB REST · 32 MB MCP · 异步摄入八阶段</p>
+        <p>示例会话</p>
+        <p class="hero-foot-r">REST 200 MB · MCP 32 MB</p>
       </div>
 
-      <a class="scroll-cue" href="#tools" aria-label="向下滚动到工具面"><span>往下：它拿回来的东西</span><i aria-hidden="true"></i></a>
+      <a class="scroll-cue" href="#tools" aria-label="向下滚动到工具"><span>继续看：检索返回</span><i aria-hidden="true"></i></a>
     </div>
   </section>
 
@@ -194,11 +193,10 @@
   <section class="section section-dark tools" id="tools" aria-labelledby="tools-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="sec-no">01 / 工具面</p>
-        <h2 id="tools-title">十一个工具，<br />一圈走完。</h2>
+        <p class="sec-no">01 / 工具</p>
+        <h2 id="tools-title">11 个工具，<br />覆盖知识库全流程。</h2>
         <p class="sec-lede">
-          上传、解析、管理、检索都在工具面里。Agent 不必知道背后的队列和索引，只要按状态往下走；
-          每一步都能调用、检查、重试。
+          接入、上传、解析、管理、检索都在 MCP 工具中。Agent 按状态调用，每一步都有明确的返回。
         </p>
       </div>
 
@@ -206,7 +204,7 @@
         <div class="tool-groups" role="tablist" aria-label="工具分组">
           <button class="tool-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel" data-group="access">接入 <span>3</span></button>
           <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="ingest">上传与解析 <span>3</span></button>
-          <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="manage">管理与取回 <span>3</span></button>
+          <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="manage">管理与读取 <span>3</span></button>
           <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="retrieve">检索 <span>2</span></button>
           <span class="tool-indicator" aria-hidden="true"></span>
         </div>
@@ -220,21 +218,21 @@
             <li><span class="tname">list_knowledge_bases</span><span class="tlabel">列库</span></li>
             <li><span class="tname">create_knowledge_base</span><span class="tlabel">建库</span></li>
             <li><span class="tname">add_data_source</span><span class="tlabel">挂 RSS / 网页源</span></li>
-            <li><span class="tname">upload_document</span><span class="tlabel">上传，异步摄入</span></li>
-            <li><span class="tname">get_document_status</span><span class="tlabel">看处理进度</span></li>
-            <li><span class="tname">reparse_document</span><span class="tlabel">清产物重解析</span></li>
-            <li><span class="tname">list_documents</span><span class="tlabel">列文档与状态</span></li>
-            <li><span class="tname">get_document_content</span><span class="tlabel">取全文 / 原件</span></li>
-            <li><span class="tname">delete_document</span><span class="tlabel">删除，进回收站</span></li>
-            <li><span class="tname">search</span><span class="tlabel">混合检索，返回原文片段</span></li>
-            <li><span class="tname">get_document_pages</span><span class="tlabel">按页取原文与页图</span></li>
+            <li><span class="tname">upload_document</span><span class="tlabel">上传并解析</span></li>
+            <li><span class="tname">get_document_status</span><span class="tlabel">查看处理进度</span></li>
+            <li><span class="tname">reparse_document</span><span class="tlabel">重新解析</span></li>
+            <li><span class="tname">list_documents</span><span class="tlabel">列出文档</span></li>
+            <li><span class="tname">get_document_content</span><span class="tlabel">读取全文或原件</span></li>
+            <li><span class="tname">delete_document</span><span class="tlabel">删除文档</span></li>
+            <li><span class="tname">search</span><span class="tlabel">检索原文片段</span></li>
+            <li><span class="tname">get_document_pages</span><span class="tlabel">按页读取原文与页图</span></li>
           </ul>
         </noscript>
       </div>
 
       <div class="tool-foot">
-        <p><code>surface_fingerprint</code> 覆盖工具名、描述、入参与返回；<code>--list-tools</code> 末行、<code>serverInfo.version</code> 与 <code>GET /api/v1/tools</code> 给的是同一个值。</p>
-        <p>每个请求都要 <code>Authorization: Bearer &lt;API Key&gt;</code>，没有匿名放行。</p>
+        <p>工具契约带指纹 <code>surface_fingerprint</code>。</p>
+        <p>请求使用 <code>Authorization: Bearer &lt;API Key&gt;</code> 鉴权。</p>
       </div>
     </div>
   </section>
@@ -246,8 +244,8 @@
         <p class="sec-no">02 / 返回</p>
         <h2 id="answer-title">先给判定，<br />再给原文。</h2>
         <p class="sec-lede">
-          同一次检索里，<code>summary</code> 说清候选与收敛，<code>distribution</code> 给出分布和 <code>fit</code>，
-          <code>decision</code> 记录为什么只回这几条；原文排在它们后面。
+          响应包含 <code>summary</code>、<code>distribution</code>、<code>decision</code> 和命中片段。
+          Agent 可以据此判断资料是否相关，并决定引用哪些内容。
         </p>
       </div>
 
@@ -299,10 +297,10 @@
           <div class="pblock pblock-foot" data-block="next_offset">
             <span class="pkey">next_offset</span>
             <span class="next">4</span>
-            <span class="next-note">判定在每一页上逐字相同；翻到 <code>null</code> 就是到底</span>
+            <span class="next-note">每页判定相同，翻到底为 <code>null</code></span>
           </div>
 
-          <figcaption class="sheet-note">演示数据：字段名与判定口径取自真实响应；数值按示例排版，不是一次真实请求。</figcaption>
+          <figcaption class="sheet-note">示例数据，字段与取值来自当前接口。</figcaption>
         </figure>
 
         <div class="answer-notes">
@@ -315,9 +313,9 @@
           </div>
           <div class="note-body" data-note-body aria-live="polite"></div>
           <ul class="note-aside">
-            <li><code>fit</code> 四档：<b>strong</b> 对得上 · <b>weak</b> 对上一部分 · <b>none</b> 答不了 · <b>unknown</b> 判不了</li>
-            <li><code>score</code> 是融合分，只反映名次；<code>similarity</code> 才是余弦</li>
-            <li><code>basis</code> 标出这条是 <code>vector</code> 还是 <code>fulltext</code> 捞上来的</li>
+            <li><code>fit</code> 四档：<b>strong</b> 相关 · <b>weak</b> 部分相关 · <b>none</b> 不相关 · <b>unknown</b> 未知</li>
+            <li><code>score</code> 是融合分，<code>similarity</code> 是余弦相似度</li>
+            <li><code>basis</code> 标明命中来自 <code>vector</code> 或 <code>fulltext</code></li>
           </ul>
         </div>
       </div>
@@ -329,10 +327,9 @@
     <div class="wrap">
       <div class="section-head">
         <p class="sec-no">03 / 页码</p>
-        <h2 id="pages-title">页码，<br />不是猜出来的。</h2>
+        <h2 id="pages-title">每条命中，<br />都能回到原页。</h2>
         <p class="sec-lede">
-          解析产物把页边界写成 <code>&lt;!-- page:N --&gt;</code>。切块器只在页标记与总页数自洽时，才把页码挂到块上；
-          对不上，就回 <code>null</code>。报一个翻不到的页码，比不报更糟。
+          解析时记录页边界，切块时保留页码，检索命中返回页码与标题路径。PDF 还可以按页查看原图。
         </p>
       </div>
     </div>
@@ -341,7 +338,7 @@
       <div class="narrative-pin">
         <div class="narrative-top">
           <div class="wrap narrative-top-inner">
-            <span>03 / 页码 · 一条原文的旅程</span>
+            <span>03 / 页码 · 从解析到命中</span>
             <div class="narrative-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
           </div>
         </div>
@@ -351,13 +348,13 @@
               <div class="doc-mock" aria-hidden="true">
                 <div class="doc-head"><span>部署手册-NAS.pdf</span><span>第 7 页</span></div>
                 <h3>五、嵌入模型与维度</h3>
-                <p>模型身份由模型注册表承担，不写进环境变量。建库之前先登记，服务不替你猜用哪个模型。</p>
+                <p>模型身份由模型注册表管理，建库之前先登记。</p>
                 <p class="doc-mark">&lt;!-- page:7 --&gt;</p>
                 <p class="doc-hl">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
-                <p>换模型等于换一把尺子：旧向量不会自动对齐，需要重建索引。</p>
+                <p>更换模型后需要重建索引。</p>
                 <span class="doc-no">— 7 —</span>
               </div>
-              <p class="stage-tag">解析 · 页标记落进 Markdown</p>
+              <p class="stage-tag">解析 · 页标记写入 Markdown</p>
             </div>
 
             <div class="stage-item stage-chunks" data-stage-item="1">
@@ -366,9 +363,9 @@
                 <li class="pick"><span class="cno">#04 · p.7</span><span class="ctext">五、嵌入模型与维度</span><span class="cline" style="--w: 88%"></span><span class="ctag">命中候选</span></li>
                 <li><span class="cno">#05 · p.7</span><span class="ctext">嵌入维度建议不超过 2000……</span><span class="cline" style="--w: 92%"></span></li>
                 <li><span class="cno">#06 · p.8</span><span class="ctext">六、检索与重排</span><span class="cline" style="--w: 68%"></span></li>
-                <li><span class="cno">#07 · p.8</span><span class="ctext">为什么默认不开 rerank</span><span class="cline" style="--w: 56%"></span></li>
+                <li><span class="cno">#07 · p.8</span><span class="ctext">七、重排的适用场景</span><span class="cline" style="--w: 56%"></span></li>
               </ol>
-              <p class="stage-tag">切块 · 页码跟着块走，对不上就 null</p>
+              <p class="stage-tag">切块 · 页码写入切块</p>
             </div>
 
             <div class="stage-item stage-hit" data-stage-item="2">
@@ -379,25 +376,25 @@
                 <div class="rc-meta"><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
                 <span class="rc-stamp">已核 P.7</span>
               </div>
-              <p class="stage-tag">检索 · 原文、页码、标题路径一起回去</p>
+              <p class="stage-tag">检索 · 原文、页码、标题路径返回</p>
             </div>
           </div>
 
           <div class="chapters">
             <article class="chapter is-active" data-chapter="0">
               <p class="ch-no">01</p>
-              <h3>解析时，页边界写进 Markdown</h3>
-              <p>MinerU 的 <code>content_list</code> 给出页码顺序，页标记插在合并产物的正确位置；纯文本与 Office 本来就没有页，如实留空。</p>
+              <h3>解析：记录页边界</h3>
+              <p>PDF 逐页解析，页标记写入 Markdown，后续切块可以引用页码。</p>
             </article>
             <article class="chapter" data-chapter="1">
               <p class="ch-no">02</p>
-              <h3>切块时，页码跟着块走</h3>
-              <p>一个页码可信，当且仅当它后面紧跟着下一页标记，或它就是总页数。标记号倒退、与页数对不上，整篇都不给页码。</p>
+              <h3>切块：保留页码</h3>
+              <p>每个切块记录所在页与标题路径，命中后可以直接定位。</p>
             </article>
             <article class="chapter" data-chapter="2">
               <p class="ch-no">03</p>
-              <h3>检索时，带着页码回来</h3>
-              <p>命中里有原文切片、页码与标题路径，还有 <code>chunk_id</code> 便于复现。PDF 还能按页取回原图——图、表、版式都在原位。</p>
+              <h3>检索：带出处返回</h3>
+              <p>命中包含原文、页码、标题路径和 chunk id；PDF 可按页查看原图。</p>
             </article>
           </div>
         </div>
@@ -405,10 +402,7 @@
     </div>
 
     <div class="wrap">
-      <p class="section-note">
-        <code>get_document_pages</code> 一次可取 1–50 页：每页给解析文字；PDF 与图片类还给这一页原图的签名链接。
-        页标记不可信时 <code>pages_reliable</code> 为 <code>false</code>，这时别拿它当「第 N 页」引用。
-      </p>
+      <p class="section-note"><code>get_document_pages</code> 按页读取原文与页图，单次支持 1 至 50 页。</p>
     </div>
   </section>
 
@@ -417,10 +411,9 @@
     <div class="wrap">
       <div class="section-head">
         <p class="sec-no">04 / 双格式</p>
-        <h2 id="formats-title">原件和 Markdown，<br />两份都留着。</h2>
+        <h2 id="formats-title">原件和 Markdown，<br />都保留。</h2>
         <p class="sec-lede">
-          上传的 PDF、Word 原样进对象存储；解析产物归一化成 Markdown。取用的时候按 <code>format</code> 选，
-          核对版式看原件，切块与检索看 Markdown。
+          上传的文件原样存储，解析结果转换为 Markdown。核对版式用原件，检索与切块用 Markdown。
         </p>
       </div>
 
@@ -434,23 +427,23 @@
           <div class="fmt-pane is-active" data-pane="original">
             <div class="orig-file">
               <div class="orig-icon" aria-hidden="true"><span>PDF</span></div>
-              <div class="orig-meta"><b>部署手册-NAS.pdf</b><span>23 页 · 2.4 MB · 原件按内容哈希寻址</span></div>
+              <div class="orig-meta"><b>部署手册-NAS.pdf</b><span>23 页 · 2.4 MB · 内容哈希存储</span></div>
               <span class="orig-badge">original</span>
             </div>
-            <div class="orig-page" aria-hidden="true">
+              <div class="orig-page" aria-hidden="true">
               <div class="op-head">五、嵌入模型与维度</div>
-              <p class="op-p">模型身份由模型注册表承担，不写进环境变量。建库之前先登记，服务不替你猜用哪个模型。</p>
+              <p class="op-p">模型身份由模型注册表管理，建库之前先登记。</p>
               <p class="op-p op-hl">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
               <div class="op-fig"><span></span><span></span><span></span><span></span><span></span></div>
               <p class="op-cap">图 5-2　近 30 天入库节奏</p>
               <div class="op-no">— 7 —</div>
             </div>
             <div class="fmt-side">
-              <p class="fmt-caption">按页出图：PDF 与图片类文档可以取回任意一页的原图（150 dpi），扫描件与版式不用二次转换。</p>
+              <p class="fmt-caption">PDF 和图片类文档可以按页查看原图，用于版本核对。</p>
               <ul class="fmt-points">
-                <li><b>原件通道</b><span>按内容哈希寻址，下载与预览都拿它；PDF 页图按 150 dpi 现场渲染并缓存。</span></li>
-                <li><b>Markdown 通道</b><span>切块、页标记、向量化都基于归一化产物；换解析器用 <code>reparse_document</code> 重跑。</span></li>
-                <li><b>两边的边界</b><span>Office 与纯文本没有「页」；页图只签给 PDF 与图片类，签不出来不报错。</span></li>
+                <li><b>原件</b><span>按内容哈希存储，用于下载与预览；页图按需渲染。</span></li>
+                <li><b>Markdown</b><span>切块、页标记和向量化都基于这份产物。</span></li>
+                <li><b>取用</b><span><code>get_document_content</code> 的 <code>format</code> 参数选择原件或 Markdown。</span></li>
               </ul>
             </div>
           </div>
@@ -468,14 +461,13 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
 
 <span class="md-dim">## 六、检索与重排</span></code></pre>
             </div>
-            <p class="fmt-caption">切块与页标记都基于这份 Markdown；换解析器后 <code>reparse_document</code> 会从解析器重跑，而不是重切旧产物。</p>
+            <p class="fmt-caption">更换解析器后，用 <code>reparse_document</code> 重新解析。</p>
           </div>
 
           <div class="format-callout">
             <div class="fc-row"><code>get_document_content(document_id, format="original")</code><span>取原件</span></div>
             <div class="fc-row"><code>get_document_content(document_id, format="markdown")</code><span>取解析产物</span></div>
-            <div class="fc-row"><code>200 MB</code> REST 上传上限 <span>·</span> <code>32 MB</code> MCP 单次</div>
-          </div>
+            <div class="fc-row"><code>200 MB</code> REST 上传上限 <span>·</span> <code>32 MB</code> MCP 单次</div>          </div>
         </div>
       </div>
     </div>
@@ -486,10 +478,9 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
     <div class="wrap">
       <div class="section-head">
         <p class="sec-no">05 / 调参</p>
-        <h2 id="tuning-title">策略不是预设，<br />是这一次的参数。</h2>
+        <h2 id="tuning-title">每次检索，<br />参数由 Agent 决定。</h2>
         <p class="sec-lede">
-          没有 fast / balanced / precise 的档位。检索模式三档、参数逐次给；分布顺手返回 <code>suggested</code>，
-          Agent 可以照建议收，也可以自己改，再用 <code>next_offset</code> 翻完。
+          检索模式和参数随请求传入。分布会给出建议值，Agent 可以直接采用，也可以按需要调整。
         </p>
       </div>
 
@@ -506,8 +497,8 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
             <span style="--h: 44%"></span><span style="--h: 30%"></span><span style="--h: 22%"></span><span style="--h: 16%"></span>
           </div>
           <div class="tune-axis"><span>0.37</span><span class="base">baseline 0.531</span><span>0.712</span></div>
-          <div class="tune-verdict" data-verdict>资料很对得上，按每篇最相关的收敛。</div>
-          <p class="tune-note">分布、基线、建议值都在同一次返回里；<code>fit=none</code> 时建议 <code>keep=0</code>，如实说没有。</p>
+          <div class="tune-verdict" data-verdict>资料吻合度高，按每篇最相关的结果收敛。</div>
+          <p class="tune-note">分布、基线与建议值在同一次返回中。</p>
         </div>
 
         <div class="tune-panel">
@@ -523,40 +514,35 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
           <div class="tune-row">
             <span class="tr-k">keep</span>
             <span class="tr-v" data-keep>4</span>
-            <span class="tr-note">一页回几条</span>
+            <span class="tr-note">一页返回条数</span>
           </div>
           <div class="tune-row">
             <span class="tr-k">min_score</span>
             <span class="tr-v" data-min>0.531</span>
-            <span class="tr-note">绝对余弦下限</span>
+            <span class="tr-note">余弦相似度下限</span>
           </div>
           <div class="tune-row">
             <span class="tr-k">per_doc</span>
             <span class="tr-v" data-perdoc>null</span>
-            <span class="tr-note">每篇最多几条</span>
+            <span class="tr-note">每篇文档最多条数</span>
           </div>
           <div class="tune-row">
             <span class="tr-k">decided_by</span>
             <span class="tr-v accent" data-decided>suggested</span>
-            <span class="tr-note">谁给的这三个数</span>
+            <span class="tr-note">参数来源</span>
           </div>
 
           <div class="tune-switch" role="group" aria-label="收敛参数来源">
-            <button class="ts-opt is-active" type="button" data-tune-mode="suggested" aria-pressed="true">照 suggested 收</button>
-            <button class="ts-opt" type="button" data-tune-mode="custom" aria-pressed="false">Agent 自己调</button>
+            <button class="ts-opt is-active" type="button" data-tune-mode="suggested" aria-pressed="true">采用建议值</button>
+            <button class="ts-opt" type="button" data-tune-mode="custom" aria-pressed="false">Agent 调整</button>
           </div>
 
           <div class="tune-result" data-tune-result>
             <p class="tr-title">下一次调用</p>
             <code class="tr-code" data-code>{"keep": 4, "min_score": 0.531, "per_doc": null}</code>
-            <p class="tr-text" data-text>按分布建议收。三个旋钮原样带回，翻页时判定不变。</p>
+            <p class="tr-text" data-text>采用分布建议的参数。</p>
           </div>
         </div>
-      </div>
-
-      <div class="tune-foot">
-        <p><code>min_score</code> 只切向量通道；词面命中没有余弦可比，条数记在 <code>decision.unscored_kept</code>，要更严就自己按 <code>lexical_score</code> 筛。</p>
-        <p><code>offset</code> / <code>next_offset</code> 翻的是「幸存者」名单；越过末尾不是错，回空 <code>hits</code> 和 <code>next_offset: null</code>。</p>
       </div>
     </div>
   </section>
@@ -565,59 +551,53 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
   <section class="section section-paper free" id="free" aria-labelledby="free-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="sec-no">06 / 免费栈</p>
-        <h2 id="free-title">从免费额度开始，<br />把栈搭起来。</h2>
+        <p class="sec-no">06 / 解析服务</p>
+        <h2 id="free-title">解析和向量化，<br />先用免费额度。</h2>
         <p class="sec-lede">
-          解析和向量化都可以先不付钱：MinerU 与 PaddleOCR 的云端免费额度，加上硅基流动的 BGE-M3。
-          不配云端 token，也有本地直提保底。
+          MinerU、PaddleOCR 和硅基流动都提供免费额度；文字型 PDF 和 Office 文件也可以在本地解析。
         </p>
       </div>
 
       <div class="stack-route" aria-label="解析与检索链路">
         <div class="route-step"><span class="rs-no">01</span><b>文件</b><small>PDF · Word · 图片 · 表格</small></div>
         <div class="route-arrow" aria-hidden="true">→</div>
-        <div class="route-step"><span class="rs-no">02</span><b>逐文件探测</b><small>文字型 / 扫描件 / 混合</small></div>
+        <div class="route-step"><span class="rs-no">02</span><b>文件探测</b><small>文字型 / 扫描件 / 混合</small></div>
         <div class="route-arrow" aria-hidden="true">→</div>
-        <div class="route-step route-stack"><span class="rs-no">03</span><b>解析路由</b><small>按文件挑引擎，失败降级</small>
+        <div class="route-step route-stack"><span class="rs-no">03</span><b>解析引擎</b><small>按文件选择引擎</small>
           <div class="rs-options"><span>本地直提</span><span>MinerU</span><span>PaddleOCR</span></div>
         </div>
         <div class="route-arrow" aria-hidden="true">→</div>
-        <div class="route-step"><span class="rs-no">04</span><b>Markdown + 页标记</b><small>切块、页码、检索都基于它</small></div>
+        <div class="route-step"><span class="rs-no">04</span><b>Markdown</b><small>页标记与切块</small></div>
         <div class="route-arrow" aria-hidden="true">→</div>
-        <div class="route-step"><span class="rs-no">05</span><b>BGE-M3</b><small>1024 维 · 硅基流动预设</small></div>
+        <div class="route-step"><span class="rs-no">05</span><b>BGE-M3</b><small>1024 维向量</small></div>
       </div>
 
       <div class="provider-grid">
         <article class="provider">
           <div class="prov-head"><span class="prov-kind">云端 · 版面还原</span><span class="prov-free">免费额度</span></div>
           <h3>MinerU</h3>
-          <p>PDF、Office、图片的版面还原与阅读顺序；云端标准 API，默认 VLM。大文件按页切段后串行解析。</p>
-          <dl><div><dt>额度</dt><dd>1000 页 / 天优先额度（本地记账）</dd></div><div><dt>可选</dt><dd>不配 token 时自动跳过</dd></div></dl>
+          <p>PDF、Office、图片的版面还原，云端 API，默认 VLM 模型。</p>
+          <dl><div><dt>额度</dt><dd>1000 页 / 天</dd></div><div><dt>类型</dt><dd>云端 · 可选</dd></div></dl>
         </article>
         <article class="provider">
           <div class="prov-head"><span class="prov-kind">云端 · 扫描件</span><span class="prov-free">免费额度</span></div>
           <h3>PaddleOCR</h3>
-          <p>扫描件与混合型 PDF 的 OCR；异步任务轮询，逐页产出。只接 PDF 与常见位图。</p>
-          <dl><div><dt>额度</dt><dd>以服务商当期政策为准</dd></div><div><dt>可选</dt><dd>token 为空时整条路由让给本地</dd></div></dl>
+          <p>扫描件与混合型 PDF 的 OCR，异步任务逐页处理。</p>
+          <dl><div><dt>额度</dt><dd>免费额度</dd></div><div><dt>类型</dt><dd>云端 · 可选</dd></div></dl>
         </article>
         <article class="provider">
           <div class="prov-head"><span class="prov-kind">API · 向量</span><span class="prov-free">免费额度</span></div>
           <h3>硅基流动 · BGE-M3</h3>
-          <p>OpenAI 兼容的嵌入接口，1024 维；同一供应商还能接 BGE Reranker。模型身份登记在注册表，不写进环境变量。</p>
-          <dl><div><dt>预设</dt><dd><code>BAAI/bge-m3</code> · dim 1024</dd></div><div><dt>可选</dt><dd>未登记时建库会被拒</dd></div></dl>
+          <p>OpenAI 兼容的嵌入接口，BGE-M3 1024 维，也可接入 BGE Reranker。</p>
+          <dl><div><dt>模型</dt><dd><code>BAAI/bge-m3</code></dd></div><div><dt>类型</dt><dd>API · 可选</dd></div></dl>
         </article>
         <article class="provider provider-local">
-          <div class="prov-head"><span class="prov-kind">本地 · 保底</span><span class="prov-free">不花额度</span></div>
+          <div class="prov-head"><span class="prov-kind">本地 · 解析</span><span class="prov-free">无需额度</span></div>
           <h3>本地直提</h3>
-          <p>文字型 PDF、<code>.docx</code>、<code>.pptx</code>、Markdown 与纯文本直接在本地解析，不依赖网络。</p>
-          <dl><div><dt>范围</dt><dd>不做版面还原；扫描件仍需云端 OCR</dd></div><div><dt>部署</dt><dd>MIT · 自托管，无订阅</dd></div></dl>
+          <p>文字型 PDF、<code>.docx</code>、<code>.pptx</code>、Markdown 与文本在本地解析。</p>
+          <dl><div><dt>范围</dt><dd>无版面还原</dd></div><div><dt>许可</dt><dd>MIT · 自托管</dd></div></dl>
         </article>
       </div>
-
-      <p class="section-note">
-        两家云端的免费额度、模型价格与可用地区以服务商当期政策为准；kybase 仓库不带 token、不代收费用。
-        嵌入模型需在「模型」页登记后建库，服务不替你猜用哪个模型。
-      </p>
     </div>
   </section>
 
@@ -626,10 +606,9 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
     <div class="wrap">
       <div class="section-head">
         <p class="sec-no">07 / 部署</p>
-        <h2 id="deploy-title">一条命令，<br />然后交给 Agent。</h2>
+        <h2 id="deploy-title">一条命令，<br />启动服务。</h2>
         <p class="sec-lede">
-          带 Docker 的干净机器四件套一起起；已有 PostgreSQL 与 MinIO 的机器只起应用层。
-          起来之后，登记一个嵌入模型，把 API Key 交给 Agent。
+          Docker 启动 PostgreSQL、MinIO、后端和前端。登记嵌入模型后，用 API Key 接入 Agent。
         </p>
       </div>
 
@@ -660,16 +639,16 @@ docker compose -f deploy/docker-compose.yml up -d --build
         </div>
 
         <ol class="deploy-steps">
-          <li><span class="step-no">01</span><div><h3>起容器</h3><p>PostgreSQL（pgvector）、MinIO、后端与前端；worker 跑在后端进程里。</p></div></li>
-          <li><span class="step-no">02</span><div><h3>登记嵌入模型</h3><p>模型身份由注册表承担，不塞进环境变量。没登记，建库会被拒。</p></div></li>
-          <li><span class="step-no">03</span><div><h3>建库、上传</h3><p>文件进去，异步流水线自己跑；租约、退避、断点续跑。</p></div></li>
-          <li><span class="step-no">04</span><div><h3>给 Agent 一把钥匙</h3><p>建 API Key，按库给范围；MCP、REST、Skill 用同一把。</p></div></li>
+          <li><span class="step-no">01</span><div><h3>启动容器</h3><p>PostgreSQL（pgvector）、MinIO、后端与前端。</p></div></li>
+          <li><span class="step-no">02</span><div><h3>登记嵌入模型</h3><p>在「模型」页登记嵌入模型。</p></div></li>
+          <li><span class="step-no">03</span><div><h3>创建知识库</h3><p>上传文件，摄入流程自动执行。</p></div></li>
+          <li><span class="step-no">04</span><div><h3>接入 Agent</h3><p>创建 API Key，配置 MCP 或 Skill。</p></div></li>
         </ol>
       </div>
 
       <div class="deploy-foot">
-        <p>官方 Skill 包在仓库 <code>skills/</code>：只会 shell 与 HTTP 的运行环境也能用，不需要 MCP 运行时。</p>
-        <p>四件套 compose 的整体「一键起」尚在实测；部署细节与变量表以 <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a> 为准。</p>
+        <p>Skill 包在仓库 <code>skills/</code>，适用于只有 shell 与 HTTP 的环境。</p>
+        <p>完整部署说明见 <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>。</p>
       </div>
     </div>
   </section>
@@ -678,17 +657,17 @@ docker compose -f deploy/docker-compose.yml up -d --build
   <section class="cta" aria-labelledby="cta-title">
     <div class="wrap cta-inner">
       <p class="sec-no">08 / 开始</p>
-      <h2 id="cta-title">下一个文件，<br />让 Agent 自己收。</h2>
+      <h2 id="cta-title">从第一份文档开始。</h2>
       <svg class="cta-mark" viewBox="0 0 370 299" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
         <circle cx="182.5" cy="148.5" r="145.75" stroke-width="3" />
         <ellipse cx="185.5" cy="155.5" rx="192" ry="44" transform="rotate(-18.5 185.5 155.5)" stroke-width="1.5" />
         <circle cx="318.5" cy="147" r="13.75" stroke-width="3" />
       </svg>
       <div class="cta-actions">
-        <a class="btn btn-primary" href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">在 GitHub 上读它</a>
-        <a class="btn btn-ghost" href="#deploy">看部署步骤</a>
+        <a class="btn btn-primary" href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">查看 GitHub</a>
+        <a class="btn btn-ghost" href="#deploy">阅读部署指南</a>
       </div>
-      <p class="cta-note">MIT · 自托管 · 11 个工具 · MCP / REST / Skill 同一套语义</p>
+      <p class="cta-note">MIT · 自托管 · MCP / REST / Skill</p>
       <div class="cta-evidence" aria-hidden="true">
         <span class="ce-stamp">已核 P.7</span>
         <p class="ce-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW。</p>
@@ -707,7 +686,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
         <circle cx="46.6" cy="28" r="2.6" class="brand-dot" />
       </svg>
       <span class="footer-word">kybase</span>
-      <span class="footer-tag">给 Agent 的知识库插件</span>
+      <span class="footer-tag">面向 Agent 的 MCP 知识库服务</span>
     </div>
     <nav class="footer-links" aria-label="页脚链接">
       <a href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">GitHub</a>
@@ -716,7 +695,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
       <a href="https://github.com/kkomia/kybase/blob/master/LICENSE" target="_blank" rel="noreferrer">MIT 许可</a>
     </nav>
     <p class="footer-fine">
-      页面里的会话、返回与页码为演示数据；字段与判定口径来自当前实现。免费额度以服务商政策为准。
+      示例数据。
       <span>© 2026 kkomia</span>
     </p>
   </div>
