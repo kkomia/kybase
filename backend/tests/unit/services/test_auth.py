@@ -56,7 +56,7 @@ def test_setup_is_one_shot(auth: AuthService) -> None:
 def test_setup_claims_legacy_data(auth: AuthService, store) -> None:  # type: ignore[no-untyped-def]
     """无主老数据（v10 之前）必须归首个管理员——不认领等于升级后数据"消失"。
 
-    分家之后只认领知识库；会话/笔记是 Agent 侧的表，已随那条线删掉，
+    拆分之后只认领知识库；会话/笔记是 调用方的表，已随那条线删掉，
     `claim_legacy_ownership` 也不再碰它们。
     """
     store.create_knowledge_base(

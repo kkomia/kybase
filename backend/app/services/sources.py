@@ -1,4 +1,4 @@
-"""数据源服务：登记、拉取、逐条入库（M6 / T6.1–T6.3）。
+"""数据源服务：登记、拉取、逐条入库（ / –）。
 
 把「连接器」（怎么抓）与「摄入」（抓来之后怎么办）接起来。
 
@@ -22,7 +22,7 @@ __all__ = ["SourceService", "SyncOutcome"]
 
 logger = logging.getLogger(__name__)
 
-#: 允许创建的数据源类型。WebDAV 明确排除（架构 §14 缓做）。
+#: 允许创建的数据源类型。WebDAV 明确排除（架构 14 缓做）。
 SUPPORTED_KINDS = (DataSourceKind.HTML, DataSourceKind.RSS)
 
 

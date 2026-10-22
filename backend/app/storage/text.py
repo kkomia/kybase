@@ -51,7 +51,7 @@ def _jieba() -> Any:
     """第一次用到时才导入 jieba（模块级导入会让**客户端运行时**凭空多背 40.9 MB ×）。
 
     为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"中文切词"只有**服务器**
-    那条检索链会用 √ —— 边车（客户端运行时）只跑循环 + 工具 + 沙箱 √，从不切词。
+    那条检索链会用 √ —— 旧版客户端（客户端运行时）只跑循环 + 工具 + 沙箱 √，从不切词。
     模块级 ``import jieba`` 的后果实测过（P4-3，2026-09-29）：``dist\\sidecar-runtime`` 里
     ``python -m app.sidecar`` 起不来 ×（``ModuleNotFoundError: No module named 'jieba'``）。
 

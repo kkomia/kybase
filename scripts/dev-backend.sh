@@ -11,7 +11,7 @@ PORT=8000
 # **端口先探一次**（v0.37）：Windows 上 SO_REUSEADDR 会让第二个实例**绑得上**同一个端口，
 # 于是"再启动一次"不会报错，而是变成两个后端同时在跑——连接落到哪一个由系统挑，
 # 表现为"我明明改了后端，界面却在报 Method Not Allowed / 找不到路由"（实测踩到，
-# 见《开发计划》§12.218）。所以这里先看端口，占了就明确拒绝启动并告诉用户怎么查。
+# 见开发记录12.218）。所以这里先看端口，占了就明确拒绝启动并告诉用户怎么查。
 port_in_use() {
     if command -v netstat >/dev/null 2>&1; then
         netstat -an 2>/dev/null | grep -q "[:.]$PORT .*LISTEN"

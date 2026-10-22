@@ -2,7 +2,7 @@
 
 注意：本文件刻意不写出乱码的字面量——那段乱码里含 U+201E 等字符，
 会被仓库自己的 emoji 扫描判成违规字符（门禁只扫 app/，但没必要给质检留坑）。
-乱码用 `"架构设计.md".encode().decode("latin-1")` 现场构造，效果一样且自解释。
+乱码用 `"设计.md".encode().decode("latin-1")` 现场构造，效果一样且自解释。
 """
 
 from app.services.ingest import normalize_filename
@@ -14,10 +14,10 @@ def test_utf8_filename_decoded_as_latin1_is_recovered() -> None:
     Starlette 照 latin-1 解出来，中文名整片变乱码——这就是"上传中文名文档，
     列表里显示一串看不懂的西欧字母"的成因。
     """
-    mangled = "架构设计.md".encode().decode("latin-1")
+    mangled = "设计.md".encode().decode("latin-1")
 
-    assert mangled != "架构设计.md"  # 先确认真的构造出了乱码
-    assert normalize_filename(mangled) == "架构设计.md"
+    assert mangled != "设计.md"  # 先确认真的构造出了乱码
+    assert normalize_filename(mangled) == "设计.md"
 
 
 def test_ascii_filename_is_untouched() -> None:
@@ -27,7 +27,7 @@ def test_ascii_filename_is_untouched() -> None:
 
 def test_plain_non_ascii_filename_is_untouched() -> None:
     """已经是正确中文的名字不能被"再还原一次"改坏。"""
-    assert normalize_filename("架构设计.md") == "架构设计.md"
+    assert normalize_filename("设计.md") == "设计.md"
 
 
 def test_unrecoverable_bytes_fall_back_to_original() -> None:

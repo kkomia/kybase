@@ -3,8 +3,8 @@
 镜像同构：``app/core/storage.py`` → ``tests/unit/core/test_storage.py``。
 
 装配会连库并校验 schema，所以这些用例需要 ``KYLAB_TEST_DATABASE_URL``
-（未配置则跳过）。（原先那些标 ``local`` 的本机档用例已随边车一起拆除；
-``local`` 标记本身还留着——它是工程规范里的一个档，别的用例仍在用。）
+（未配置则跳过）。（原先那些标 ``local`` 的旧版用例已随旧版客户端一起拆除；
+``local`` 标记本身还留着——它是分层规则里的一个档，别的用例仍在用。）
 """
 
 from pathlib import Path
@@ -137,5 +137,5 @@ def test_get_stores_is_cached_and_resettable(monkeypatch, pg_database) -> None:
         reset_stores()
 
 
-# ------------------------------------------------------------------ 本机档（M2 §4.1）
+# ------------------------------------------------------------------ 旧版（M2 4.1）
 

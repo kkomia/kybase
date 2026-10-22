@@ -4,7 +4,7 @@
  * 为什么这里用卡片、而文档清单用行：知识库是**容器型对象且数量少**，用户的动作是
  * "挑一个进去"（扫视比较），不是"在长列表里找某一条"。卡片给每个库一个独立边界，
  * 正好承载"名称 + 规模 + 概述 + 近 90 天两条节奏（入库 / 检索命中）+ 入口"这一小簇
- * 信息。条目多起来时（>12）切回行——这条判定规则原本就写在规范 §5.1。
+ * 信息。条目多起来时（>12）切回行——这条判定规则原本就写在规范 5.1。
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
@@ -45,7 +45,7 @@ import { Label } from '@/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 
-/** 规范 §5.1 的阈值：超过 12 个容器就用行而不是卡片，避免格子被挤窄。 */
+/** 规范 5.1 的阈值：超过 12 个容器就用行而不是卡片，避免格子被挤窄。 */
 const CARD_LIMIT = 12
 
 /** 行形态下传给趋势钩子的空清单（同一份引用，免得每帧造一个新数组）。 */

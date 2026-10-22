@@ -1,4 +1,4 @@
-"""RSS / Atom 订阅连接器（M6 / T6.3）。
+"""RSS / Atom 订阅连接器（ / ）。
 
 **"重复拉取不产生重复文档"靠什么**：摄入侧的内容 hash 去重
 （``IngestService.register`` 先查 ``get_document_by_hash``）。同一篇文章无论被

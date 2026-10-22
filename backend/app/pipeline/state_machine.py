@@ -1,13 +1,13 @@
-"""摄入流水线状态机（M2 T2.1）。
+"""摄入流水线状态机（ ）。
 
-状态序列与《架构设计 v0.2》§4 逐字对齐：
+状态序列与本项目4 逐字对齐：
 
 ``uploaded → probing → parsing → parsed → chunking → chunked → embedding → indexed``
 
 两个刻意的设计：
 
 - **允许原地自转**（``X → X``）：断点续跑时任务可能重设同一状态，这不该算非法迁移；
-- **``failed`` 可以回到任意中间态**：实现"从失败的那一步续跑"，而不是整篇重来（架构 §4
+- **``failed`` 可以回到任意中间态**：实现"从失败的那一步续跑"，而不是整篇重来（架构 4
   "每步可重试、可断点续跑、失败定位到具体步骤"）；
 - **``indexed`` / ``failed`` / ``canceled`` 可以回到 ``uploaded``**：这是"强制重新解析"
   ——从解析器开始整条流水线重跑一遍（退回的产物清理见
@@ -60,7 +60,7 @@ ALLOWED_TRANSITIONS: dict[DocumentStage, frozenset[DocumentStage]] = {
     DocumentStage.EMBEDDING: frozenset(
         {DocumentStage.INDEXED, DocumentStage.FAILED, DocumentStage.CANCELED}
     ),
-    # 可选增强分支：从终态进入，默认关闭，失败不影响主链路（架构 §4、§11）
+    # 可选增强分支：从终态进入，默认关闭，失败不影响主链路（架构 4、11）
     #
     # ``INDEXED → CHUNKING`` 是**"重新摄入"**（改完切分参数、或打开"分段出题"之后
     # 要重新切分 + 重新向量化才生效），``INDEXED → UPLOADED`` 是**"重新解析"**

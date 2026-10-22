@@ -1,13 +1,13 @@
-"""一次性运维动作：把库从早期合体部署的**交错迁移序列**重写成 KB 独立序列。
+"""一次性运维动作：把库从早期早期部署的**交错迁移序列**重写成 KB 独立序列。
 
 ## 这是什么、什么时候跑
 
-2026-10-20 的数据分家把 Agent 域的表与迁移从本服务里删掉了：基线不再建
+2026-10-20 的数据拆分把 Agent 域的表与迁移从本服务里删掉了：基线不再建
 ``conversations`` / ``chat_messages`` / ``notes`` / ``note_tags``，迁移序列也从
 "KB 与 Agent 交错连号"（v2..v19）重编成 KB 自己的连号（v2..v8）。
 
 **新库用不到这个模块**：空库启动时会按新基线一次建好。
-只有**分家之前就存在的那台库**才需要跑一次——它的表与字段都齐（KB 迁移早就
+只有**拆分之前就存在的那台库**才需要跑一次——它的表与字段都齐（KB 迁移早就
 应用过），差的只是 ``schema_migrations`` 里那串旧版本号。应用启动时检测到旧头
 （``LEGACY_INTERLEAVED_HEAD``）会明确拒绝并指向这里，不会带着错版本号继续跑。
 
@@ -33,11 +33,11 @@ docker compose -f deploy/docker-compose.yml run --rm --no-deps backend \\
 
 ## 三个可选的清理动作
 
-- ``--drop-agent-tables``：drop 分家后不再属于本服务的 10 张表（会话 / 笔记 /
+- ``--drop-agent-tables``：drop 拆分后不再属于本服务的 10 张表（会话 / 笔记 /
   工作区 / 定时任务 / 外部 MCP 登记 / 会话事件 / 会话产物）。**数据会没**——
   dry-run 会先把每张表的行数打出来；不带 ``--apply --yes`` 不会真删。
 - ``--purge-legacy-tasks``：清掉 ``tasks`` 队列里 ``memory`` / ``scheduled`` 两种
-  kind 的历史行。它们属于 Agent 的定时任务/记忆，分家后没有消费者，被领到只会
+  kind 的历史行。它们属于 Agent 的定时任务/记忆，拆分后没有消费者，被领到只会
   "明确失败"；清掉是为了别让队列里留一堆永远失败的行。
 - 两个动作都**幂等**：表已经不存在、行已经清过，再跑一遍是空操作。
 
@@ -60,7 +60,7 @@ from app.storage.postgres_impl.schema import (
     legacy_remap_plan,
 )
 
-#: 分家之后不再属于本服务的表（顺序不重要，drop 都带 CASCADE）。
+#: 拆分之后不再属于本服务的表（顺序不重要，drop 都带 CASCADE）。
 AGENT_TABLES = (
     "conversation_artifacts",
     "session_events",
@@ -74,10 +74,10 @@ AGENT_TABLES = (
     "conversations",
 )
 
-#: 分家后不再有消费者的任务类型（见 ``models/enums.TaskKind`` 的说明）。
+#: 拆分后不再有消费者的任务类型（见 ``models/enums.TaskKind`` 的说明）。
 LEGACY_TASK_KINDS = ("memory", "scheduled")
 
-#: 分家后仍必须存在的对象：``(类型, 名字)``。
+#: 拆分后仍必须存在的对象：``(类型, 名字)``。
 #:
 #: **这一份是"这台库真的在 KB 头部"的核对清单**，不是从 SQL 文本里猜的：
 #: 版本号重写本身不验证物理结构，写错会让应用带着"以为已经到 8"的认知启动。
@@ -108,7 +108,7 @@ def _describe(version: int) -> str:
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m app.storage.postgres_impl.remap",
-        description="把 kylab 合体期的交错迁移序列重写成 KB 独立序列（一次性运维动作）。",
+        description="把 kylab 早期版本的交错迁移序列重写成 KB 独立序列（一次性运维动作）。",
     )
     parser.add_argument(
         "--dsn",
@@ -123,7 +123,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--drop-agent-tables",
         action="store_true",
-        help="同时 drop 分家后不再属于本服务的 10 张表（需要 --apply 与 --yes）",
+        help="同时 drop 拆分后不再属于本服务的 10 张表（需要 --apply 与 --yes）",
     )
     parser.add_argument(
         "--purge-legacy-tasks",
@@ -208,7 +208,7 @@ def _rewrite_versions(db: Database, rows: list[dict[str, Any]]) -> None:
 
 def _drop_agent_tables(db: Database) -> None:
     with db.session() as conn:
-        # 依赖顺序不用管：CASCADE 会带走外键引用方（都是 Agent 侧的表之间）
+        # 依赖顺序不用管：CASCADE 会带走外键引用方（都是 调用方的表之间）
         for table in AGENT_TABLES:
             conn.execute(f"drop table if exists {table} cascade")
 
@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             rows = _current_rows(db)
             if not args.apply:
                 print(
-                    f"\n检测到 kylab 合体期的交错序列头 v{LEGACY_INTERLEAVED_HEAD}"
+                    f"\n检测到 kylab 早期版本的交错序列头 v{LEGACY_INTERLEAVED_HEAD}"
                     f"（新序列头是 v{SCHEMA_VERSION}）。重写计划（旧 -> 新）："
                 )
                 for old, new in sorted(legacy_remap_plan().items()):

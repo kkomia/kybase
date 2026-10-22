@@ -139,7 +139,7 @@ def test_delete_vectors_removes_only_given_ids(vector_store: VectorStore) -> Non
 
 
 def test_partitions_are_isolated_per_knowledge_base(vector_store: VectorStore) -> None:
-    """架构 §8.3：检索先按 kb_id 收敛范围，不同库互不串味。"""
+    """架构 8.3：检索先按 kb_id 收敛范围，不同库互不串味。"""
     vector_store.ensure_partition("kb_1", dim=DIM)
     vector_store.ensure_partition("kb_2", dim=DIM)
     vector_store.upsert_vectors("kb_1", items=[("c_kb1", _v(1, 0, 0, 0))])
@@ -177,7 +177,7 @@ def test_drop_partition_removes_vectors(vector_store: VectorStore) -> None:
 def test_ensure_partition_with_conflicting_dimension_raises(
     vector_store: VectorStore,
 ) -> None:
-    """架构 §6.4：维度不同绝对不能混写，必须报错而不是静默截断。"""
+    """架构 6.4：维度不同绝对不能混写，必须报错而不是静默截断。"""
     vector_store.ensure_partition("kb_1", dim=DIM)
     with pytest.raises(VectorDimensionMismatch, match="8 维"):
         vector_store.ensure_partition("kb_1", dim=8)

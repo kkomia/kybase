@@ -9,6 +9,6 @@
 - ``duckdb_impl/``   —— 表格型文档的结构化副本。
 
 装配见 ``core/storage.py::build_stores()``：postgres_impl + S3/本地目录 + duckdb_impl。
-（v0.1.0 瘦身：本机档的 ``sqlite_impl`` / ``split_impl`` 与它们独有那几块方法族
+（v0.1.0 精简：旧版的 ``sqlite_impl`` / ``split_impl`` 与它们独有那几块方法族
 一并拆除，本服务只剩 PG 一条存储形态。）
 """

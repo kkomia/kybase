@@ -1,6 +1,6 @@
-"""``ObjectStore`` 的本地文件系统实现（M1 T1.6）。
+"""``ObjectStore`` 的本地文件系统实现（ ）。
 
-目录规约（架构 §2 存储层）：``data/{originals,markdown,images}``，回收站走 ``data/.trash/<id>/``。
+目录规约（架构 2 存储层）：``data/{originals,markdown,images}``，回收站走 ``data/.trash/<id>/``。
 
 两种 Key 形态：
 
@@ -64,14 +64,14 @@ class LocalObjectStore(ObjectStore):
         return self._resolve(path).is_file()
 
     def move_to_trash(self, path: str, *, trash_id: str) -> str:
-        """把原文挪进回收站目录（架构 §6.2：原文保留 7 天冷备）。
+        """把原文挪进回收站目录（架构 6.2：原文保留 7 天冷备）。
 
         **目标路径必须 ``resolve()`` 之后再交给 _relative**：``self._root`` 可能是
         相对路径（例如配置成 ``data``），于是 ``_root / TRASH / ...`` 也是相对的，
         而 ``_relative`` 拿它去比 ``_root.resolve()``（绝对）——
         一个是相对路径、一个是绝对路径，``relative_to`` 直接抛 ValueError。
 
-        这条路径从 M1 写好起就没人调用过（接口层一直没有删除端点），
+        这条路径从  写好起就没人调用过（接口层一直没有删除端点），
         所以这个 bug 一直没被发现——直到回收站第一次真的被用上。
         """
         if not trash_id or any(char not in SAFE_KEY_CHARS for char in trash_id):

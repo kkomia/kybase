@@ -2,7 +2,7 @@
  * 任务接口（对应后端 GET /api/v1/tasks）：任务中心的数据来源。
  *
  * `attempts` / `max_attempts` / `lease_expires_at` 都原样展示——
- * 用户要能看出"重试了几次、卡在哪一步"，而不是只看到一个转圈（架构 §12）。
+ * 用户要能看出"重试了几次、卡在哪一步"，而不是只看到一个转圈（架构 12）。
  */
 
 import { request } from './client'
@@ -47,7 +47,7 @@ export function listTasks(state?: TaskState): Promise<{ items: TaskSummary[] }> 
 }
 
 /**
- * 负载面板（§12.115）：这台机器现在有多忙。
+ * 负载面板（12.115）：这台机器现在有多忙。
  *
  * **为什么不是前端自己算**：CPU / 内存是**服务端**的资源（浏览器看到的那个数字是
  * 用户自己电脑的，与后台快慢无关）；队列深度与云端额度只有后端知道。

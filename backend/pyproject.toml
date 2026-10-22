@@ -1,7 +1,7 @@
 [project]
-name = "kylab-backend"
+name = "kybase-backend"
 version = "0.1.0"
-description = "KYLAB 知识库后端服务：FastAPI + MCP Server（架构设计 v0.2 §2.1）"
+description = "kybase 知识库后端服务：FastAPI + MCP Server"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -40,7 +40,7 @@ dependencies = [
 
 # 按里程碑分层引入的重依赖
 [project.optional-dependencies]
-# 表格结构化副本（架构 §5.2，MVP 缓做，仅先保留写入路径）
+# 表格结构化副本（架构 5.2，MVP 缓做，仅先保留写入路径）
 tabular = [
     "duckdb>=1.1",
 ]
@@ -57,7 +57,7 @@ parsers = [
     "numpy>=2.0",
     # markdown-it-py 在**核心依赖**里（记忆召回也用它切块），这里不再重复列
 ]
-# Office 产出（v0.21，见 services/office.py 的方案 A 说明）。
+# Office 产出（v0.21，见 services/office.py 的方式 A 说明）。
 # **读**那半边不在这里：入库管线早已能解析这四种格式（local_office / Tabular /
 # local_pdf），这里补的是**产出**——agent 整理出的结论要能变成能发给别人的文件。
 # python-pptx 与 reportlab 是这一层仅有的两个新依赖；docx / xlsx 用 parsers
@@ -67,7 +67,7 @@ office = [
     # PDF 产出。中文必须有一个 CJK 字体，reportlab 自带 CID 字体（STSong-Light）
     # 不需要额外字体文件，所以没有其它 PDF 库的字体配置负担
     "reportlab>=4.2",
-    # 图表（v0.56，见《开发计划》§12.338 完善方案 2）。放在 office 这一档而不是
+    # 图表（v0.56，见开发记录12.338 完善方式 2）。放在 office 这一档而不是
     # 新开一个 extra：**"画一张图"与"导出一份文件"是同一件事的两半**——图要么作为
     # 图片交付物单独给出，要么由 openpyxl 内嵌进 .xlsx（见 `office.build_xlsx` 的
     # `charts` 参数）。分开两档的后果是"装了导出没装图"，而那恰好是 G-03 的形状
@@ -104,7 +104,7 @@ build-backend = "hatchling.build"
 packages = ["app"]
 
 # ---------------------------------------------------------------- ruff
-# 工程规范 §6：后端 lint 用 ruff
+# 分层规则 6：后端 lint 用 ruff
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -143,7 +143,7 @@ ignore = [
 known-first-party = ["app"]
 
 # ---------------------------------------------------------------- pytest
-# 工程规范 §5.2：本地与 CI 用 `pytest tests/ -m "not bench and not cloud"`
+# 分层规则 5.2：本地与 CI 用 `pytest tests/ -m "not bench and not cloud"`
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

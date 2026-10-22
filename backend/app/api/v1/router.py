@@ -4,10 +4,10 @@
 全局依赖无法表达"这个端点需要读写、那个只要只读、用户管理端还只认管理员"，
 只能一律放同一个档位——那等于没有作用域隔离。
 
-**只有一张表**（v0.1.0 瘦身）：这里就是知识库服务对外的全部路由。原先还有一张
-``local_router``（桌面壳的边车那一份白名单），它随边车一起拆除了——本机档、
+**只有一张表**（v0.1.0 精简）：这里就是知识库服务对外的全部路由。原先还有一张
+``local_router``（客户端的旧版客户端那一份白名单），它随旧版客户端一起拆除了——旧版、
 它的会话面、笔记、记忆、技能、插件、工作区、定时任务、沙箱、网页取页、前端资源包
-分发都没有了，Agent 侧的那些服务实现也一并删除。
+分发都没有了，调用方的那些服务实现也一并删除。
 
 留下的每一族都是知识库本体或它绕不开的共享底座：
 
@@ -15,7 +15,7 @@
   `/tabular` `/data-sources` `/knowledge-bases/{id}/shares` `/tasks` `/lifecycle`
   `/webhooks` `/maintenance` `/stats` `/provider/handshake`；
 - 对外能力目录：`/tools`（工具面 + 随附技能，管理界面据此渲染）；
-- 账号体系（随 KB 走，见架构设计 §5.3）：`/auth` `/users` `/api-keys` `/avatars`；
+- 账号体系（随 KB 走，见设计 5.3）：`/auth` `/users` `/api-keys` `/avatars`；
 - 模型登记（KB 要登记嵌入 / 对话模型）：`/model-registry`；
 - 健康探针：`/health`。
 """
@@ -60,7 +60,7 @@ api_router.include_router(documents.router)
 api_router.include_router(pages.router)
 api_router.include_router(folders.router)
 api_router.include_router(search.router)
-# 知识库提供者握手（M3 阶段 1）：这个服务**就是**提供者，所以这一族是它的家。
+# 知识库提供者握手（ 阶段 1）：这个服务**就是**提供者，所以这一族是它的家。
 api_router.include_router(provider.router)
 api_router.include_router(stats.router)
 api_router.include_router(tasks.router)

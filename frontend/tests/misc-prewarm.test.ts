@@ -5,7 +5,7 @@
  * 先拉回来——直接点进去时不必再等一次往返。
  *
  * 这份用例钉的就是"那三条 `prefetchQuery` 确实排了出去、键与页面共用同一份"。
- * 按档取舍那些分支（本机档 / 提供者结论）已随本机档与提供者一起删掉（v0.29 只有服务器一套）。
+ * 按档取舍那些分支（旧版 / 提供者结论）已随旧版与提供者一起删掉（v0.29 只有服务器一套）。
  */
 import { QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

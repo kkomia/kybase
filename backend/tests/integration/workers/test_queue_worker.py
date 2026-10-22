@@ -1,6 +1,6 @@
 """任务消费者的集成测试（M2 调度侧）。
 
-守住架构 §4 的三条承诺：失败可重试（指数退避）、超过上限判终态、进程崩溃后超时回收续跑。
+守住架构 4 的三条承诺：失败可重试（指数退避）、超过上限判终态、进程崩溃后超时回收续跑。
 """
 
 import asyncio
@@ -93,7 +93,7 @@ async def test_second_run_once_finds_nothing(worker: TaskWorker, bundle: StoreBu
 @pytest.mark.asyncio
 async def test_failure_reschedules_with_backoff(bundle: StoreBundle, ingest: IngestService,
                                                 worker: TaskWorker, kb) -> None:
-    """架构 §4：失败要按指数退避重试，而不是立刻判死。"""
+    """架构 4：失败要按指数退避重试，而不是立刻判死。"""
     outcome = ingest.submit(knowledge_base_id="kb_1", filename="scan.pdf",
                             content=b"\x89PNG\r\n\x1a\n\x00")
     _enqueue(bundle, outcome.document.id)
@@ -185,7 +185,7 @@ def test_retryability_classification(exc: Exception, expected: bool) -> None:
 async def test_expired_lease_is_reclaimed_and_reprocessed(bundle: StoreBundle,
                                                           ingest: IngestService,
                                                           worker: TaskWorker, kb) -> None:
-    """进程崩溃后：租约过期 → 任务回到队列 → 重新执行完成（架构 §4 断点续跑）。"""
+    """进程崩溃后：租约过期 → 任务回到队列 → 重新执行完成（架构 4 断点续跑）。"""
     outcome = ingest.submit(knowledge_base_id="kb_1", filename="a.md", content=CONTENT.encode())
     _enqueue(bundle, outcome.document.id)
 

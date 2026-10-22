@@ -20,7 +20,7 @@ ABC 与实现一对一，于是任何消费者都只能依赖"什么都有的那
 **域怎么划的**：以 ABC 里的分节注释为底，修了了两处——存储维护混在知识库节里
 （拆出 `MaintenanceRepo`）、阶段事件的读与清理分归两个域（读在文档、清理在维护）。
 **Agent 域的五个协议（notes / conversations / workspaces / schedules / mcp_servers）
-已随 2026-10-20 的数据分家删除**：那些表与迁移一起从本服务里拿走了。
+已随 2026-10-20 的数据拆分删除**：那些表与迁移一起从本服务里拿走了。
 
 ``tests/unit/storage/test_repositories.py`` 机械核对三件事：**每个方法恰好属于一个协议**、
 **151 个方法一个不漏**、**签名与 ABC 逐字一致**。
@@ -424,7 +424,7 @@ class WebhookRepo(Protocol):
 
 @runtime_checkable
 class IdempotencyRepo(Protocol):
-    """幂等键域（架构 §3.2）：上传类接口的重试护栏。
+    """幂等键域（架构 3.2）：上传类接口的重试护栏。
 
     四个方法共用一条不变式：同一个键**先占位、后落响应**，重试时读回同一份结果。
     （`purge_finished_tasks` / `purge_stage_events` 不在这里：它们是留存清理，
@@ -510,7 +510,7 @@ class ShareRepo(Protocol):
 
 @runtime_checkable
 class UsageRepo(Protocol):
-    """用量域（G7）：token 与调用量的落库、聚合读取与留存清理。
+    """用量域（）：token 与调用量的落库、聚合读取与留存清理。
 
     **刻意不算钱**：价目表必然过期，这个域只存原始计数，聚合口径在服务层。
 
@@ -534,7 +534,7 @@ class UsageRepo(Protocol):
 
 @runtime_checkable
 class ModelRegistryRepo(Protocol):
-    r"""模型注册器域（G1）：供应商、模型目录、以及\「哪个用途用哪个模型\」的绑定解算。
+    r"""模型注册器域（）：供应商、模型目录、以及\「哪个用途用哪个模型\」的绑定解算。
 
     `resolve_model_binding` 是热路径方法（每建一次 LLM 客户端解一遍），
     它一条 JOIN 拿到两张表——所以它与这两张表的其他方法必须同域。

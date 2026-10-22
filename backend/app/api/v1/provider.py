@@ -1,54 +1,11 @@
-"""知识库提供者握手（M3 阶段 1）：``GET /provider/handshake``。
+"""知识库提供者握手：``GET /provider/handshake``。
 
-**窄 API 的结论**（《知识库提供者-实施方案-v0.1》§1.1）：提供者的窄 API 就是 NAS 上
-**既有的**那一族知识库 REST（检索 / 入库 / 进度 / 库管理，页面今天已经在用它），
-M3 只新增这一个端点——因为它要回答的三件事没有任何既有端点答得了：
-``/health`` 不鉴权、没有能力集、也没有库清单。
+窄 API 就是既有的知识库 REST（检索 / 入库 / 进度 / 库管理）；握手只补充
+三个既有端点没有的信息：连通性、能力集与当前 Key 可见的库清单。
 
-**三条设计裁量**（方案 §1.2，结论照抄）：
-
-1. **不复用 ``/health``**：那是基础设施探针（不鉴权、给容器编排用、只回"活着"）。
-   握手要鉴权，因为**"凭据错"本身就是握手结论的一部分**；而且握手要带**能随调用者变的
-   库清单**，那不是一台全局探针装得下的东西。
-2. **必须鉴权**（``require_read``）：客户端据此把 **401 / 403**（→ 改钥匙）与
-   **连不上**（→ 改地址）分成两档。所以"凭据有问题"**不进响应体**：
-   它由 HTTP 状态码 + 统一错误信封表达（《API 接口规范》§1.3），响应体只在**通过
-   鉴权之后**才有。
-3. **协议版本是整数且只增**：``protocol_version=1`` 是 M3 的值。客户端规则——
-   **不认识（大于本机所知）即判不可用**，原因句子里带版本号，**绝不硬试**。
-
-**权限映射**（方案 §1.4）：本机后端那把长期 API Key 在 NAS 侧**不是管理员**
-（``is_admin=False``、``owner_id=None``、readwrite、不限定库范围），所以窄 API 只用
-``require_read`` / ``require_write`` 那批；``/settings``、``/api-keys``、``/users``、
-``/trash``、``/maintenance``、``/sandbox`` 这类 ``require_admin`` 的端点对它是 403。
-响应里 ``caller.is_admin`` **如实报 false**（见 ``schemas.ProviderCallerOut``），
-界面据此隐藏「回收站」这类入口。
-
-**能力集只有一份，就在下面**（方案 §7 阶段 1）：``capabilities.*`` 的每个取值都来自
-这里的常量、或来自**真实契约本身**（``MAX_UPLOAD_BYTES`` 是上传端点自己的常量，
-``top_k_max`` / ``candidate_k_max`` 从 ``SearchRequest`` 的 ``le=`` 读出来）——
-响应拼装里不再出现第二个字面量。
-
-``capabilities.ingest.extensions`` 为什么是**本模块的一个常量**（而不是从
-``app/parsers`` 机械导出）：
-
-- ``app/parsers`` **没有统一注册表**（方案审定前已核）：各解析器各持各的后缀集合
-  （``probe.py`` 的文本 / PDF / Office / 图片 / 视频那几张、``html_upload`` 的
-  ``HTML_EXTENSIONS``、``tabular_format`` 的 ``TABULAR_EXTENSIONS``、
-  ``local_office`` 的 ``LOCAL_OFFICE_EXTENSIONS``、``media_direct`` 的
-  ``MEDIA_IMAGE_EXTENSIONS``），而"收不收这个文件"由 ``services/parser_router.py``
-  按**后缀 + MIME + 内容探测**三者一起判（纯文本直通连没有后缀的 UTF-8 文本都收），
-  还要看运行期配置（云端引擎有没有凭据、嵌入协议支不支持媒体）——
-  能机械导出的只有"若干张局部表"，不等于"这台机器接受哪些格式"，抄出来会是假话；
-- 协议层**不许 import ``app.parsers``**（工程规范 §3.3 L1，``scripts/check_layering.py``
-  会拦），所以"机械导出"还得再造一个服务层中转模块去转发一个仍然半真的集合；
-- 结论：**这一份常量就是今后唯一的格式口径**。阶段 6 的
-  ``frontend/src/features/knowledge/uploadLimits.ts`` 那处硬编码改从握手读（风险 R8）。
-  它是**界面要提示的那批**，不是硬白名单。
-
-**它挂在唯一那张路由表上**：这个服务**就是**提供者，所以握手是它的家
-（原先另有一张本机档的白名单路由表，那一档是**客户端**角色——它该调这个端点、
-不提供它；那张表随边车一起拆除了）。
+握手必须鉴权：401/403（凭据或权限问题）与连不上（地址问题）是两种不同的结论。
+协议版本是整数且只增；客户端遇到不认识的版本应判为不可用，不要硬试。
+能力集只在本模块定义，上限值从真实契约读取，不在响应拼装里重复写死。
 """
 
 from __future__ import annotations
@@ -113,7 +70,7 @@ INGEST_EXTENSIONS: tuple[str, ...] = (
 )
 """界面要提示的格式（不带点号）——**今后唯一的格式口径**（见模块头）。
 
-改这里就是改口径：阶段 6 起前端从握手里读它，不再各写一份。
+改这里就是改口径：前端从握手里读它，不再各写一份。
 """
 
 RETRIEVAL_MODES: tuple[str, ...] = tuple(RetrievalMode.ALL)
@@ -132,7 +89,7 @@ TRACKING_DOCUMENT = True
 """支持查单个文档的状态（``GET /documents/{id}``）。"""
 
 TRACKING_TIMELINE = True
-"""支持查阶段时间线（``GET /documents/{id}/timeline``）。"""
+"""支持查处理时间线（``GET /documents/{id}/timeline``）。"""
 
 KB_MANAGEMENT_CAPS: dict[str, bool] = {
     "create": True,
@@ -141,8 +98,8 @@ KB_MANAGEMENT_CAPS: dict[str, bool] = {
     "shares": True,
     "wiki": True,
 }
-"""库管理那一族（建 / 删 / 目录 / 分享 / Wiki）：端点都在，页面直连 NAS 用。
-**本机侧不映射**（方案 §1.3）——这一位说的是"提供者会做"，不是"本机能做"。"""
+"""库管理那一族（建 / 删 / 目录 / 分享 / Wiki）：端点都在，页面可以直接使用。
+这一位表示"提供者会做"，不表示调用方一定拥有该能力。"""
 
 
 def _upper_bound(model: type[BaseModel], field: str) -> int:
@@ -206,7 +163,7 @@ def provider_capabilities(services: Services) -> ProviderCapabilitiesOut:
 
 
 def caller_brief(caller: Caller) -> ProviderCallerOut:
-    """这把凭据**在提供者这一侧**是什么样（方案 §1.4 要的可核对性）。
+    """这把凭据**在提供者这一侧**是什么样（便于核对）。
 
     ``permission`` 在不受库范围限制的那两档下是 ``None``（管理员会话与登录成员
     都没有密钥记录），那两档**都能写**，所以报 ``readwrite``——报一个空值只会让人
@@ -236,7 +193,7 @@ def _kb_brief(
 
     ``can_write`` 走 ``knowledge_bases.kb_access_flags``——**与 ``GET /knowledge-bases``
     同一份口径**。两处各写一份的表现是界面自相矛盾：列表上说能传、点进去 403，
-    或反过来把能用的入口收起来（方案 §7 阶段 1 明确要求共用）。
+    或反过来把能用的入口收起来（能力集需要共用）。
     """
     _, writable = kb_access_flags(record, caller, services)
     return ProviderKbBriefOut.model_validate(record).model_copy(
@@ -249,7 +206,7 @@ def _kb_brief(
 
 
 def kb_briefs(services: Services, caller: Caller) -> list[ProviderKbBriefOut]:
-    """这次调用**看得见**的库摘要（受限 key 只看到范围内的：方案 R9）。
+    """这次调用**看得见**的库摘要（受限 key 只看到范围内的）。
 
     计数一次聚合查出来，与列表端点同一个数——握手本来就要少发请求，
     不该让它比列表还贵。

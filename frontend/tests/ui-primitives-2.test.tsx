@@ -1,9 +1,9 @@
 /**
- * 第二批 shadcn 原语的冒烟用例（`src/styles/tokens.css` §5 的 19 个之外的那 10 个）。
+ * 第二批 shadcn 原语的冒烟用例（`src/styles/tokens.css` 5 的 19 个之外的那 10 个）。
  *
  * 与 `tests/ui-primitives.test.tsx` 同一条口径：只测"装得起来、开得开、点得动"，
  * 外加**一条令牌守卫**（字号不许写具名的 `text-meta` / `text-micro`，
- * 见 README §1.1）——视觉取值由映射表兜底，业务行为由各域自己的用例覆盖。
+ * 见 README 1.1）——视觉取值由映射表兜底，业务行为由各域自己的用例覆盖。
  *
  * jsdom 缺的几件：指针捕获 / 滚动 / 浮层定位的兜底在 `tests/setup.ts` 里；
  * 这里只补一件**本文件特有**的：`Avatar` 的图片加载探测会 `new Image()`，
@@ -382,7 +382,7 @@ describe('ui 原语（第二批）', () => {
  *
  * 2. **搜索框的宽度口径**。`.m-toolbar-search` 在 row 工具栏与块级弹窗（技能市场）复用，
  *    宽度只能写成 `flex-basis`：多一个 `width`，块级那处就会被缩成 240px。
- *    记忆页侧栏那一处（column 容器，另有一条容器规则）随页面下线一起删了（§6.3），
+ *    记忆页侧栏那一处（column 容器，另有一条容器规则）随页面下线一起删了（6.3），
  *    所以这里只剩 base 那一半——顺带钉住 `.m-side-col` 真的不在了。
  */
 function styleSource(relative: string): string {

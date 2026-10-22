@@ -91,7 +91,7 @@ def _psycopg() -> Any:
     """第一次真用 psycopg 时才导入它（模块级导入会让**客户端运行时**凭空多背一份 ×）。
 
     为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"连 PostgreSQL"只有
-    **服务器**那条链会做 √ —— 边车（客户端运行时）只跑循环 + 工具 + 沙箱 √，
+    **服务器**那条链会做 √ —— 旧版客户端（客户端运行时）只跑循环 + 工具 + 沙箱 √，
     它的会话权威与库都在**远端**（走 HTTP √，不走 psycopg）。
 
     **行为一个字没变** ×：第一次调用时才导入 √，psycopg 真的不在时仍在**调用那一刻**
@@ -455,7 +455,7 @@ class PostgresMetaStore(MetaStore):
         return result
 
     def get_document_by_hash(self, kb_id: str, content_hash: str) -> DocumentRecord | None:
-        """架构 §6.3 的文件级去重：同库同 hash 只应有一份。"""
+        """架构 6.3 的文件级去重：同库同 hash 只应有一份。"""
         with self._db.read() as conn:
             row = conn.execute(
                 "SELECT * FROM documents WHERE knowledge_base_id = %s AND content_hash = %s",
@@ -1856,7 +1856,7 @@ class PostgresMetaStore(MetaStore):
         ]
 
     def create_api_key(self, record: ApiKeyRecord) -> ApiKeyRecord:
-        """只落哈希：明文 key 永不进库（架构 §3.2）。"""
+        """只落哈希：明文 key 永不进库（架构 3.2）。"""
         record.created_at = record.created_at or _now()
         with self._db.session() as conn:
             conn.execute(

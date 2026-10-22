@@ -1,4 +1,4 @@
-"""模型注册器（调研报告 G1）。
+"""模型注册器（调研 ）。
 
 **为什么做这件事**：原先的模型配置是"全局各一套凭据"——设置页里
 `embedding.base_url`、`llm.api_key` 各一份。够用，但有三处会立刻卡住实际使用：
@@ -71,14 +71,14 @@ CAPABILITIES: dict[str, str] = {
 class ModelRegistryService:
     """供应商与模型目录，以及"哪个用途用哪个模型"的绑定。
 
-    **凭据的家**（M5 阶段 6，方案 §4.2）：供应商那把 API Key 搬进了系统钥匙串
+    **凭据的家**（ 阶段 6，方式 4.2）：供应商那把 API Key 搬进了系统钥匙串
     （``kylab:model_provider:<id>``），所以这一层要在**读出记录之后把它填回**、
     **写入时只落钥匙串**。对调用方完全透明：``ModelProviderRecord.api_key`` 这个字段
     与 `/model-registry` 那两个响应字段（``api_key_configured`` / ``api_key_hint``）
     **一个字节都没变**——变的只是"那个值从哪儿来"。
 
     ``secrets`` 不传 / 钥匙串不可用（服务器容器 / Linux 桌面 / CI）时一切照旧：
-    库那一列就是凭据的家（§4.5 的边界 + R14"服务器档库里那份凭据不动"）。
+    库那一列就是凭据的家（4.5 的边界 + "服务器档库里那份凭据不动"）。
     """
 
     def __init__(self, stores: StoreBundle, *, secrets: SecretStore | None = None) -> None:

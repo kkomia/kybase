@@ -1,6 +1,6 @@
-"""可选 rerank（M3 T3.5）。
+"""可选 rerank（ ）。
 
-架构 §5：rerank 由用户自配 OpenAI 兼容端点（如硅基流动 bge-reranker），**不配置则跳过**。
+架构 5：rerank 由用户自配 OpenAI 兼容端点（如硅基流动 bge-reranker），**不配置则跳过**。
 "跳过"必须是干净地跳过——既不能报错，也不能把结果降级成空列表。
 """
 
@@ -131,7 +131,7 @@ class OpenAICompatReranker(RerankProvider):
 
 
 def build_reranker(runtime: RuntimeConfigService) -> RerankProvider:
-    """配了就启用，没配就干净跳过（架构 §5）。
+    """配了就启用，没配就干净跳过（架构 5）。
 
     与 embedder 同理：每次调用重新读运行期配置，设置页改完立刻生效。
     """

@@ -1,5 +1,5 @@
 /**
- * 预览域样式（旧前端 `OfficePreview.vue` / `FilePreview.vue` 的 `<style scoped>` 合体）。
+ * 预览域样式（旧前端 `OfficePreview.vue` / `FilePreview.vue` 的 `<style scoped>` 早期）。
  *
  * 三条纪律与其余各域一致：
  * 1. **颜色、间距、圆角一律引用 `tokens.css` / `themes/*.css` 的变量**，这里不出现

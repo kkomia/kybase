@@ -23,7 +23,7 @@ export default tseslint.config(
   {
     files: ['**/*.{js,ts,tsx}'],
     plugins: { kylab: { rules: { 'no-emoji': noEmojiRule } } },
-    // 与旧前端同一条硬性禁令（《前端设计规范》§3、§8）
+    // 与旧前端同一条硬性禁令（界面规则3、8）
     rules: { 'kylab/no-emoji': 'error' },
   },
 

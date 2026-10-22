@@ -1,15 +1,15 @@
 """存储抽象层：接口与数据记录。
 
-纪律（工程规范 §3.3）：
+纪律（分层规则 3.3）：
 
 - ``services/`` 只允许 import 本模块的接口，**禁止 import** 任何 ``storage/*_impl/``；
 - 本模块内不得出现任何 SQLite 方言（SQL、连接对象、``rowid`` 语义），
-  这是 v0.12 从 SQLite 迁到 PostgreSQL 时接口一行未改的原因（《架构设计 v0.2》§8.3 迁移后门）。
+  这是 v0.12 从 SQLite 迁到 PostgreSQL 时接口一行未改的原因（本项目8.3 迁移后门）。
 
-关于 embedding 维度（M1 决策 D4）：维度**不是全局常量**，而是每个知识库的属性
+关于 embedding 维度（ 决策 ）：维度**不是全局常量**，而是每个知识库的属性
 （``KnowledgeBaseRecord.embedding_model_id`` / ``embedding_dim``），
 向量表按知识库分区、建表时使用该库的维度。这样换模型/换 endpoint 的规则
-（《架构设计 v0.2》§6.4）可以在运行时校验，而不必锁死 schema。
+（本项目6.4）可以在运行时校验，而不必锁死 schema。
 """
 
 from __future__ import annotations
@@ -208,7 +208,7 @@ class StorageError(Exception):
 class VectorDimensionMismatch(StorageError):
     """向量维度与既有分区不一致。
 
-    架构 §6.4：维度相同不等于向量空间兼容，**维度不同更是绝对不能混写**——
+    架构 6.4：维度相同不等于向量空间兼容，**维度不同更是绝对不能混写**——
     静默写入只会让检索结果悄悄错掉，所以这里必须硬失败。
     """
 
@@ -233,7 +233,7 @@ class KnowledgeBaseUnavailable(StorageError):
     没有这个能力"），而"折成哪个状态码"属于协议层——存储层不认识 HTTP。
 
     **为什么住在接口层**：``services/`` 只允许 import ``app.storage.base``
-    （工程规范 §3.3 L2，``scripts/check_layering.py`` 会拦），所以面向服务层说的这两句
+    （分层规则 3.3 L2，``scripts/check_layering.py`` 会拦），所以面向服务层说的这两句
     存储层事实（``StorageError`` 与它）必须同处一地——那正是"services 不必 import
     具体实现"这条承诺的另一半。
     """
@@ -246,7 +246,7 @@ class KnowledgeBaseUnavailable(StorageError):
 
 # --------------------------------------------------------------------- 对象存储的
 # 逻辑布局与寻址规则放在接口层：services 需要按同样的规约生成 Key，
-# 但**不能**去 import 具体实现（那会踩到工程规范 §3.3 的 L2 规则）。
+# 但**不能**去 import 具体实现（那会踩到分层规则 3.3 的 L2 规则）。
 
 ORIGINALS = "originals"
 MARKDOWN = "markdown"
@@ -286,7 +286,7 @@ class KnowledgeBaseRecord:
     """知识库。
 
     ``embedding_model_id`` 一旦入库即冻结：库内已有向量时不允许更换模型，
-    换 endpoint 时模型 ID 必须一致（《架构设计 v0.2》§6.4）。
+    换 endpoint 时模型 ID 必须一致（本项目6.4）。
     """
 
     id: str
@@ -309,7 +309,7 @@ class KnowledgeBaseRecord:
     suggested_count: int = 3
     """**每个分段生成几条**（v23 起；v22 时曾是"空状态显示几条"）。
     上限由服务层夹住（`suggested_questions.MAX_QUESTIONS`）。默认值在这里写一份、
-    服务层写一份——storage 不许依赖 services（工程规范 §3.3 L3），
+    服务层写一份——storage 不许依赖 services（分层规则 3.3 L3），
     两处由用例钉住一致。"""
     suggested_model_pk: str | None = None
     """出题用哪个对话模型（注册表主键）。``None`` = 跟随对话页当前选的模型。"""
@@ -351,7 +351,7 @@ class WikiPageRecord:
     ``level`` + ``parent_id`` 就是摘要树的落库形态：level 0 是总览页（根），
     1 是主题页。``content_md`` 里带 ``[n]`` 标记，n 对应
     :class:`WikiSourceRecord.index` —— **每个要点都指得回原文**，这是自动 Wiki
-    敢被人相信的前提（调研报告 §3.5）。
+    敢被人相信的前提（调研 3.5）。
     """
 
     id: str
@@ -426,7 +426,7 @@ class DocumentRecord:
     is_split: bool = False
     error: str | None = None
     uploaded_by: str | None = None
-    """上传者的使用者 id（G6）。``None`` = 系统摄入或名册启用前的老数据，
+    """上传者的使用者 id（）。``None`` = 系统摄入或名册启用前的老数据，
     界面据此显示"未记录"，而不是编一个名字出来。"""
     folder_id: str | None = None
     """所在目录（v13）。``None`` = 未归档（根目录）。"""
@@ -461,7 +461,7 @@ class FolderRecord:
 class DocumentPartRecord:
     """子文件（大文件强制切分后的页范围片段，UI 显示为可展开的子文件树）。
 
-    页码偏移用于合并时把子文件的页号重映射回原文（《架构设计 v0.2》§4.2）。
+    页码偏移用于合并时把子文件的页号重映射回原文（本项目4.2）。
     """
 
     id: str
@@ -488,7 +488,7 @@ class ChunkRecord:
     page: int | None = None
     image_ids: Sequence[str] = field(default_factory=tuple)
     disabled: bool = False
-    """人工禁用（§G3）。被禁用的块**不再参与检索**，但仍留在库里——
+    """人工禁用（）。被禁用的块**不再参与检索**，但仍留在库里——
     表格切碎、公式拆开这类"切得不好"的块，用户往往想留着待改，而不是直接删掉。"""
     questions: Sequence[str] = field(default_factory=tuple)
     """入库时由模型为这一段生成的问题（v23）。
@@ -515,7 +515,7 @@ class ChunkRecord:
 
 @dataclass(slots=True)
 class ImageRecord:
-    """图片（位置锚点方案，图片不入向量库，只记位置）。"""
+    """图片（位置锚点方式，图片不入向量库，只记位置）。"""
 
     image_id: str
     document_id: str
@@ -589,7 +589,7 @@ class DataSourceRecord:
 
 @dataclass(slots=True)
 class ApiKeyRecord:
-    """API Key：绑定知识库范围 + 只读/读写（《架构设计 v0.2》§3.2）。"""
+    """API Key：绑定知识库范围 + 只读/读写（本项目3.2）。"""
 
     id: str
     name: str
@@ -627,7 +627,7 @@ class WebhookRecord:
 
 @dataclass(slots=True)
 class TrashRecord:
-    """回收站条目：原文保留 7 天，向量已立即删除（《架构设计 v0.2》§6.2）。"""
+    """回收站条目：原文保留 7 天，向量已立即删除（本项目6.2）。"""
 
     id: str
     document_id: str
@@ -653,7 +653,7 @@ class IdempotencyRecord:
 
 @dataclass(slots=True)
 class UserRecord:
-    """使用者。**v10 起是名册与账号的合体**：
+    """使用者。**v10 起是名册与账号的早期**：
 
     - 只有 ``name`` 的是名册条目（纯归属标注，历史数据）；
     - 有 ``username`` + ``password_hash`` 的才是可登录账号。
@@ -704,7 +704,7 @@ class ShareRecord:
 
 @dataclass(slots=True)
 class UsageEventRecord:
-    """一次模型调用的用量（调研报告 G7）。
+    """一次模型调用的用量（调研 ）。
 
     ``reported`` 记录"供应商到底报没报用量"：OpenAI 兼容协议里 ``usage`` 是可选的，
     很多自建网关不回。**必须与"真的用了 0 token"区分开**——
@@ -747,7 +747,7 @@ class SearchEventRecord:
 
     **一行 = 一次检索 × 一个库**，不是"一次检索"：`usage_events(kind='search')`
     只有一个整数（返回了几条）且没有库这一维，于是控制台画不出"这个库的检索命中趋势"
-    （设计文档 §9 第 6 条记着这个缺口）。这张表补的正是那一维。
+    （设计文档 9 第 6 条记着这个缺口）。这张表补的正是那一维。
 
     ``candidates`` 与 ``kept`` 刻意**分开记**：
 
@@ -776,7 +776,7 @@ class SearchEventRecord:
 
 @dataclass(slots=True)
 class ModelProviderRecord:
-    """模型供应商：一个 base_url + 一把凭据（调研报告 G1）。
+    """模型供应商：一个 base_url + 一把凭据（调研 ）。
 
     **为什么不复用 ``app_settings`` 里的 ``embedding.base_url`` 那套**：
     那套的口径是"全局各一套凭据"，换模型就得覆盖旧凭据；而成熟产品（6/6）
@@ -797,7 +797,7 @@ class ModelProviderRecord:
 
 @dataclass(slots=True)
 class RegisteredModelRecord:
-    """模型目录里的一条（G1）。
+    """模型目录里的一条（）。
 
     ``capabilities`` 用集合存（落库为 JSON 数组）：一个模型能做什么随供应商与版本而变，
     用固定布尔列会僵化——每加一种能力就要改表。
@@ -1166,7 +1166,7 @@ class MetaStore(ABC):
     def mark_document_split(self, document_id: str, is_split: bool = True) -> None:
         """标记"这个文档被切成子文件了"。
 
-        界面据此把它渲染成**可展开的父行**（架构 §4.2："UI 显示为单个文件，
+        界面据此把它渲染成**可展开的父行**（架构 4.2："UI 显示为单个文件，
         点击展开子文件树"）。没有这个标记，子文件树就永远不会出现——
         用户只能看到一个文档，却不知道它内部被切成了 5 段、其中一段失败了。
         """
@@ -1328,7 +1328,7 @@ class MetaStore(ABC):
         光看 ``stage`` 是看不出它在跑的（前端 `needsPolling` 就靠这个字段）。
         """
 
-    # ---- 切块人工干预（§G3）----
+    # ---- 切块人工干预（）----
     @abstractmethod
     def update_chunk(self, record: ChunkRecord) -> None:
         """就地更新一个块（正文、标题路径、页码）。**不改 chunk_id**。"""
@@ -1374,7 +1374,7 @@ class MetaStore(ABC):
 
         云端渠道有**每日页数额度**（MinerU 1000 页/天），而额度用尽不是报错、
         是**降级排队**——用户只看到"卡住不动"。负载面板把已用量显示出来，
-        这种"看起来卡住"才有可核查的解释（见 §12.115）。
+        这种"看起来卡住"才有可核查的解释（见 12.115）。
 
         页数**按子文件页范围累加**（切分后每段单独送云端，一次调用只算它那几页），
         只有没切分的文档才用 ``documents.page_count``：否则一篇 1500 页切 8 段的
@@ -1446,7 +1446,7 @@ class MetaStore(ABC):
     def task_counts(self, *, now: datetime, overdue_before: datetime) -> TaskCounts:
         """队列概览：**全部计数下推到 SQL**，一行结果，与任务总量无关。
 
-        负载面板每 2 秒问一次（§12.115），而任务表只增不减。原先那条路是
+        负载面板每 2 秒问一次（12.115），而任务表只增不减。原先那条路是
         "把整张表读出来、构造每条记录、再在 Python 里数"——代价随任务总量线性涨，
         而这里要的只是几个数。
 
@@ -1526,7 +1526,7 @@ class MetaStore(ABC):
     @abstractmethod
     def delete_webhook(self, webhook_id: str) -> None: ...
 
-    # ---- 幂等键（架构 §3.2：上传类接口带幂等键，防重试造成重复入库）----
+    # ---- 幂等键（架构 3.2：上传类接口带幂等键，防重试造成重复入库）----
     @abstractmethod
     def create_idempotency_key(self, record: IdempotencyRecord) -> IdempotencyRecord:
         """占住一个幂等键。**键已存在时必须抛 ConflictError**，让调用方据此走重放。"""
@@ -1621,7 +1621,7 @@ class MetaStore(ABC):
 
 
 
-    # ---- 使用者名册（调研报告 G6）----
+    # ---- 使用者名册（调研 ）----
     @abstractmethod
     def create_user(self, record: UserRecord) -> UserRecord: ...
 
@@ -1674,7 +1674,7 @@ class MetaStore(ABC):
         """把 owner 为 NULL 的知识库认领给指定账号（setup 向导用），返回认领条数。
 
         认领了几条要让用户知道，静默改掉一堆数据的归属而不吭声是不行的。
-        （原先还会认领 `conversations`——那张表是 Agent 侧的，随分家一起删了。）
+        （原先还会认领 `conversations`——那张表是 调用方的，随拆分一起删了。）
         """
         ...
 
@@ -1723,7 +1723,7 @@ class MetaStore(ABC):
     @abstractmethod
     def delete_share(self, kb_id: str, user_id: str) -> None: ...
 
-    # ---- 用量（调研报告 G7）----
+    # ---- 用量（调研 ）----
     @abstractmethod
     def record_usage(self, record: UsageEventRecord) -> UsageEventRecord: ...
 
@@ -1776,7 +1776,7 @@ class MetaStore(ABC):
         ...
 
 
-    # ---- 模型注册器（调研报告 G1）----
+    # ---- 模型注册器（调研 ）----
     @abstractmethod
     def create_model_provider(self, record: ModelProviderRecord) -> ModelProviderRecord: ...
 
@@ -1881,7 +1881,7 @@ class MetaStore(ABC):
 
         **与"设为空串"不是一回事**：空串仍是一个显式值，会参与
         "是否已配置"的判断；而删除意味着"回到没有这个设置的状态"。
-        槽位解绑（G1）依赖这个区别——解绑后应当回退到 ``.env``/设置页那套，
+        槽位解绑（）依赖这个区别——解绑后应当回退到 ``.env``/设置页那套，
         而不是被一个空值挡住。
         """
         ...
@@ -1892,7 +1892,7 @@ class SearchFilter:
     """**下推到存储层**的检索过滤条件：块自身的元数据 + 它所属文档的元数据。
 
     **为什么要在存储层另立一份，而不是收 ``services`` 那侧的 ``MetadataFilter``**：
-    分层纪律（工程规范 §3.3）规定 ``storage/`` 不得依赖 ``services/``；而过滤又偏偏
+    分层纪律（分层规则 3.3）规定 ``storage/`` 不得依赖 ``services/``；而过滤又偏偏
     只能在这里做才有意义——"只查某本书某章"必须在**候选生成之前**裁剪，等两条通道
     各自按 ``top_k`` 取完再筛，那本书的块根本没机会进候选（见
     :meth:`VectorStore.search` 的说明）。所以条件在存储这一侧重新声明一遍，
@@ -1946,7 +1946,7 @@ class SearchFilter:
 
 
 class VectorStore(ABC):
-    """向量仓储：按知识库分区（架构 §8.3），维度在分区创建时确定。"""
+    """向量仓储：按知识库分区（架构 8.3），维度在分区创建时确定。"""
 
     @abstractmethod
     def ensure_partition(self, kb_id: str, *, dim: int) -> str | None:
@@ -2041,7 +2041,7 @@ class ObjectStore(ABC):
 
 
 class TabularStore(ABC):
-    """表格结构化副本（M2 / T2.11；DuckDB 实现）。
+    """表格结构化副本（ / ；DuckDB 实现）。
 
     **为什么单独一个仓储、而不是又一张 SQLite 表**：它回答的是
     "某份 CSV 的第 3 行第 2 列是什么"这类**按行列定位**的问题。

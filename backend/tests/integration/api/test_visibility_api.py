@@ -118,11 +118,11 @@ def test_member_cannot_upload_into_others_kb(two_users) -> None:  # type: ignore
 # - ``test_member_cannot_branch_from_others_conversation``（分叉 = 把整段历史复制一份，
 #   所以越权比"看"更严重，必须 404，而且成员名下不该多出新会话）。
 #
-# **为什么在本机档没有意义**：**会话面只在本机档**（NAS 网页端退役，服务器档那张表里
-# 只剩 `/conversations/export`），而本机档的主体恒为"本机主人"——不挂 `/auth/*` 与
+# **为什么在旧版没有意义**：**会话面只在旧版**（NAS 网页端退役，服务器档那张表里
+# 只剩 `/conversations/export`），而旧版的主体恒为"本机主人"——不挂 `/auth/*` 与
 # `/users`，`users` / `sessions` 两张表也不在本机库里（见 `api/v1/router.py` 里
 # "明确不挂"那一段）。于是"别人的会话"这件事在两个档里都不存在可观察的形态：
-# 服务器档没有会话端点，本机档没有第二个身份。
+# 服务器档没有会话端点，旧版没有第二个身份。
 #
 # 归属判定本身（`ConversationService.get_for_owner` 与
 # `chat.py::_require_visible_conversation` 那份口径）**一个字没改**，
@@ -207,7 +207,7 @@ def test_member_search_hit_trend_sees_only_own_knowledge_bases(two_users) -> Non
 def test_member_cannot_touch_console_endpoints(two_users) -> None:  # type: ignore[no-untyped-def]
     """密钥管理/用户名册对成员是 403（与外部 API Key 同一档待遇）。
 
-    原来这一条里还有 ``/api/v1/settings``：它随 NAS 网页端退役**只在本机档**了
+    原来这一条里还有 ``/api/v1/settings``：它随 NAS 网页端退役**只在旧版**了
     （2026-10-05），服务器档上那是 404 而不是 403，所以从这张表里去掉了——
     管理员档那一半由 `api/v1/settings.py` 上的 ``WriteDep`` 自己保证，
     而它现在只挂在"没有第二个身份"的那一档上（见 `router.py` 里 `local_router` 那一段）。
@@ -249,8 +249,8 @@ def test_member_sees_own_task_and_dashboard_counts(two_users) -> None:  # type: 
 # ``test_admin_session_sees_conversations_from_other_channels``（管理员用网页会话要
 # 看得到跨账号建的会话）——两条都打在**已经退役的会话链路**上（``/chat`` 与
 # ``/conversations`` 都不在服务器档，而这一份是服务器档、带账号的那一份）。
-# 本机档的对话由**边车**的 ``/turn*`` 承接，会话面的正向路径由
-# `tests/integration/api/test_conversation_api.py`（本机档）覆盖。
+# 旧版的对话由**旧版客户端**的 ``/turn*`` 承接，会话面的正向路径由
+# `tests/integration/api/test_conversation_api.py`（旧版）覆盖。
 
 
 # --------------------------------------------------------------------- 分享（v10）

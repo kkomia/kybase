@@ -1,14 +1,14 @@
-"""切分器（M2 T2.8）。
+"""切分器（ ）。
 
-三种模式（架构 §5.1）：**固定长度 / 语义切块 / 父子切块**。本模块实现固定长度，
-另外两种按计划在 M2 后段补齐。
+三种模式（架构 5.1）：**固定长度 / 语义切块 / 父子切块**。本模块实现固定长度，
+另外两种按计划在  后段补齐。
 
 两个与架构承诺直接相关的细节：
 
 - **标题路径注入**：chunk 记录 ``第3章 > 3.2节`` 形式的 ``heading_path``，检索结果里能看出
   命中的是哪一节；
 - **稳定 ID + 内容 hash**：``chunk_id`` 由文档与序号推出（可复现），``content_hash`` 用于
-  增量更新时对齐新旧序列（架构 §6.1）。
+  增量更新时对齐新旧序列（架构 6.1）。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ __all__ = [
 
 
 #: 页标记的读取侧。格式定义在 ``app/core/page_markers.py``（写侧：解析器与切分器），
-#: 两处共用一份，不可能分家。
+#: 两处共用一份，不可能拆分。
 _PAGE_MARKER = PAGE_MARKER_RE
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -57,7 +57,7 @@ CHUNK_OVERLAP_MAX = int(CHUNK_SIZE_MAX * CHUNK_OVERLAP_RATIO_MAX)
 
 @dataclass(frozen=True, slots=True)
 class ChunkingConfig:
-    """切分参数。默认值来自架构 §5.1 的"固定长度"模式。"""
+    """切分参数。默认值来自架构 5.1 的"固定长度"模式。"""
 
     size: int = DEFAULT_CHUNK_SIZE
     overlap: int = DEFAULT_OVERLAP
@@ -89,7 +89,7 @@ def config_from_record(record) -> ChunkingConfig:  # type: ignore[no-untyped-def
 
 
 def content_hash_of(text: str) -> str:
-    """内容 hash：增量更新时用它判断某个位置的 chunk 是否变化（架构 §6.1）。"""
+    """内容 hash：增量更新时用它判断某个位置的 chunk 是否变化（架构 6.1）。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
 
 
@@ -204,7 +204,7 @@ def _split_blocks(
     页码来自页标记（``core/page_markers.py``，写侧是解析器与大文件切分器）。
     一份 1500 页的文档被切成 8 段分别解析，它们的产物是拼起来的，
     没有标记的话「这条命中在第几页」这个问题就永远答不出来——
-    而引文页码是"答案可核查"的前提（架构 §5）。
+    而引文页码是"答案可核查"的前提（架构 5）。
 
     **页号是"当前页"，会一直沿用到下一个标记**，而不是只用一次。
     这一点踩过两次：

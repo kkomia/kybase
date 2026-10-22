@@ -1,4 +1,4 @@
-"""负载面板的数据源：把"这台机器现在有多忙"变成几个可核查的数（§12.115）。
+"""负载面板的数据源：把"这台机器现在有多忙"变成几个可核查的数（12.115）。
 
 **要解决的问题**：用户看到的是"后台跑得慢"，而慢有四种完全不同的原因，界面上
 当时一个都看不到：
@@ -194,7 +194,7 @@ class SystemLoadService:
         self._now = now or (lambda: datetime.now(UTC))
         self._cpu_sample: tuple[float, float, float] | None = None
         self._lock = threading.Lock()
-        # "配没配 MinerU"的短缓存（§12.116）。它要读运行期配置（一条 SQL ≈ 6ms，
+        # "配没配 MinerU"的短缓存（12.116）。它要读运行期配置（一条 SQL ≈ 6ms，
         # 成本几乎全在往返上），而面板每 2 秒问一次；令牌不会秒级变化，
         # 缓存 30 秒既省掉这笔固定税，又不会让"刚填完令牌"看起来没生效。
         self._mineru_checked_at: float = 0.0
@@ -279,7 +279,7 @@ class SystemLoadService:
     def _queue(self) -> QueueLoad:
         """队列深度：**一条聚合查询**，不把任务表搬进 Python（见 ``MetaStore.task_counts``）。
 
-        负载面板每 2 秒被问一次（§12.115），而任务表只增不减。原先那条路会把每一行
+        负载面板每 2 秒被问一次（12.115），而任务表只增不减。原先那条路会把每一行
         都构造出来再在 Python 里数，代价随任务总量线性涨，而这里要的只是几个数。
 
         逾期阈值**从可观测性服务拿**（``OVERDUE_AFTER``）：判定"等太久"的只能有一个

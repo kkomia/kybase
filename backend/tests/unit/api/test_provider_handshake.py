@@ -4,24 +4,24 @@ r"""握手端点 ``GET /provider/handshake``（M3 阶段 1）的契约。
 
 四件事，一件都不能少：
 
-1. **键集合**（方案 §7 阶段 1 的完成判据）：响应体的形状就是契约，多一个字段少一个字段
+1. **键集合**（方式 7 阶段 1 的完成判据）：响应体的形状就是契约，多一个字段少一个字段
    客户端都得跟着改——而"多一个"在 JSON 里没人会报错 ✗；
 2. **能力集字段齐**，且取值来自**真实契约本身**（``max_bytes`` 就是上传端点那个常量、
    ``top_k_max`` 就是 ``SearchRequest`` 的 ``le=``）——这两条各写一份数字必然漂 ✗；
-3. **归属过滤**：受限 key 只看到范围内的库，且 ``can_write=false``（方案 R9：
+3. **归属过滤**：受限 key 只看到范围内的库，且 ``can_write=false``（方式 R9：
    握手上泄露库元信息）；
 4. **401/403 与"连不上"分成两档**：这条在**响应形状**上落实——凭据问题走 HTTP 状态码 +
    统一错误信封，**不进握手体**。客户端据此决定"改钥匙"还是"改地址"。
 
 **另加一条挂载面的判据**（文件末那条）：`provider.router` 挂在唯一那张路由表上，
-用 router 对象本身说话。原先还有四条"两档各挂哪张表"的用例——本机档随边车拆除了，
+用 router 对象本身说话。原先还有四条"两档各挂哪张表"的用例——旧版随旧版客户端拆除了，
 "这条端点挂在哪儿"不再有第二种答案。
 
 **本文件整份标 ``local``**：它只拼装响应（假 services）、只读路由表，**一个存储都不连**。
 标记在这里的含义就是 `conftest.isolated_data_dir` 的那条判据——"不需要 PostgreSQL"：
 没有 PG 的机器上，未标 ``local`` 的用例会被**整批跳过**，而"跳过"对这几条断言等于没测。
 
-**真 PG 那半（真钥匙 + 真库 + 打真 HTTP）不在本文件**（方案 §7 阶段 1 把它列在
+**真 PG 那半（真钥匙 + 真库 + 打真 HTTP）不在本文件**（方式 7 阶段 1 把它列在
 ``pytest -m "not local"`` 那一侧）。所以归属过滤在本文件验的是**协议层的接线**：
 我们确实调了 ``visible_kb_ids`` 并把范围外的剔除、``can_write`` 确实取自
 ``api_keys.can_write``；那把钥匙自己的判定（``check_access`` / ``visible_kb_ids``
@@ -51,7 +51,7 @@ from app.storage.base import ApiKeyRecord, KnowledgeBaseRecord, UserRecord
 
 pytestmark = pytest.mark.local
 
-#: 握手响应**恰好**是这几个键（方案 §1.2 的契约）。
+#: 握手响应**恰好**是这几个键（方式 1.2 的契约）。
 CONTRACT_KEYS = {
     "provider",
     "protocol_version",
@@ -210,7 +210,7 @@ def test_the_body_carries_exactly_the_contract_keys() -> None:
 
 
 def test_the_protocol_version_is_a_growing_integer() -> None:
-    """``protocol_version`` 是整数且当前为 1（客户端**不认识即判不可用**，方案 §1.2 裁量 3）。"""
+    """``protocol_version`` 是整数且当前为 1（客户端**不认识即判不可用**，方式 1.2 裁量 3）。"""
     body = provider.build_handshake(_FakeServices(), _api_key_caller()).model_dump(by_alias=True)
 
     assert provider.PROTOCOL_VERSION == 1
@@ -303,7 +303,7 @@ def test_embedding_reports_the_runtime_state_not_the_code() -> None:
 
 
 def test_a_restricted_key_only_sees_the_knowledge_bases_in_its_scope() -> None:
-    """受限 key 只看到范围内的库（方案 R9：握手不能变成元信息泄露的出口）。"""
+    """受限 key 只看到范围内的库（方式 R9：握手不能变成元信息泄露的出口）。"""
     services = _FakeServices(
         records=[_kb("kb_a", "论文"), _kb("kb_b", "别人的库")],
         stats={"kb_a": (12, datetime(2026, 9, 1, tzinfo=UTC)), "kb_b": (3, None)},
@@ -323,7 +323,7 @@ def test_a_restricted_key_only_sees_the_knowledge_bases_in_its_scope() -> None:
 def test_a_read_only_restricted_key_is_reported_as_unable_to_write() -> None:
     """只读档的受限 key：``caller.can_write=false``、每库的 ``can_write`` 也是 false。
 
-    ``is_admin`` **如实报 false**（方案 §1.4：本机后端那把钥匙在 NAS 侧不是管理员）——
+    ``is_admin`` **如实报 false**（方式 1.4：本机后端那把钥匙在 NAS 侧不是管理员）——
     界面据此隐藏管理员入口，而不是摆出来等着 403。
     """
     services = _FakeServices(
@@ -388,7 +388,7 @@ def test_an_admin_session_is_reported_as_admin() -> None:
 
 
 def test_the_brief_and_the_list_share_one_write_rule() -> None:
-    """**同一批评分字段口径**（方案 §7 阶段 1）：握手与 ``GET /knowledge-bases`` 一致。
+    """**同一批评分字段口径**（方式 7 阶段 1）：握手与 ``GET /knowledge-bases`` 一致。
 
     这是这条改动里最值得钉住的一条 ✗——两处各写一份的表现是**界面自相矛盾**
     （列表上说能传、点进去 403，或反过来把能用的入口收起来）。
@@ -439,7 +439,7 @@ def test_document_counts_come_from_one_aggregated_query() -> None:
 
 
 def test_server_time_is_timezone_aware_utc() -> None:
-    """``server_time`` 带时区（规范 §1.2）：客户端拿它显示"上次确认是什么时候"。"""
+    """``server_time`` 带时区（规范 1.2）：客户端拿它显示"上次确认是什么时候"。"""
     handshake = provider.build_handshake(_FakeServices(), _api_key_caller())
 
     assert handshake.server_time.tzinfo is not None
@@ -452,9 +452,9 @@ def test_server_time_is_timezone_aware_utc() -> None:
 def test_the_handshake_is_on_the_one_route_table() -> None:
     """路由表对象级的那一眼：`provider.router` 在 `api_router` 的挂载清单里。
 
-    **只有一张表**（v0.1.0 瘦身）：原先还有一张本机档的 ``local_router``，
-    它随边车一起拆除了——"这条端点挂在哪儿"因此不再有第二种答案（那时它挂在
-    服务器档那张上，本机档是提供者的客户端、不提供它）。
+    **只有一张表**（v0.1.0 精简）：原先还有一张旧版的 ``local_router``，
+    它随旧版客户端一起拆除了——"这条端点挂在哪儿"因此不再有第二种答案（那时它挂在
+    服务器档那张上，旧版是提供者的客户端、不提供它）。
     """
     assert id(provider.router) in {id(entry.original_router) for entry in api_router.routes}
 

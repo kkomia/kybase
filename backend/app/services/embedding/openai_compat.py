@@ -1,7 +1,7 @@
-"""OpenAI 兼容端点的 embedding 实现（M2 T2.9）。
+"""OpenAI 兼容端点的 embedding 实现（ ）。
 
 一套客户端覆盖云端（硅基流动等）与本地（Ollama / vLLM / LM Studio），
-换 provider 只改 ``base_url``，这正是架构 §9 说的"embedding 与解析共用云端/本地节点抽象"。
+换 provider 只改 ``base_url``，这正是架构 9 说的"embedding 与解析共用云端/本地节点抽象"。
 """
 
 from __future__ import annotations

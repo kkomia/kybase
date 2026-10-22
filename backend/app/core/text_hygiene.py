@@ -11,7 +11,7 @@
 两边都要用同一套判断，而 `llm.py` 与 `skills.py` 互相 import 会成环（真踩过：
 `llm → skills → runtime_config → llm`），所以放到这里——`core/` 这一层不认识任何服务。
 
-## 背景（D16 P0，2026-09-29）
+## 背景（ P0，2026-09-29）
 
 上游把 emoji 写成**字面转义**（`"\\ud83e\\udd16"`），YAML 解出来是两个**孤立代理项**；
 它一旦进请求体，httpx 编码时抛 `UnicodeEncodeError: surrogates not allowed`，

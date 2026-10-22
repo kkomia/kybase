@@ -62,7 +62,7 @@ def _jieba() -> Any:
     与 ``app/storage/text.py::_jieba``、``app/services/retrieval/coverage.py::_jieba``、
     ``app/services/embedding/deterministic.py::_jieba`` 同一个手法 √：这个模块挂在
     ``app.storage`` 的导入链上 √，而"预热词典"只有**服务器**那条全文检索链会做 √ ——
-    边车（客户端运行时）只跑循环 + 工具 + 沙箱 √，从不建全文索引。
+    旧版客户端（客户端运行时）只跑循环 + 工具 + 沙箱 √，从不建全文索引。
 
     **行为一个字没变** ×：第一次调用时才导入 √，jieba 真的不在时仍在**调用那一刻**
     抛 ``ModuleNotFoundError`` √（只是从导入期挪到了调用期 √）。
@@ -82,7 +82,7 @@ def _jieba() -> Any:
 logger = logging.getLogger(__name__)
 
 DEFAULT_SLOW_QUERY_MS = 500
-"""超过该耗时的查询留一条 WARNING（架构 §12 可观测性）。构造时可覆盖，便于测试。"""
+"""超过该耗时的查询留一条 WARNING（架构 12 可观测性）。构造时可覆盖，便于测试。"""
 
 
 def to_tsquery_text(text: str) -> str:

@@ -15,11 +15,11 @@ v0.11 起还有第二条契约：**鉴权永远生效**。没有控制台令牌�
 
 ## NAS 网页端退役之后的改动（2026-10-05）
 
-``/settings`` 那一族**只在本机档存在**了（NAS 上那份设置页随网页端退役），
+``/settings`` 那一族**只在旧版存在**了（NAS 上那份设置页随网页端退役），
 所以这一份里三处随它改了：
 
 - "哪些端点要 401" 那张参数表里的 ``/settings`` 换成一条同样是服务器档、同样要凭据的
-  （2026-10-09 瘦身后是 ``/api/v1/api-keys``：``/settings`` 与 ``/memory`` 都已不在
+  （2026-10-09 精简后是 ``/api/v1/api-keys``：``/settings`` 与 ``/memory`` 都已不在
   这个服务上了）；
 - ``test_external_api_key_cannot_touch_settings`` **摘掉**：那条风险现在**结构性不存在**
   ——能用 API Key 的那一档（服务器）没有 ``/settings``，有 ``/settings`` 的那一档
@@ -104,7 +104,7 @@ def test_health_stays_open_even_when_locked(locked: TestClient) -> None:
         ("get", "/api/v1/knowledge-bases"),
         # 这几条都是**服务器档的服务端端点**（同样要求凭据）。
         # 原先这里还有 `/api/v1/settings` 与 `/api/v1/memory`：前者的设置页随 NAS 网页端
-        # 退役、后者（记忆）随后端瘦身整体拆除——两条都不在这张表里了，
+        # 退役、后者（记忆）随后端精简整体拆除——两条都不在这张表里了，
         # 换一条同样要凭据的：`/api/v1/wiki/...` 那一族由库路径参数决定，
         # 所以用 `/api/v1/api-keys` 这种无路径参数的清单端点。
         ("get", "/api/v1/api-keys"),
@@ -124,7 +124,7 @@ def test_missing_credentials_are_rejected(
     response = getattr(app_client, method)(path)
     assert response.status_code == 401
     assert response.json()["code"] == "unauthorized"
-    # RFC 7235：401 要带 WWW-Authenticate，否则客户端不知道用哪种方案
+    # RFC 7235：401 要带 WWW-Authenticate，否则客户端不知道用哪种方式
     assert "WWW-Authenticate" in response.headers
 
 
@@ -149,9 +149,9 @@ def test_non_bearer_scheme_is_rejected(locked: TestClient) -> None:
 # 从而封住"把 ``embedding.base_url`` 指到自己的服务器、下一次 embed 调用就把用户的
 # API Key 发过去"那条路）。
 #
-# **为什么在本机档没有意义、在服务器档也不存在这个面**：那条风险的落点是**服务器档的
+# **为什么在旧版没有意义、在服务器档也不存在这个面**：那条风险的落点是**服务器档的
 # `/settings`**（外部密钥能打进来、而服务器持模型凭据）。NAS 网页端退役之后
-# ``/settings`` **只在本机档**（那张 ``app_settings`` 表在本机 SQLite 里），而本机档
+# ``/settings`` **只在旧版**（那张 ``app_settings`` 表在本机 SQLite 里），而旧版
 # **不认 API Key**——它不挂 `/auth/*` 与 `/api-keys`，调用主体由
 # `api/auth.py::current_caller` 短路成"本机主人"，压根没有"外部密钥"这个身份。
 # 换句话说这条路径**结构性消失**了：能用 API Key 的那一档没有设置端点，
@@ -319,7 +319,7 @@ def test_setup_then_login_then_me(app_client: TestClient) -> None:
     assert (setup["user"]["username"], setup["user"]["name"]) == ("admin", "测试用户")
 
     # 会话令牌立即可用，且管理员会话能进**管理员专属**的那些端点
-    # （原来是 `/api/v1/settings`——它随 NAS 网页端退役只在本机档了，换 `/api/v1/users`：
+    # （原来是 `/api/v1/settings`——它随 NAS 网页端退役只在旧版了，换 `/api/v1/users`：
     #  同一类"只有管理员会话打得开"的服务器端点）
     session = {"Authorization": f"Bearer {setup['token']}"}
     assert app_client.get("/api/v1/users", headers=session).status_code == 200

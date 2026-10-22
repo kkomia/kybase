@@ -7,7 +7,7 @@ $port = 8000
 
 # **端口先探一次**（v0.37）：Windows 上 SO_REUSEADDR 会让第二个实例**绑得上**同一个端口，
 # 于是"再启动一次"不会报错，而是变成两个后端同时在跑——连接落到哪一个由系统挑，
-# 表现为"我明明改了后端，界面却在报 Method Not Allowed / 找不到路由"（见《开发计划》§12.218）
+# 表现为"我明明改了后端，界面却在报 Method Not Allowed / 找不到路由"（见开发记录12.218）
 $busy = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
 if ($busy) {
     $owner = ($busy | Select-Object -First 1).OwningProcess

@@ -1,4 +1,4 @@
-"""按真实的 OpenAPI 生成前端的 TypeScript 类型（T4.9 的姊妹项）。
+"""按真实的 OpenAPI 生成前端的 TypeScript 类型（ 的姊妹项）。
 
 **为什么需要它**：`frontend/src/api/*.ts` 里的接口是**手抄**后端 schema 的。
 后端加/改一个字段，前端不会在编译期报错，只会**在运行期静默错位**——
@@ -20,7 +20,7 @@
     python scripts/gen_api_types.py --write   # 开发：更新生成物（默认写到旧前端）
 
 前端只有一套（`frontend/`，P5 切换后是 React 版）：生成物落点就一个，
-不再有迁移期那种 ``--target`` 开关（见开发计划 §12.230/§12.234）。
+不再有迁移期那种 ``--target`` 开关（见开发记录 12.230/12.234）。
 """
 
 from __future__ import annotations

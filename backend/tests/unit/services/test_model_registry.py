@@ -487,7 +487,7 @@ def test_embedding_target_rejects_a_missing_key(registry: ModelRegistryService) 
 # （服务器容器 / Linux / CI）时库那一列就是凭据的家，一条行为都不变。
 #
 # 这一组与文件里其他用例共用同一个 PG 元数据仓储夹具（`bundle`），不再自带本机库：
-# 瘦身之后本机档（SQLite）已整体拆除，只剩这一套存储形态。
+# 精简之后旧版（SQLite）已整体拆除，只剩这一套存储形态。
 
 
 @pytest.fixture

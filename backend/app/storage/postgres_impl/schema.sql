@@ -17,7 +17,7 @@
 --     json.loads/dumps 读写，但可以用 jsonb_array_length 这类函数、也便于将来加索引。
 --  5. **全文检索不再是独立虚拟表**。原 chunks_fts（FTS5）与 chunks 是两张表、
 --     查询要 JOIN；现在 tokens 就是 chunks 上的一个生成列，索引与过滤同一行完成。
---     中文分词继续在应用侧用 jieba 做（架构 §8），数据库只负责索引与排序。
+--     中文分词继续在应用侧用 jieba 做（架构 8），数据库只负责索引与排序。
 --  6. **向量分区的维度也不靠解析建表语句**。原实现从 sqlite_master 的建表 SQL 里
 --     正则抠维度；PG 这边既有 pg_attribute.atttypmod（维度）、
 --     pg_class（分区列表）可用，就不需要任何"分区登记表"——分区即真相。
@@ -130,7 +130,7 @@ CREATE TABLE knowledge_bases (
     id                text PRIMARY KEY,
     name              text NOT NULL,
     description       text NOT NULL DEFAULT '',
-    -- 嵌入模型是**知识库属性**，建库时定、随库冻结（架构 §6.4）
+    -- 嵌入模型是**知识库属性**，建库时定、随库冻结（架构 6.4）
     embedding_model_id text NOT NULL,
     embedding_model_pk text,
     embedding_dim     integer NOT NULL CHECK (embedding_dim > 0),
@@ -259,7 +259,7 @@ CREATE TABLE chunks (
     -- 生成列由 PG 维护成 tsvector。查询用 to_tsquery('simple', …)，排序用 ts_rank_cd。
     --
     -- 为什么用 'simple'：词已经切好了，不需要 stemming/停用词；
-    -- 用 'simple' 就**不需要装 zhparser 之类的分词扩展**（架构 §8 中文方案）。
+    -- 用 'simple' 就**不需要装 zhparser 之类的分词扩展**（架构 8 中文方式）。
     -- 显式写 ::regconfig 是因为生成列要求表达式 immutable，而单参数形式是 stable。
     tokens_text       text NOT NULL DEFAULT '',
     tokens            tsvector GENERATED ALWAYS AS

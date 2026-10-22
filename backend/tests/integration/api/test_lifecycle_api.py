@@ -150,7 +150,7 @@ def test_restore_keeps_the_original_bytes(ingested: dict, monkeypatch) -> None:
     """恢复要**真的把原文找回来**——那是删除时唯一不可再生的东西。
 
     单独建 client：签名下载链接要签名密钥，而默认测试环境没配（v0.11 起
-    没有密钥就**拒绝签发**，而不是发一条无效链接，见 §11.6）。
+    没有密钥就**拒绝签发**，而不是发一条无效链接，见 11.6）。
     密钥走环境变量；凭据仍由 conftest 的 admin 会话提供。
     """
     monkeypatch.setenv("KYLAB_URL_SIGNING_SECRET", "lifecycle-test-secret")

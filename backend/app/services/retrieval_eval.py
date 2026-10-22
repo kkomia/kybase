@@ -126,6 +126,6 @@ def evaluate(
     """跑完整金标集。``search(query)`` 返回该查询命中的文档名（按名次）。
 
     把检索**注入**进来（而不是在这里连 HTTP/存储）：评测逻辑与"怎么取结果"无关，
-    这样脚本、接口、单测可以共用同一份打分口径——口径分家是最容易让数字失去意义的事。
+    这样脚本、接口、单测可以共用同一份打分口径——口径拆分是最容易让数字失去意义的事。
     """
     return summarize(run_case(case, search(case.query)) for case in cases)

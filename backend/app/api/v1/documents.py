@@ -1,4 +1,4 @@
-"""文档端点：上传、列表、详情、子文件树、重跑（M4）。
+"""文档端点：上传、列表、详情、子文件树、重跑（）。
 
 上传接口的处理顺序是有讲究的：**先落盘建记录（uploaded）→ 再入队**。
 反过来会出现在"文件还没存好"时任务已被 worker 领走的竞态。
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["documents"])
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
-"""单文件上限 200MB：与 MinerU 云端解析的单文件上限对齐（架构 §15），
+"""单文件上限 200MB：与 MinerU 云端解析的单文件上限对齐（架构 15），
 超限要在入口挡住，而不是等跑到云端才失败。"""
 
 MAX_CHUNK_PREVIEW = 200
@@ -80,7 +80,7 @@ def _to_out(
 ) -> DocumentOut:
     """记录 → 响应模型。用 ``model_validate`` 而不是手抄字段：
 
-    协议层不该 import ``app.storage`` 的记录类型（工程规范 §3.3 L1），
+    协议层不该 import ``app.storage`` 的记录类型（分层规则 3.3 L1），
     字段名对不上时 pydantic 会直接报错，不用等到线上发现"某个字段忘了同步"。
     """
     out = DocumentOut.model_validate(record)
@@ -94,7 +94,7 @@ def _to_out(
             "question_count": question_total,
             "questioned_chunk_count": questioned_chunks,
             "questions_pending": questions_pending,
-            # 分段进度（§12.115）。**必须在这里校验一次**：``model_copy(update=...)``
+            # 分段进度（12.115）。**必须在这里校验一次**：``model_copy(update=...)``
             # 不做校验，直接塞 dataclass 会得到"序列化出来的形状对、但 pydantic
             # 每次都警告 UnexpectedValue"的结果（用例的 warning 抓到的）
             "progress": DocumentProgressOut.model_validate(progress, from_attributes=True)
@@ -123,7 +123,7 @@ def document_out(services: Services, record) -> DocumentOut:  # type: ignore[no-
 
 
 def _uploader_names(services: Services, records) -> dict[str, str]:  # type: ignore[no-untyped-def]
-    """把一批文档的 ``uploaded_by`` 一次解析成名字（G6）。
+    """把一批文档的 ``uploaded_by`` 一次解析成名字（）。
 
     **批量解析而不是逐条查**：文档列表一页几十条，逐条查就是 N+1；
     而名册本身很小，整个读出来更划算。
@@ -148,13 +148,13 @@ async def upload_document(
     idempotency_key: str | None = Header(
         default=None,
         alias="Idempotency-Key",
-        description="可选。带上它则同一键的重试不会产生第二份文档（架构 §3.2）",
+        description="可选。带上它则同一键的重试不会产生第二份文档（架构 3.2）",
     ),
     operator_token: str | None = Header(
         default=None,
         alias="X-Kylab-Operator",
         description=(
-            "可选。使用者名册里的 id（形如 user_xxx），记录是谁传的（G6）。"
+            "可选。使用者名册里的 id（形如 user_xxx），记录是谁传的（）。"
             "不参与鉴权。**用 id 而不是名字**：HTTP 头只能是 ASCII，"
             "而名字可能是中文（实测浏览器与 curl 都会报编码错）"
         ),
@@ -164,7 +164,7 @@ async def upload_document(
 ) -> UploadAccepted:
     """上传文档。
 
-    **幂等键是可选的，而不是强制的**——这里与架构 §3.2 的字面要求有一处偏差，
+    **幂等键是可选的，而不是强制的**——这里与架构 3.2 的字面要求有一处偏差，
     理由是我们已经有一条更强的兜底：内容 hash 去重。同一份文件重复上传，
     ``ingest.submit`` 会认出来并回 ``is_duplicate=True``，本来就不会入库两次。
 
@@ -176,7 +176,7 @@ async def upload_document(
     而收益只是把已有的保护换一种表达。所以：**提供则生效，不提供仍受 hash 去重保护**。
     """
     check_kb_scope(services, caller, [kb_id], need=WRITE)
-    # 归属标注（G6）：前端从名册里选一个人放进请求头。
+    # 归属标注（）：前端从名册里选一个人放进请求头。
     # **不参与鉴权**——伪造一个名字只会让归属记错，不会获得任何权限
     operator = services.users.resolve_operator(operator_token)
     content = await file.read()
@@ -314,7 +314,7 @@ def list_documents(
     ids = [record.id for record in records]
     question_stats = services.documents.question_stats(ids)
     questions_pending = services.documents.active_question_documents(ids)
-    # 分段进度（§12.115）：整页一次算完——每行画进度条，逐篇查就是 40 次往返
+    # 分段进度（12.115）：整页一次算完——每行画进度条，逐篇查就是 40 次往返
     progress = services.documents.progress_by_documents(records)
     total = services.documents.count_documents(
         kb_id,
@@ -391,7 +391,7 @@ def _guard_document(
     越权探测者最想要的就是这种区分。
 
     返回类型写成 ``object``：这条记录是 ``app.storage`` 的类型，而协议层不得
-    依赖它（工程规范 §3.3 L1）。返回值只是**省掉一次多余的查询**，
+    依赖它（分层规则 3.3 L1）。返回值只是**省掉一次多余的查询**，
     需要用的端点自己 ``model_validate`` 或交给服务层。
     """
     record = services.documents.get(document_id)
@@ -594,7 +594,7 @@ def reparse_document(
     )
 
 
-# --------------------------------------------------------------------- 下载与阅读（T4.5 / G2）
+# --------------------------------------------------------------------- 下载与阅读（ / ）
 
 
 class DownloadUrlOut(BaseModel):

@@ -1,6 +1,6 @@
-"""schema 分家后的静态契约（**不需要 PostgreSQL**）。
+"""schema 拆分后的静态契约（**不需要 PostgreSQL**）。
 
-2026-10-20 的数据分家把 Agent 侧的迁移与表从本服务删掉了：迁移序列从
+2026-10-20 的数据拆分把 调用方的迁移与表从本服务删掉了：迁移序列从
 "KB 与 Agent 交错连号"（v2..v19）重编成 KB 自己的连号（v2..v8），基线也不再建
 ``conversations`` / ``chat_messages`` / ``notes`` / ``note_tags``。
 
@@ -31,13 +31,13 @@ from app.storage.postgres_impl.schema import (
 #: 于是没有 PG 测试库的机器上也会真跑（否则会被 conftest 整组跳过）。
 pytestmark = pytest.mark.local
 
-#: 分家前的旧交错序列：KB 迁移（保留，重编）与 Agent 迁移（删掉）的旧编号。
+#: 拆分前的旧交错序列：KB 迁移（保留，重编）与 Agent 迁移（删掉）的旧编号。
 OLD_KB_VERSIONS = (2, 3, 4, 8, 11, 18, 19)
 OLD_AGENT_VERSIONS = {5, 6, 7, 9, 10, 12, 13, 14, 15, 16, 17}
 
 
 def test_the_kb_sequence_is_contiguous_and_starts_after_the_baseline() -> None:
-    assert SCHEMA_VERSION == 8, "分家后的 KB 独立序列头（基线 1 + 七条 KB 迁移）"
+    assert SCHEMA_VERSION == 8, "拆分后的 KB 独立序列头（基线 1 + 七条 KB 迁移）"
     assert [item.version for item in MIGRATIONS] == list(range(2, SCHEMA_VERSION + 1))
 
 
@@ -84,7 +84,7 @@ def test_the_baseline_no_longer_declares_agent_tables() -> None:
     tables = _declared_tables()
     agent_tables = {"conversations", "chat_messages", "notes", "note_tags"}
     assert tables & agent_tables == set(), (
-        f"基线里还留着 Agent 侧的表：{sorted(tables & agent_tables)}"
+        f"基线里还留着 调用方的表：{sorted(tables & agent_tables)}"
     )
     # KB 本体的表当然要在（防止"删对了别人的、也删掉了自己的"）
     assert {"knowledge_bases", "documents", "chunks", "wiki_pages", "tasks"} <= tables

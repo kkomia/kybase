@@ -1,7 +1,7 @@
 """``VectorStore`` 的 PostgreSQL + pgvector 实现（v0.12）。
 
 按知识库分区：每个库一张 ``vec_<kb_id>`` 表，**维度在分区创建时确定**——
-与 SQLite 版同一模型（架构 §8.3 / D4）；pgvector 的列维度是固定的，
+与 SQLite 版同一模型（架构 8.3 / ）；pgvector 的列维度是固定的，
 一列装不了多种维度，所以"一库一表"在这里不是妥协而是必然。
 
 **分区即真相，不建登记表**：维度读 ``pg_attribute.atttypmod``、
@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     # 只在注解里用到（``_declared_dim(conn: Connection, …)`` √）：`from __future__ import
     # annotations` 之下注解不求值 √，所以这一句**不进运行时**、也就不进客户端的导入闭包 √
-    # （边车不连 PostgreSQL √）。
+    # （旧版客户端不连 PostgreSQL √）。
     from psycopg import Connection
 
 from app.storage.base import SearchFilter, VectorDimensionMismatch, VectorMatch, VectorStore
@@ -135,7 +135,7 @@ class PostgresVectorStore(VectorStore):
             elif existing != dim:
                 raise VectorDimensionMismatch(
                     f"知识库 {kb_id} 的向量分区已是 {existing} 维，"
-                    f"不能按 {dim} 维写入（架构 §6.4：维度不同不可混用）"
+                    f"不能按 {dim} 维写入（架构 6.4：维度不同不可混用）"
                 )
         return None
 

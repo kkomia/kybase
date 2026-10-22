@@ -1,6 +1,6 @@
 """摄入流水线的集成测试（M2 主链路）。
 
-覆盖架构 §4 的端到端承诺：上传 → 探测 → 解析 → 切分 → 向量化 → indexed，
+覆盖架构 4 的端到端承诺：上传 → 探测 → 解析 → 切分 → 向量化 → indexed，
 以及去重、失败定位、断点续跑与模型锁定。
 """
 
@@ -63,7 +63,7 @@ def kb(bundle: StoreBundle, kb_service: KnowledgeBaseService):
 
 
 def test_create_knowledge_base_freezes_model_and_dim(kb) -> None:
-    """架构 §6.4：模型与维度随库冻结，作为后续写入的校验依据。"""
+    """架构 6.4：模型与维度随库冻结，作为后续写入的校验依据。"""
     assert kb.embedding_model_id == "dev/deterministic-hash"
     assert kb.embedding_dim == DIM
 
@@ -222,7 +222,7 @@ def test_replace_refuses_while_a_task_is_running(
 
 def test_ingest_writes_markdown_artifact(bundle: StoreBundle, ingest_service: IngestService,
                                          kb) -> None:
-    """架构 §4.3：所有格式统一产出 Markdown，原文另留一份。"""
+    """架构 4.3：所有格式统一产出 Markdown，原文另留一份。"""
     outcome = ingest_service.submit(knowledge_base_id="kb_1", filename="kb.md",
                                     content=MARKDOWN.encode())
     ingest_service.ingest(outcome.document.id)
@@ -259,7 +259,7 @@ def test_ingest_writes_vectors(bundle: StoreBundle, ingest_service: IngestServic
 
 
 def test_original_file_is_kept(bundle: StoreBundle, ingest_service: IngestService, kb) -> None:
-    """架构 §4.3：原文在文件系统保留一份（下载可给原件）。"""
+    """架构 4.3：原文在文件系统保留一份（下载可给原件）。"""
     outcome = ingest_service.submit(knowledge_base_id="kb_1", filename="kb.md",
                                     content=MARKDOWN.encode())
     path = bundle.meta.get_setting(f"document.{outcome.document.id}.original_path")
@@ -340,7 +340,7 @@ def test_canceled_document_can_be_reingested(
 
 
 def test_duplicate_upload_is_detected(ingest_service: IngestService, kb) -> None:
-    """架构 §6.3：上传命中相同 hash 时提醒"检测到相同文件"，只保留一份。"""
+    """架构 6.3：上传命中相同 hash 时提醒"检测到相同文件"，只保留一份。"""
     first = ingest_service.submit(knowledge_base_id="kb_1", filename="a.md",
                                  content=MARKDOWN.encode())
     second = ingest_service.submit(knowledge_base_id="kb_1", filename="a-copy.md",
@@ -367,7 +367,7 @@ def test_same_content_in_different_kb_is_not_duplicate(
 
 
 def test_empty_file_fails_with_stage_recorded(ingest_service: IngestService, kb) -> None:
-    """失败要落到文档记录上：界面才能显示卡在哪一步、为什么（架构 §12）。"""
+    """失败要落到文档记录上：界面才能显示卡在哪一步、为什么（架构 12）。"""
     outcome = ingest_service.submit(knowledge_base_id="kb_1", filename="empty.md", content=b"")
 
     with pytest.raises(IngestError) as excinfo:
@@ -461,7 +461,7 @@ def test_model_change_is_allowed_before_any_vector_exists(
 
 def test_model_change_is_refused_once_vectors_exist(bundle: StoreBundle,
                                                     ingest_service: IngestService, kb) -> None:
-    """架构 §6.4：库内已有向量化文件就不允许换模型——混用会让检索静默失效。"""
+    """架构 6.4：库内已有向量化文件就不允许换模型——混用会让检索静默失效。"""
     first = ingest_service.submit(knowledge_base_id="kb_1", filename="kb.md",
                                   content=MARKDOWN.encode())
     ingest_service.ingest(first.document.id)
@@ -926,7 +926,7 @@ def test_generate_questions_without_the_service_is_rejected(
 WEMM_E2E_URL_ENV = "KYLAB_WEMM_E2E_URL"
 #: 想换成一段真视频时给它的路径（不给就用下面生成的那张 8x8 PNG）。
 #: 媒体这条路对图片与视频是**同一套三步协议**，所以两种都能验；视频那条真机数字
-#: 见《开发计划》那条记录与接入文档。
+#: 见开发记录那条记录与接入文档。
 WEMM_E2E_MEDIA_ENV = "KYLAB_WEMM_E2E_MEDIA"
 #: 目标维度。默认 **1024**，不是原生 2048——原因是一条硬限制：
 #: **pgvector 的 HNSW 索引最多 2000 维**（实测 2048 会在建分区时报
@@ -1207,7 +1207,7 @@ def test_searchable_follows_the_artifacts_not_the_stage(bundle: StoreBundle, kb,
 
 
 def test_a_video_that_every_channel_rejects_says_what_to_configure(bundle: StoreBundle, kb) -> None:  # type: ignore[no-untyped-def]
-    """视频被云端拒收、又没配多模态时，错误里要带**去哪一栏配置**（方案 13）。
+    """视频被云端拒收、又没配多模态时，错误里要带**去哪一栏配置**（方式 13）。
 
     真现场：一份自造 `.webm`（浏览器给的 mime 是 `application/octet-stream`，探测结论
     落到 `scanned`）被 MinerU 拒收（-60002），而那一刻"媒体直通"不在候选里

@@ -96,7 +96,7 @@ def test_whitespace_between_blocks_is_normalized() -> None:
 
 
 def test_heading_path_is_injected() -> None:
-    """架构 §5.1：chunk 要带标题路径，检索结果里能看出命中的是哪一节。
+    """架构 5.1：chunk 要带标题路径，检索结果里能看出命中的是哪一节。
 
     两节各自 20 字、块长 30，装不进同一块，因此每节各自成块。
     """
@@ -140,7 +140,7 @@ def test_seven_hashes_is_not_a_heading() -> None:
 
 
 def test_chunk_ids_are_stable_across_runs() -> None:
-    """重跑解析后 ID 不变，增量更新才能按位置对齐（架构 §6.1）。"""
+    """重跑解析后 ID 不变，增量更新才能按位置对齐（架构 6.1）。"""
     markdown = "# 标题\n\n段落一。\n\n段落二。\n"
     first = _chunk(markdown)
     second = _chunk(markdown)
@@ -186,7 +186,7 @@ class TestPageMapping:
 
     大文件切分器把 1500 页的文档切成 8 段分别解析，产物是拼起来的。
     没有这条映射，「这条命中在第几页」就永远答不出来——
-    而引文页码是"答案可核查"的前提（架构 §5）。
+    而引文页码是"答案可核查"的前提（架构 5）。
 
     这一组同时钉住**两边共用的标记格式**：``splitting.PAGE_MARKER_TEMPLATE``
     写、``chunking._PAGE_MARKER`` 读。格式改成一边就只剩另一边，测试会红。

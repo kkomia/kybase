@@ -1,5 +1,5 @@
 /**
- * 复制到剪贴板（开发计划 §12.205）。
+ * 复制到剪贴板（开发记录 12.205）。
  *
  * 起因是一条实测：在应用内浏览器里点代码块的复制按钮，**四条提示全是
  * "复制失败"**。查下来不是权限、不是 http——`isSecureContext` 是 `true`，
@@ -47,7 +47,7 @@ function restoreRange(range: Range | null): void {
  * 所以是「挂在视口里、1px、透明」——不闪、不挤布局，但浏览器认它是个可选中元素。
  *
  * `readonly` + `setSelectionRange` 是给移动端 Safari 的：它的 `select()`
- * 对可编辑元素会拉起键盘。桌面端这两句无害。
+ * 对可编辑元素会拉起键盘。客户端这两句无害。
  */
 function execCommandCopy(text: string): boolean {
   const area = document.createElement('textarea')

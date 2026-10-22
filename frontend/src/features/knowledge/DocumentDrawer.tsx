@@ -11,7 +11,7 @@
  * 预览的是**后端真实的切块文本**（`GET /documents/{id}/chunks`）：它本来就是给检索
  * 用的原料，让人看见真实产物比做一层漂亮的假渲染诚实。
  *
- * 原文下载走签名 URL（架构 §6.5）：链接由后端签发、带过期时间，界面上不出现任何永久直链，
+ * 原文下载走签名 URL（架构 6.5）：链接由后端签发、带过期时间，界面上不出现任何永久直链，
  * 所以两个下载按钮每次都现取一条新链接。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -67,7 +67,7 @@ type DrawerView = 'read' | 'chunks' | 'progress'
 const VIEW_TABS: { key: DrawerView; label: string }[] = [
   { key: 'read', label: '阅读' },
   { key: 'chunks', label: '切块' },
-  // 第三个视角（§12.115）：这份文档走到哪一步了、每步各花多久
+  // 第三个视角（12.115）：这份文档走到哪一步了、每步各花多久
   { key: 'progress', label: '处理明细' },
 ]
 
@@ -706,7 +706,7 @@ export function DocumentDrawer({
       </aside>
 
       {/*
-        删除切块：不可恢复，且"其实想禁用"的人不少——后果说明里把替代方案写出来。
+        删除切块：不可恢复，且"其实想禁用"的人不少——后果说明里把替代方式写出来。
         `@/ui/alert-dialog`（Radix）：点「确定」后弹窗立即关闭；Esc 与点遮罩不再关闭
         （AlertDialog 的设计如此：只能走「取消 / 确定」二选一）。
       */}

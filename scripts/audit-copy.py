@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent / "frontend" / "src"
 CJK = re.compile(r"[\u4e00-\u9fff]")
 
 #: 板块归类：按文件路径把文案归到用户能认出来的界面上（React 的域与文件名，见
-#: 《React 迁移计划》§3 的所有权表）。
+#: 迁移记录3 的所有权表）。
 SURFACES = [
     ("登录/首次设置", ("misc/auth/", "LoginPage", "lib/session")),
     ("侧栏/框架", ("layout/", "AppShell", "SideNav", "AccountMenu")),

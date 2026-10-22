@@ -112,7 +112,7 @@ export function ShareDialog({ open, kbId, kbName, onClose }: ShareDialogProps) {
   }
 
   return (
-    /** 弹窗壳：`@/ui/dialog`（README §3 的组合）。标题栏/底部各带一条分隔线、内容区自己滚。 */
+    /** 弹窗壳：`@/ui/dialog`（README 3 的组合）。标题栏/底部各带一条分隔线、内容区自己滚。 */
     <Dialog
       open={open}
       onOpenChange={(next) => {

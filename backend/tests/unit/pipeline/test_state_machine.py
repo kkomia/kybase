@@ -20,7 +20,7 @@ from app.pipeline.state_machine import (
 
 
 def test_main_chain_advances_one_step_at_a_time() -> None:
-    """架构 §4 的主链路：每一步只能走到下一步。"""
+    """架构 4 的主链路：每一步只能走到下一步。"""
     for current, target in itertools.pairwise(PIPELINE_STAGE_ORDER):
         assert can_transition(current, target) is True
 
@@ -64,7 +64,7 @@ def test_indexed_cannot_be_canceled() -> None:
 
 
 def test_failed_can_resume_from_each_step() -> None:
-    """架构 §4：失败要能定位到具体步骤并从那里续跑，而不是整篇重来。"""
+    """架构 4：失败要能定位到具体步骤并从那里续跑，而不是整篇重来。"""
     for stage in RETRYABLE_STAGES:
         assert can_transition(DocumentStage.FAILED, stage) is True
 
@@ -87,7 +87,7 @@ def test_a_finished_document_can_go_back_to_uploaded_for_a_full_reparse() -> Non
 
 
 def test_enhancement_branch_is_reachable_from_indexed() -> None:
-    """图谱/Wiki 增强是可选分支，默认关闭但状态可达（架构 §4、§11）。"""
+    """图谱/Wiki 增强是可选分支，默认关闭但状态可达（架构 4、11）。"""
     assert can_transition(DocumentStage.INDEXED, DocumentStage.ENRICHING) is True
     assert can_transition(DocumentStage.ENRICHING, DocumentStage.ENRICHED) is True
 

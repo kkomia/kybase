@@ -9,8 +9,8 @@
  * | 导出 | 由什么拼出 | 为什么不直接用 `@/ui` |
  * |------|-----------|----------------------|
  * | `StatusTag` | `@/ui/badge` + 圆点 | Badge 没有"圆点 + 进行中呼吸"这一档，而"状态 = 文字 + 色块 + 圆点"是本域的既定形态 |
- * | `SkeletonRows` | `@/ui/skeleton` × N | Skeleton 只给**一块**；"列表 / 卡片 / 正文"三种预设是页面排版（`src/styles/tokens.css` §5 明说预设不进原语） |
- * | `EmptyState` | 纯排版（`kb-empty-*`） | 上游 `empty` 没有 vendor（`src/styles/tokens.css` §6），它也不是控件 |
+ * | `SkeletonRows` | `@/ui/skeleton` × N | Skeleton 只给**一块**；"列表 / 卡片 / 正文"三种预设是页面排版（`src/styles/tokens.css` 5 明说预设不进原语） |
+ * | `EmptyState` | 纯排版（`kb-empty-*`） | 上游 `empty` 没有 vendor（`src/styles/tokens.css` 6），它也不是控件 |
  * | `MeterBar` | 纯排版（`kb-meter-*`） | **分段**进度条：`@/ui/progress` 是单值条，表达不了"共 6 段、第 3 段是红的 / 在呼吸" |
  * | `InfoTip` | `@/ui/tooltip` 三件套 | 要自带的 `TooltipProvider`（应用壳里没有，而本域不改壳）；气泡取值见 `@/ui/tooltip` |
  *
@@ -202,7 +202,7 @@ export function MeterBar({
 /* ---------------------------------------------------------------- 说明气泡 */
 
 /**
- * 标题旁的「?」：悬停/聚焦才显示的解释性文字（《前端设计规范》§5.1 的保留项）。
+ * 标题旁的「?」：悬停/聚焦才显示的解释性文字（界面规则5.1 的保留项）。
  *
  * 从原生 `title`（旧实现，靠浏览器气泡）换成 `@/ui/tooltip`：**气泡现在是 DOM**，
  * 读屏与测试都拿得到（原生 `title` 只对鼠标有效）。触发器仍是那个带 `aria-label`

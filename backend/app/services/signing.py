@@ -1,4 +1,4 @@
-"""下载签名密钥的取用（《架构设计 v0.2》§3.2）。
+"""下载签名密钥的取用（本项目3.2）。
 
 签发与校验本身在 ``app/core/signing.py``（纯函数，只认密钥）；**"密钥从哪儿来"**
 是这里的事——库里那条（首次 ``POST /auth/setup`` 生成）优先，其次环境变量
@@ -62,7 +62,7 @@ def signing_secret_or_raise(settings: Settings, services: Services) -> str:
     if not secret:
         raise ServiceUnavailableError(
             "尚未配置下载签名密钥：请在环境里配置 KYLAB_URL_SIGNING_SECRET，"
-            "或让这台机器正常启动一次（本机档会在装配时生成一条并落库；"
+            "或让这台机器正常启动一次（旧版会在装配时生成一条并落库；"
             "服务器档由首次初始化生成）"
         )
     return secret

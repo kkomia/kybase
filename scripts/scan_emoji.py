@@ -75,7 +75,7 @@ def main() -> int:
                 print(f"{path}:{lineno}:{col}  发现 emoji {char!r} (U+{ord(char):04X})")
 
     if total:
-        print(f"\n共发现 {total} 处 emoji，违反《前端设计规范》禁令。")
+        print(f"\n共发现 {total} 处 emoji，违反界面规则禁令。")
         return 1
     print("未发现 emoji，检查通过。")
     return 0

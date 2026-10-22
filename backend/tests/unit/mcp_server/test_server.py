@@ -29,11 +29,11 @@ SERVER_PATH = Path(inspect.getfile(build_server))
 MARKDOWN = "# 眼轴\n\n眼轴长度是衡量儿童青少年眼球发育情况的主要参数之一，不受调节能力影响。\n"
 
 
-#: 对外面就应该是这些（v0.1.0 瘦身后的**名字清单**）。
+#: 对外面就应该是这些（v0.1.0 精简后的**名字清单**）。
 #:
 #: 写死一份是刻意的：上面那条说的是"注册的 == `MCP_TOOL_NAMES`"，
 #: 而 `MCP_TOOL_NAMES` 现在直接取 `TOOL_NAMES`——只靠它的话，往 `tools.py`
-#: 里加一个 Agent 侧工具会**一路绿着**通过。这一份就是那个刹车：
+#: 里加一个 调用方工具会**一路绿着**通过。这一份就是那个刹车：
 #: 变工具面必须是有意识的动作，而不是顺手加一个函数。
 KB_TOOL_NAMES = (
     "list_knowledge_bases",
@@ -51,7 +51,7 @@ KB_TOOL_NAMES = (
 
 
 def test_server_registers_exactly_the_kb_face() -> None:
-    """挂上去的**正好是纯知识库那一组工具**（v0.1.0 瘦身收口）。
+    """挂上去的**正好是纯知识库那一组工具**（v0.1.0 精简收口）。
 
     两个方向都查：注册的那些必须是 ``MCP_TOOL_NAMES``，而 ``MCP_TOOL_NAMES``
     （= ``TOOL_NAMES``）必须**正好等于**下面那份名字清单——后半句是刹车，
@@ -65,7 +65,7 @@ def test_server_registers_exactly_the_kb_face() -> None:
 
 
 def test_an_agent_tool_is_nowhere_in_the_face() -> None:
-    """**Agent 侧的工具一个都不在**（架构设计 §6 阶段 1 第 5 步）：
+    """**调用方的工具一个都不在**（设计 6 阶段 1 第 5 步）：
     ``create_note`` 会真写笔记、``remember`` / ``forget`` 会真动用户档案、
     ``export_*`` 会把文件落进别人的会话产物区——它们的实现都已拆除，
     名字也不该出现在这个服务里。
@@ -80,7 +80,7 @@ def test_an_agent_tool_is_nowhere_in_the_face() -> None:
 def test_list_tools_prints_the_registered_face(capsys) -> None:  # type: ignore[no-untyped-def]
     """``--list-tools`` 打的就是**要挂上去的那批**（一屏能核对的排障入口）。
 
-    它原先打的是 ``TOOL_NAMES``（合体期 21 个）——那种"打出来的比挂上去的多"
+    它原先打的是 ``TOOL_NAMES``（早期版本 21 个）——那种"打出来的比挂上去的多"
     会让排障的人以为服务漏挂了工具。
 
     **最后一行是契约指纹**（v0.62）：那才是"工具面有没有变过"的那个数，

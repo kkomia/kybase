@@ -1,4 +1,4 @@
-"""连接器框架（M6 / T6.1；架构 §10）。
+"""连接器框架（ / ；架构 10）。
 
 **共同抽象**：一个数据源就是"**定期去看某处有没有新内容，有就入库**"。
 不管那处是 RSS 订阅、一个网页、还是将来的 WebDAV 目录，流程一样：
@@ -19,7 +19,7 @@
 RSS 重复列出多少次，hash 一样，第二份会被识别为重复而不重复入库。
 再加一张表就是**多余的真相来源**——两张表迟早不一致。
 
-**WebDAV 只留扩展点，不进主链路**（T6.6）：架构 §14 把它列入"缓做"，
+**WebDAV 只留扩展点，不进主链路**（）：架构 14 把它列入"缓做"，
 这里只在 ``build_connector`` 里留一处明确的"未实现"提醒，而不是写一个
 永远走不到的空实现（空实现最容易被误当成做过了）。
 """
@@ -169,7 +169,7 @@ def build_connector(
     """按数据源类型造连接器。
 
     导入放在函数里：``connectors/`` 下面几个模块互相独立，顶层互相 import
-    会成环（也与 ``parsers/`` 同一套纪律，见工程规范 §3.3）。
+    会成环（也与 ``parsers/`` 同一套纪律，见分层规则 3.3）。
     """
     if kind is DataSourceKind.RSS:
         from app.services.connectors.rss import RssConnector
@@ -180,8 +180,8 @@ def build_connector(
 
         return HtmlConnector(client=client)
     if kind is DataSourceKind.WEBDAV:
-        # 明确不做，而不是留一个空实现——空实现最容易被误当成做过了（T6.6）
-        raise InvalidRequestError("WebDAV 数据源尚未实现（架构 §14 缓做）")
+        # 明确不做，而不是留一个空实现——空实现最容易被误当成做过了（）
+        raise InvalidRequestError("WebDAV 数据源尚未实现（架构 14 缓做）")
     raise InvalidRequestError(f"不支持的数据源类型：{kind}")
 
 

@@ -246,7 +246,7 @@ def _embedder(base_url: str, **kwargs: object) -> WeMMEmbedder:
 
 
 def test_text_batch_is_one_request_with_array_input() -> None:
-    """批量**一个请求、input 是数组**：文档 §7 的吞吐就是这样来的（并发反而不变快）。"""
+    """批量**一个请求、input 是数组**：文档 7 的吞吐就是这样来的（并发反而不变快）。"""
     with _serve(_Stub()) as (base, stub):
         vectors = _embedder(base, max_batch=8).embed(["甲", "乙", "丙"])
 
@@ -291,7 +291,7 @@ def test_empty_input_makes_no_request() -> None:
 
 
 def test_no_key_means_no_authorization_header() -> None:
-    """局域网那台没有鉴权：不该硬塞一个空的 Bearer（文档 §5 的客户端就不发）。"""
+    """局域网那台没有鉴权：不该硬塞一个空的 Bearer（文档 5 的客户端就不发）。"""
     with _serve(_Stub()) as (base, stub):
         _embedder(base).embed(["甲"])
     assert stub.requests[0]["authorization"] is None
@@ -362,7 +362,7 @@ def test_media_marker_is_fetched_for_every_request() -> None:
 
 
 def test_stale_marker_is_refetched_and_retried_once() -> None:
-    """marker 报错 → 重取一次 marker 再试（文档 §6 最后一行）。
+    """marker 报错 → 重取一次 marker 再试（文档 6 最后一行）。
 
     现场：服务在两次请求之间重启过，旧 marker 失效。这种情况**不该让一份文档白失败**。
     """
@@ -551,7 +551,7 @@ def test_props_without_marker_is_rejected() -> None:
 
 
 def test_only_embedding_endpoints_are_called() -> None:
-    """**只碰 embedding 接口**：那台服务上的模型是 embedding 专用的（文档 §2 第 4 条），
+    """**只碰 embedding 接口**：那台服务上的模型是 embedding 专用的（文档 2 第 4 条），
     ``/completion`` 一次都不该发。"""
     stub = _Stub()
     with _serve(stub) as (base, _):

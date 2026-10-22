@@ -752,7 +752,7 @@ def test_timeline_missing_document_is_404(client: TestClient) -> None:
 
 
 def test_document_list_carries_the_progress_summary(client: TestClient, kb_id: str) -> None:
-    """列表每行都带 progress（§12.115）——**一次请求算完整页**，不是逐篇再问一次。
+    """列表每行都带 progress（12.115）——**一次请求算完整页**，不是逐篇再问一次。
 
     逐篇拉时间线意味着 20 篇文档 = 20 次往返，而列表要的只是"第几步"。
     完整那棵树仍然只在 ``/timeline`` 里（抽屉用）。

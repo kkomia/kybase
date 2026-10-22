@@ -25,7 +25,7 @@ def _psycopg() -> Any:
     """第一次真用 psycopg 时才导入它（模块级导入会让**客户端运行时**凭空多背一份 ×）。
 
     为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"建库 / 加索引"只有
-    **服务器**启动那条路会做 √ —— 边车（客户端运行时）不碰 PostgreSQL 的 schema √。
+    **服务器**启动那条路会做 √ —— 旧版客户端（客户端运行时）不碰 PostgreSQL 的 schema √。
 
     **行为一个字没变** ×：第一次调用时才导入 √，psycopg 真的不在时仍在**调用那一刻**
     抛 ``ModuleNotFoundError`` √（只是从导入期挪到了调用期 √）。
@@ -47,7 +47,7 @@ BASELINE_VERSION = 1
 SCHEMA_VERSION = 8
 """应用期望的 schema 版本：基线 v1 + ``MIGRATIONS`` 里已追加的增量。
 
-**这是一条独立的 KB 连号序列**（2..8）。2026-10-20 的数据分家之前，它和 Agent
+**这是一条独立的 KB 连号序列**（2..8）。2026-10-20 的数据拆分之前，它和 Agent
 侧的迁移交错编号到 19——那台存量库要先跑一次运维动作（``remap --apply``）
 把 ``schema_migrations`` 重写完，否则本版本会以 ``LEGACY_INTERLEAVED_HEAD``
 明确拒绝启动。
@@ -60,9 +60,9 @@ SCHEMA_VERSION = 8
 class Migration:
     """一条增量迁移。**只增不改**：已经发布的条目一律不许改字面量。
 
-    ``legacy_version`` 是 kylab 合体期那条**交错序列**里的旧编号（KB 迁移与
-    Agent 迁移连在一起编号，本服务瘦身前的线上库停在 v19）。2026-10-20 的
-    数据分家把 Agent 迁移整体删掉、KB 迁移重编成 2..8 的独立连号，这个字段
+    ``legacy_version`` 是 kylab 早期版本那条**交错序列**里的旧编号（KB 迁移与
+    Agent 迁移连在一起编号，本服务精简前的线上库停在 v19）。2026-10-20 的
+    数据拆分把 Agent 迁移整体删掉、KB 迁移重编成 2..8 的独立连号，这个字段
     只服务**一次性运维动作**（``python -m app.storage.postgres_impl.remap``）；
     新库从基线一路走过来，永远用不到它。
     """
@@ -172,7 +172,7 @@ MIGRATIONS: tuple[Migration, ...] = (
             # 这张表回答的是**另一个问题**：`usage_events(kind='search')` 只记了
             # "这次检索返回几条"，没有库这一维，于是概览页能画检索量、却画不出
             # "哪个库的命中在涨/在跌"，KB 卡片上那条迷你曲线也无处取数
-            # （设计文档 §9 第 6 条记着这个缺口）。
+            # （设计文档 9 第 6 条记着这个缺口）。
             #
             # 一行 = **一次检索 × 一个库**。`candidates` / `kept` 刻意分开：
             # 前者是分布收敛**之前**这个库贡献的条数，后者是收敛后真返回的条数，
@@ -205,8 +205,8 @@ MIGRATIONS: tuple[Migration, ...] = (
 )
 
 
-#: 旧序列（kylab 合体期：KB 与 Agent 交错连号）的最后一版。
-#: 存量库在分家前停在这里；新库见不到这个数。
+#: 旧序列（kylab 早期版本：KB 与 Agent 交错连号）的最后一版。
+#: 存量库在拆分前停在这里；新库见不到这个数。
 LEGACY_INTERLEAVED_HEAD = 19
 
 
@@ -293,7 +293,7 @@ def ensure_schema(db: Database) -> int:
     if version > SCHEMA_VERSION:
         if version == LEGACY_INTERLEAVED_HEAD:
             raise SchemaError(
-                f"schema 版本为 {version}：这是 kylab 合体期的**交错迁移序列**"
+                f"schema 版本为 {version}：这是 kylab 早期版本的**交错迁移序列**"
                 "（KB 与 Agent 交错连号），本版起 KB 走自己的独立序列（1..8）。"
                 "库里的字段与表都齐，只差把版本号重写一遍——**升级前先跑一次**："
                 "\n    cd backend && python -m app.storage.postgres_impl.remap --apply"

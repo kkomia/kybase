@@ -34,7 +34,7 @@ function Invoke-Step {
 Invoke-Step 'ruff' 'uv' @('run', '--directory', "$root/backend", 'ruff', 'check', 'app/', 'tests/')
 Invoke-Step 'emoji 扫描（后端）' 'python' @("$root/scripts/scan_emoji.py", "$root/backend/app")
 Invoke-Step '结构性规范（分层 / 测试位置 / 界面文案 / 版本号）' 'python' @("$root/scripts/check_layering.py", $root)
-# **不生成《API 接口规范》**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
+# **不生成接口规则**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
 # kylab 时代的（整段讲技能分类 / 精选），落点 docs/规范/ 本仓也没有，跑一次就是
 # FileNotFoundError。接口事实的权威处是运行中的 /api/v1/openapi.json。
 # 同 lint.sh：下面这条要 import app（含 duckdb），必须用 venv 解释器

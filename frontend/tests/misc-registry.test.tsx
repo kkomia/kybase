@@ -128,7 +128,7 @@ describe('模型注册器', () => {
 
     expect(await screen.findByText('深度求索')).toBeInTheDocument()
     expect(screen.getByText('sk-xu…ten')).toBeInTheDocument()
-    // 2026-09-27（界面优化计划 §5.8）：卡片上原先还有「类别」与「N 个模型」，
+    // 2026-09-27（界面优化计划 5.8）：卡片上原先还有「类别」与「N 个模型」，
     // 下面另起一行印 base_url——三样都没有区分度（这一列所有供应商同一类、
     // 数量下面数得出来），base_url 还是实现细节。用户圈着这块说
     // "同一个东西说两遍"，所以这里改成**钉"它们不在了"**：

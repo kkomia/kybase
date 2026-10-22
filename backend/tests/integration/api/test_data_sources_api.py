@@ -63,7 +63,7 @@ def test_register_and_list(client: TestClient, kb_id: str) -> None:
 
 
 def test_register_rejects_webdav(client: TestClient, kb_id: str) -> None:
-    """WebDAV 明确不做（架构 §14 缓做）。"""
+    """WebDAV 明确不做（架构 14 缓做）。"""
     response = client.post(
         f"/api/v1/knowledge-bases/{kb_id}/data-sources",
         json={"kind": "webdav", "name": "网盘", "url": "https://example.com/dav"}

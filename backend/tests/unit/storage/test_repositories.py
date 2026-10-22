@@ -28,7 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 #: 协议 → `StoreBundle` 上的视图名。加了协议忘了视图，或者视图改名，这里会红。
 #: **Agent 域的五个（notes / conversations / workspaces / schedules / mcp_servers）
-#: 已随 2026-10-20 的数据分家删除**，不在协议表里。
+#: 已随 2026-10-20 的数据拆分删除**，不在协议表里。
 VIEW_NAMES = {
     "KnowledgeBaseRepo": "knowledge_bases",
     "DocumentRepo": "documents",

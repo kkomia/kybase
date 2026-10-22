@@ -599,13 +599,13 @@ def test_an_unclassified_failure_is_not_retryable() -> None:
     assert ChatError("限流", reason="rate_limited").retryable is True
 
 
-# ------------------------------------------- 正文里的工具调用标记（§12.227）
+# ------------------------------------------- 正文里的工具调用标记（12.227）
 
 
 def test_a_tool_call_block_is_stripped_and_named() -> None:
     """闭合的 `<tool_call>{…}</tool_call>`：正文留下人话，标记去掉，工具名报出来。
 
-    这就是 §12.219 里那 5 条消息的形状：正文**整条**是标记（模型想继续查，
+    这就是 12.219 里那 5 条消息的形状：正文**整条**是标记（模型想继续查，
     而收尾那一步没带工具表）。工具名只用于措辞（"它想调用 web_fetch"），
     解析它不是为了执行——那几条路上已经没有可执行的额度了。
     """
@@ -678,7 +678,7 @@ def test_a_plain_answer_is_untouched() -> None:
 
 
 
-# -------------------------------- 流式过滤器：正文增量里也不该出现标记（§12.228）
+# -------------------------------- 流式过滤器：正文增量里也不该出现标记（12.228）
 
 
 def _streamed(chunks: list[str]) -> tuple[str, TextMarkerFilter]:
@@ -691,7 +691,7 @@ def _streamed(chunks: list[str]) -> tuple[str, TextMarkerFilter]:
 def test_a_marker_split_across_chunks_never_leaves_the_filter() -> None:
     """**分块切开的标记**也要扣住：真实流里一个标签会跨好几块（v0.34 实测）。
 
-    这条钉的是 §12.219 §5 那条敞口的"屏幕那一半"：正文增量是边到边发的，
+    这条钉的是 12.219 5 那条敞口的"屏幕那一半"：正文增量是边到边发的，
     只在收尾处剥等于"库里干净、屏幕上脏过"——实测那 5 条消息的正文整条都是标记，
     于是"闪一下"几乎等于整段回答。
     """

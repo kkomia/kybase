@@ -10,7 +10,7 @@
 （见下面 ``_FALLBACK_MEDIA_TYPES`` 的说明），而中文文件名那一段更细——只改一边
 就是要靠人记得。
 
-**2026-10-08 剥离阶段 0 从 `services/documents.py` 与 `services/ingest.py` 上移到这里**：
+**2026-10-08 早期 0 从 `services/documents.py` 与 `services/ingest.py` 上移到这里**：
 两处原位置仍 import 进来（`__all__` 里照旧导出），调用点一行没改——于是内容协商
 只有一处规则，文档下载与产物下载不会各写一份（中文文件名的 ``filename*`` 那一支
 尤其细，只改一边就要靠人记得）。

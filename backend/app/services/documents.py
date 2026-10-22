@@ -1,7 +1,7 @@
-"""文档与任务服务（M4 支撑）。
+"""文档与任务服务（ 支撑）。
 
 API 层只做协议适配，所以"列文档""入队""查任务"这些动作都收在这里，
-路由里不出现任何存储调用（工程规范 §3.3 的 L1 规则）。
+路由里不出现任何存储调用（分层规则 3.3 的 L1 规则）。
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ def content_kind(filename: str, *, has_markdown: bool = False) -> str:
 
 
 # 媒体类型判定与 `Content-Disposition` 已上移到 `app/core/downloads.py`（共享底座，
-# 见那里的模块头）：KB 侧下文档与 Agent 侧导出会话要用同一套判定，各写一遍迟早只改一边。
+# 见那里的模块头）：KB 侧下文档与 调用方导出会话要用同一套判定，各写一遍迟早只改一边。
 # 这里 import 进来直接用（`suffix_of` 给 `content_kind`，`media_type_of` 给下载那条路）。
 
 
@@ -342,7 +342,7 @@ class DocumentService:
 
         **只动标记**：切块与向量原样保留，检索在两条通道上都按标记过滤
         （全文在 SQL 里裁，向量在融合后裁），所以恢复是零成本——
-        这与切块级 `disabled`（§G3）是同一套设计，只是范围是整份文档。
+        这与切块级 `disabled`（）是同一套设计，只是范围是整份文档。
         """
         record = self.get(document_id)
         if record.disabled == disabled:
@@ -441,7 +441,7 @@ class DocumentService:
     def content(self, document_id: str, *, fmt: str = "original") -> DocumentContent:
         """取下载内容：``original``（原文件，默认）或 ``markdown``（解析产物）。
 
-        这是 T4.5 的"下载双选项"。**默认原文件**是刻意的：用户上传的是什么，
+        这是  的"下载双选项"。**默认原文件**是刻意的：用户上传的是什么，
         下载回来的就该是什么；Markdown 是我们加工的中间产物，想要它的人会自己说。
         """
         if fmt not in ("original", "markdown"):

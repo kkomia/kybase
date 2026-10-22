@@ -1,4 +1,4 @@
-"""按「这次改了什么」算出该跑哪些用例——把工程规范 §5.2.1 机械化。
+"""按「这次改了什么」算出该跑哪些用例——把分层规则 5.2.1 机械化。
 
 **为什么需要它**：规范早就写明"改一处只跑受影响的那几个文件"，但受影响的范围
 **没有人能可靠地手算**：
@@ -131,7 +131,7 @@ WALK_STOP = frozenset(BACKEND_HUBS | {"app.main"})
 #: 2 跳多覆盖一层"经中间模块转手的调用方"。再往上收益很低、误伤很大。
 DEFAULT_HOPS = 2
 
-#: 后端用例文件的通配；与工程规范 §5.1 的命名铁律一致。
+#: 后端用例文件的通配；与分层规则 5.1 的命名铁律一致。
 BACKEND_TEST_GLOB = "test_*.py"
 #: 前端用例文件（``vite.config.ts`` 的 test.include 口径）。
 FRONTEND_TEST_GLOBS = ("*.test.ts", "*.test.tsx")
@@ -566,7 +566,7 @@ def decide(
             # 脚本时点名写的就是它）与"scripts/ + 文件名"（顶层脚本那种写法）。
             # 只认后者的后果是``scripts/`` 下**带子目录**的脚本静默失配：改了写盘脚本，
             # 钉住它的用例不跑，而"没跑"与"跑了且绿"看起来一模一样。
-            # （v0.1.0 瘦身后 scripts/ 下暂时没有子目录脚本，这条分支留着是为了下一个。）
+            # （v0.1.0 精简后 scripts/ 下暂时没有子目录脚本，这条分支留着是为了下一个。）
             tokens = (name, f"scripts/{Path(name).name}")
             for rel in sorted(all_backend):
                 if rel in hit_backend:

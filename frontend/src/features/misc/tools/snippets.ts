@@ -46,7 +46,7 @@ export function envVarSnippet(token: string): Snippet {
   }
 }
 
-/** Codex（`~/.codex/config.toml`，CLI / IDE 插件 / 桌面端共用这一份）。 */
+/** Codex（`~/.codex/config.toml`，CLI / IDE 插件 / 客户端共用这一份）。 */
 export function codexSnippets(endpoint: string, token: string): Snippet[] {
   return [
     {

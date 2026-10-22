@@ -1,12 +1,12 @@
-"""摄入编排（M2 T2.2 的服务侧）。
+"""摄入编排（  的服务侧）。
 
 把"上传 → 探测 → 解析 → 切分 → 向量化 → 可检索"串成一条可重入的链路：
 
 - **每一步都先落状态再做事**，失败时把 ``error`` 与失败阶段写进文档记录，
-  界面据此显示"卡在哪一步、为什么"（架构 §4、§12）；
+  界面据此显示"卡在哪一步、为什么"（架构 4、12）；
 - **断点续跑**：``ingest`` 从文档当前阶段继续，已完成的上游步骤不重跑；
 - **模型锁定**：库内已有向量就拒绝换模型；库内还没有向量则允许更新模型与维度
-  （架构 §6.4 的原话是"库内已有向量化文件 → 不允许更换"，没向量时不必逼用户重建库）。
+  （架构 6.4 的原话是"库内已有向量化文件 → 不允许更换"，没向量时不必逼用户重建库）。
 
 事件循环/队列不在这里：本类是纯同步逻辑，便于直接测试；异步 worker 只负责调用它。
 """
@@ -82,7 +82,7 @@ def _parse_hint(document: DocumentRecord, probe_result: ProbeResult) -> str:
     走的是路由那一层**同一句** `hint_for`，这里不另写文案：那句话同时用在
     "一个候选都没有"的路径上，两处说法不一致会让人怀疑自己看错了设置。
 
-    实测（方案 13，2026-09-29）：一份自造 `.webm` 上传即失败，原文只有
+    实测（方式 13，2026-09-29）：一份自造 `.webm` 上传即失败，原文只有
     ``[parsing] MinerU 申请上传地址失败（-60002）：MinerU 不支持该文件格式`` ——
     而它其实是**能进库的**（配好多模态之后同一条链路 3.7 秒就 indexed）。
     缺的就是这一句"视频只能走多模态嵌入：请到设置…"。
@@ -122,7 +122,7 @@ class IngestCanceled(Exception):
 
 @dataclass(frozen=True, slots=True)
 class IngestOutcome:
-    """一次摄入的结果。``is_duplicate`` 对应架构 §6.3 的"检测到相同文件"。"""
+    """一次摄入的结果。``is_duplicate`` 对应架构 6.3 的"检测到相同文件"。"""
 
     document: DocumentRecord
     chunk_count: int
@@ -160,7 +160,7 @@ class IngestService:
         #: 生产走的就是那条路：每个库有自己的块长/重叠（v17）。
         #: 与 `_embedders` 同一套写法：不给就退回"按库解析"。
         self._chunk_config = chunk_config
-        # Webhook 是**旁路**（T4.6）：默认什么都不做，组合根才把它接上。
+        # Webhook 是**旁路**（）：默认什么都不做，组合根才把它接上。
         # 做成回调而不是直接依赖 WebhookService，是为了不让摄入服务
         # 反过来依赖通知服务——那会让"发通知失败"有机会影响摄入本身
         self._notify = notifier or (lambda event, payload: None)
@@ -180,7 +180,7 @@ class IngestService:
     ) -> IngestOutcome:
         """登记一份上传：按内容 hash 去重 → 存原文 → 建文档记录（``uploaded``）。
 
-        ``uploaded_by`` 是使用者名册里的 id（G6）。**只是归属标注**，
+        ``uploaded_by`` 是使用者名册里的 id（）。**只是归属标注**，
         不参与鉴权——凭据是三档 API 身份那套，两者刻意分开。
 
         ``folder_id``（v13）是要放进哪个目录；目录必须属于同一个库，
@@ -430,13 +430,13 @@ class IngestService:
         probe_result = probe(original, filename=document.name, mime_type=document.mime_type)
 
         # 页数是**探测的产物**，先落库：它在下面决定要不要切分，
-        # 也是界面上"共 N 页"的唯一来源（此前这一列恒为 null，见 §12.18）
+        # 也是界面上"共 N 页"的唯一来源（此前这一列恒为 null，见 12.18）
         self._stores.meta.update_document_page_count(document.id, probe_result.page_count)
 
         self._advance(document, DocumentStage.PARSING)
         # **拿全部候选而不是一个**：云端引擎会失败（额度、抖动、半截结果），
         # 而"这个文件谁都能解"很常见——扫描件有 MinerU/PaddleOCR 两条路，
-        # 文字型 PDF 还有本地直提。只试第一个会让后面的通道白放着（架构 §4.1）
+        # 文字型 PDF 还有本地直提。只试第一个会让后面的通道白放着（架构 4.1）
         decisions = self._router.candidates(
             filename=document.name, mime_type=document.mime_type, probe=probe_result
         )
@@ -447,7 +447,7 @@ class IngestService:
             )
             raise AssertionError("unreachable")  # pragma: no cover
 
-        # 大文件强制切分（架构 §4.2 / T2.7）：超过渠道页数上限的 PDF 直接提交
+        # 大文件强制切分（架构 4.2 / ）：超过渠道页数上限的 PDF 直接提交
         # 只会拿到 -60006 然后整个文件失败，而它其实完全可以被解析。
         split_plan = plan_split(probe_result.page_count)
 
@@ -544,7 +544,7 @@ class IngestService:
         parser: ParserProvider,
         probe_result,
     ) -> ParseResult:
-        """按页范围切分后逐段解析，再合并成一份产物（架构 §4.2）。
+        """按页范围切分后逐段解析，再合并成一份产物（架构 4.2）。
 
         **子文件记录先建再跑**：这样界面上"第 1 段在跑、第 2 段还没开始"是可见的，
         而不是全程只有一个转圈。跑完按段回写成功/失败。
@@ -564,7 +564,7 @@ class IngestService:
             ]
         )
         # 主文档标记为已切分：界面据此把它渲染成**可展开**的父行，
-        # 而不是一个和普通文件一样的单行（架构 §4.2 "UI 显示为单个文件，点击展开子文件树"）
+        # 而不是一个和普通文件一样的单行（架构 4.2 "UI 显示为单个文件，点击展开子文件树"）
         self._stores.meta.mark_document_split(document.id)
 
         logger.info(
@@ -590,7 +590,7 @@ class IngestService:
         failed = outcome.failed
         if failed:
             # **一段失败就整体失败**——但不能只说"失败了"：
-            # 用户要知道是哪几段，才能只重跑那几段（架构 §4.2）
+            # 用户要知道是哪几段，才能只重跑那几段（架构 4.2）
             detail = "、".join(f"{item.part}：{item.error}" for item in failed)
             raise ParseError(
                 f"{len(failed)}/{len(outcome.outcomes)} 段解析失败——{detail}",
@@ -632,7 +632,7 @@ class IngestService:
         )
 
     def _store_tabular_copy(self, document: DocumentRecord, original: bytes) -> None:
-        """表格文档：另写一份结构化副本进 DuckDB（T2.11 双写）。
+        """表格文档：另写一份结构化副本进 DuckDB（ 双写）。
 
         **失败只记日志、不影响摄入**：结构化副本是**旁路**——
         检索用的行文本已经由 ``TabularParser`` 产出并向量化，
@@ -898,7 +898,7 @@ class IngestService:
             raise IngestCanceled(document.id)
 
     def _fail(self, document: DocumentRecord, message: str, *, stage: str) -> None:
-        """失败要落到文档记录上：界面才能显示卡在哪一步、为什么（架构 §12）。"""
+        """失败要落到文档记录上：界面才能显示卡在哪一步、为什么（架构 12）。"""
         if document.stage not in (DocumentStage.FAILED, DocumentStage.CANCELED):
             self._stores.meta.update_document_stage(
                 document.id, DocumentStage.FAILED, error=f"[{stage}] {message}"
@@ -906,7 +906,7 @@ class IngestService:
             document.stage = DocumentStage.FAILED
 
     def _resolve_model(self, kb: KnowledgeBaseRecord) -> None:
-        """模型锁定（架构 §6.4）：库内已有向量就拒绝换模型；还没有向量则允许更正配置。
+        """模型锁定（架构 6.4）：库内已有向量就拒绝换模型；还没有向量则允许更正配置。
 
         **刻意放在 try 之外**：这是配置错误而非文档处理失败——重试没有意义，
         所以既不把文档标成 ``failed``，也不抛可重试的 :class:`IngestError`。
@@ -989,7 +989,7 @@ STALL_SECONDS = 240.0
 就跑完了——也就是说"正常该跑多久"是**秒级**，4 分钟离它有三个数量级的余量，
 不会被一次慢解析误判（真在跑的解析有租约，压根进不了这个判据，见 `sweep_stalled`）。
 看门狗每分钟扫一次（`DEFAULT_WATCHDOG_INTERVAL`），所以最迟 **5 分钟**被发现——
-正好落在方案 8 要的"≤5 分钟自动完成或失败"。
+正好落在方式 8 要的"≤5 分钟自动完成或失败"。
 """
 
 STALL_MAX_ROUNDS = 3

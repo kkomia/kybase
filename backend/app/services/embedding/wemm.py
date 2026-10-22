@@ -8,7 +8,7 @@
 
 三个端口都按"一个实现"接住：
 
-1. 文本：``POST /v1/embeddings``（OpenAI 兼容）。**批量走数组**：文档 §7 实测总吞吐封顶
+1. 文本：``POST /v1/embeddings``（OpenAI 兼容）。**批量走数组**：文档 7 实测总吞吐封顶
    约 33 请求/秒，加并发只增加排队延迟、不提高吞吐，所以这里的批**串行发**、一行线程都不建；
 2. 图片 / 视频：``POST /embedding``（原生）。三步——``GET /props`` 取 ``media_marker``
    → 文件字节 base64 → 提交 ``{"content": {"prompt_string": marker, "multimodal_data": [...]}}``；
@@ -26,7 +26,7 @@
 
 ## 只碰 embedding，不碰 /completion
 
-这台服务上的模型是 embedding 专用的（文档 §2 第 4 条）。生成接口一个字节都不发：
+这台服务上的模型是 embedding 专用的（文档 2 第 4 条）。生成接口一个字节都不发：
 发错了不会报错，只会得到一段毫无意义的文本，而排查要从"向量为什么不对"倒退很久。
 """
 
@@ -46,27 +46,27 @@ __all__ = ["WeMMEmbedder"]
 
 logger = logging.getLogger(__name__)
 
-#: 原生维度（文档 §1：固定 2048，更小维度用 Matryoshka 截断）。
+#: 原生维度（文档 1：固定 2048，更小维度用 Matryoshka 截断）。
 NATIVE_DIM = 2048
 
 TEXT_PATH = "/v1/embeddings"
 MEDIA_PATH = "/embedding"
 PROPS_PATH = "/props"
 
-#: 超时下限来自文档 §2 第 1 条：冷启动约 10s，文本建议 ≥30s、视频建议 ≥120s。
+#: 超时下限来自文档 2 第 1 条：冷启动约 10s，文本建议 ≥30s、视频建议 ≥120s。
 #: 这里取的是**比下限更宽**的值（文本 60s、媒体 300s）：这条链路上失败一次的代价是
 #: 整个文档摄入重跑，而多等一会儿的代价只是慢——宁可等。
 TEXT_TIMEOUT_SECONDS = 60.0
 MEDIA_TIMEOUT_SECONDS = 300.0
 PROPS_TIMEOUT_SECONDS = 30.0
 
-#: 502 = 暂时不可用（文档 §6）；503/504 同理。**embedding 无副作用，重试是安全的**，
+#: 502 = 暂时不可用（文档 6）；503/504 同理。**embedding 无副作用，重试是安全的**，
 #: 所以这几档直接退避重试，而不是把失败甩给上层去重跑整个文档。
 RETRYABLE_STATUS = frozenset({502, 503, 504})
 RETRY_ATTEMPTS = 3
 RETRY_BASE_SECONDS = 1.0
 
-#: 允许的范数偏差。文档 §1 写着"已 L2 归一化"，但"服务保证过"**不等于**"不必校验"：
+#: 允许的范数偏差。文档 1 写着"已 L2 归一化"，但"服务保证过"**不等于**"不必校验"：
 #: 没归一化的向量不会让任何一层报错，只会让余弦相似度与点积不再等价——排序悄悄变差，
 #: 排查时从"检索结果不对"倒退很久才想到这一层。1e-3 是浮点传输的余量（实测 1.000000）。
 NORM_TOLERANCE = 1e-3
@@ -241,7 +241,7 @@ class WeMMEmbedder(EmbeddingProvider):
         原生端点回的是 ``[{"embedding": [[...]]}]``（**多一层嵌套**，官方客户端里
         那句 ``embedding[0] if isinstance(embedding[0], list)`` 就是在剥它）；
         OpenAI 兼容端点回的是 ``{"data": [{"embedding": [...]}]}``。两种都认，
-        因为文档 §4 两条路都写着可用，而"换端点就静默拿到错的东西"不值当。
+        因为文档 4 两条路都写着可用，而"换端点就静默拿到错的东西"不值当。
         """
         if isinstance(body, dict):
             items = body.get("data")
@@ -271,7 +271,7 @@ class WeMMEmbedder(EmbeddingProvider):
         return out
 
     def _native_vector(self, value: object, *, what: str) -> list[float]:
-        """校验服务给的原生向量：**2048 维、已 L2 归一化**（文档 §1 的两条承诺）。
+        """校验服务给的原生向量：**2048 维、已 L2 归一化**（文档 1 的两条承诺）。
 
         为什么要校验"服务保证过的事"：这两条一旦不成立，后果**大多不是报错，而是静默变差**。
         维度不对还能被仓储层拦住（`VectorDimensionMismatch`），而没归一化完全无声——
@@ -297,7 +297,7 @@ class WeMMEmbedder(EmbeddingProvider):
     def _headers(self) -> dict[str, str]:
         """带鉴权头**仅当配了 key**。
 
-        局域网那台代理没有鉴权（文档 §5 的客户端一个 Authorization 都不发），
+        局域网那台代理没有鉴权（文档 5 的客户端一个 Authorization 都不发），
         硬塞一个 ``Bearer``（哪怕是空串）只会让代理多一条无意义的判断。
         """
         return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
@@ -314,7 +314,7 @@ class WeMMEmbedder(EmbeddingProvider):
 
         退避间隔 1s → 2s（``RETRY_BASE_SECONDS * 2**attempt``），一共 3 次尝试。
         超时与"服务不可用"在这里不区分对待：对调用方来说两者都是"这一趟没拿到"，
-        而 embedding 无副作用，重试永远安全（文档 §6）。
+        而 embedding 无副作用，重试永远安全（文档 6）。
         非重试档的状态码**原样返回**给调用方解释：403/404 与 marker 过期是两件事。
         """
         url = f"{self.base_url}{path}"

@@ -18,8 +18,8 @@ from app.storage.s3_impl.object_store import S3ObjectStore
 #: 同一接口的每个实现都要在这里登记。新增实现忘了登记时，
 #: "抽象方法有没有漏实现"这条守卫就会漏掉它——所以这份清单要跟着实现一起长。
 #:
-#: v0.1.0 瘦身后只剩这些：本机档那一整套（``RouterMetaStore`` / ``SqliteMetaStore``
-#: 与三个 ``Unavailable*``）已随边车一起拆除，这一份服务只有服务器形态。
+#: v0.1.0 精简后只剩这些：旧版那一整套（``RouterMetaStore`` / ``SqliteMetaStore``
+#: 与三个 ``Unavailable*``）已随旧版客户端一起拆除，这一份服务只有服务器形态。
 IMPLEMENTATIONS = (
     (PostgresMetaStore, MetaStore),
     (PostgresVectorStore, VectorStore),

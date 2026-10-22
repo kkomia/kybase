@@ -297,7 +297,7 @@ def test_html_connector_extracts_the_page() -> None:
     assert len(result.items) == 1
     body = result.items[0].content.decode()
     assert "这是网页的正文内容" in body
-    assert "首页" not in body, "导航没被剥离"
+    assert "首页" not in body, "导航没被拆分"
     assert "抓取：" in body, "应当记下抓取时刻，方便判断版本时效"
 
 

@@ -1,4 +1,4 @@
-"""Embedding 抽象（M2 T2.9）。
+"""Embedding 抽象（ ）。
 
 两种实现：
 
@@ -7,7 +7,7 @@
 - :class:`~app.services.embedding.deterministic.DeterministicEmbedder` —— 无语义的词面哈希，
   **只在显式打开 ``KYLAB_DEV_EMBEDDING`` 时使用**（离线开发与测试）。
 
-模型锁定规则（架构 §6.4）由知识库记录承担：``embedding_model_id`` + ``embedding_dim``
+模型锁定规则（架构 6.4）由知识库记录承担：``embedding_model_id`` + ``embedding_dim``
 一旦入库即冻结，换 endpoint 可以、换模型必须新建库。
 
 **v0.8：取消静默兜底。** 以前"没配 key"会自动退回哈希实现，界面上标一个"开发兜底"

@@ -280,7 +280,7 @@ export interface paths {
          * 上传文档（异步摄入）
          * @description 上传文档。
          *
-         *     **幂等键是可选的，而不是强制的**——这里与架构 §3.2 的字面要求有一处偏差，
+         *     **幂等键是可选的，而不是强制的**——这里与架构 3.2 的字面要求有一处偏差，
          *     理由是我们已经有一条更强的兜底：内容 hash 去重。同一份文件重复上传，
          *     ``ingest.submit`` 会认出来并回 ``is_duplicate=True``，本来就不会入库两次。
          *
@@ -1475,7 +1475,7 @@ export interface paths {
          * @description 登记一个数据源。
          *
          *     **登记不等于拉取**：刚登记完不会立刻有文档，要显式点一次「立即拉取」。
-         *     （本服务没有定时拉取——定时任务是 Agent 侧的产品面，随数据分家拆除了。）
+         *     （本服务没有定时拉取——定时任务是 调用方的产品面，随数据拆分拆除了。）
          *     界面上要说清这一点，否则用户会以为登记完就有了。
          */
         post: operations["create_data_source_api_v1_knowledge_bases__kb_id__data_sources_post"];
@@ -1897,7 +1897,7 @@ export interface components {
         };
         /**
          * ApiKeyPermission
-         * @description API Key 权限（《架构设计 v0.2》§3.2：只读 / 读写 两种）。
+         * @description API Key 权限（本项目3.2：只读 / 读写 两种）。
          * @enum {string}
          */
         ApiKeyPermission: "readonly" | "readwrite";
@@ -1992,7 +1992,7 @@ export interface components {
             image_ids?: string[];
             /**
              * Disabled
-             * @description 被禁用的块不再参与检索，但仍留在库里（§G3）。
+             * @description 被禁用的块不再参与检索，但仍留在库里（G3）。
              * @default false
              */
             disabled: boolean;
@@ -2091,9 +2091,9 @@ export interface components {
         };
         /**
          * DataSourceKind
-         * @description 数据源类型（《架构设计 v0.2》§10）。
+         * @description 数据源类型（本项目10）。
          *
-         *     ``WEBDAV`` 为框架预留，MVP 不实现（架构 §14「缓做」）。
+         *     ``WEBDAV`` 为框架预留，MVP 不实现（架构 14「缓做」）。
          * @enum {string}
          */
         DataSourceKind: "upload" | "html" | "rss" | "webdav";
@@ -2305,7 +2305,7 @@ export interface components {
              */
             summary: string;
             /**
-             * @description 分段进度的摘要（§12.115）。列表行的进度条吃它；完整那棵树在
+             * @description 分段进度的摘要（12.115）。列表行的进度条吃它；完整那棵树在
              *     ``GET /documents/{id}/timeline``。``None`` = 这条路径没算（老调用点）。
              */
             progress?: components["schemas"]["DocumentProgressOut"] | null;
@@ -2423,7 +2423,7 @@ export interface components {
         };
         /**
          * DocumentProgressOut
-         * @description 列表行上那条分段进度所需要的信息（§12.115）。
+         * @description 列表行上那条分段进度所需要的信息（12.115）。
          *
          *     **不给百分比**（用户也这么要求）：6 个环节的耗时极不均（解析几分钟、切分几秒），
          *     百分比只会编出一个对不上的数字——"第 3/6 步 · 解析内容 · 已用 2 分 14 秒"
@@ -2481,7 +2481,7 @@ export interface components {
         };
         /**
          * DocumentStage
-         * @description 文档摄入流水线状态（《架构设计 v0.2》§4）。
+         * @description 文档摄入流水线状态（本项目4）。
          *
          *     主链路：``uploaded → probing → parsing → parsed → chunking → chunked → embedding → indexed``。
          *     ``enriching/enriched`` 是可选增强分支（图谱/Wiki，默认关闭，失败不影响主链路）。
@@ -3196,7 +3196,7 @@ export interface components {
          * @description 这次调用在提供者看来**是谁**。
          *
          *     带这一段是因为**同一个服务上有两套身份是事实**（页面用登录会话、外部客户端用
-         *     长期 API Key，方案 §1.4 R7）：客户端把它显示出来，两边对不上时用户能自己看出来，
+         *     长期 API Key，方式 1.4 R7）：客户端把它显示出来，两边对不上时用户能自己看出来，
          *     而不是遇到一个说不清的 403。
          */
         ProviderCallerOut: {
@@ -3216,7 +3216,7 @@ export interface components {
             permission: components["schemas"]["ApiKeyPermission"];
             /**
              * Is Admin
-             * @description **如实报**。长期 API Key **不是管理员**（方案 §1.4）：
+             * @description **如实报**。长期 API Key **不是管理员**（方式 1.4）：
              *     管理员专属的那些端点（``/settings``、``/api-keys``、``/users``、``/trash``、
              *     ``/maintenance``）对它是 403，界面据此**隐藏**这类入口，
              *     而不是摆出来等着失败。
@@ -3237,7 +3237,7 @@ export interface components {
         };
         /**
          * ProviderCapabilitiesOut
-         * @description 提供者的能力集（方案 §1.2 契约）。
+         * @description 提供者的能力集（方式 1.2 契约）。
          *
          *     每一项都回答"这台提供者**现在**能不能做这件事"，而不是"这份代码支持不支持"。
          *     客户端按它决定摆哪些入口；**不认识的字段忽略、不认识的能力位就不摆**——
@@ -3310,13 +3310,13 @@ export interface components {
         };
         /**
          * ProviderHandshakeOut
-         * @description 知识库提供者握手（方案 §1.2）。
+         * @description 知识库提供者握手（方式 1.2）。
          *
          *     一次调用回答三件事：**连通且凭据有效**（否则根本到不了这里——凭据问题走 401/403，
          *     见 `api/v1/provider.py` 的模块头）、**这台提供者能做什么**、**我能用哪些库**。
          *
          *     **响应体里没有"凭据错"这类字段**：那是 HTTP 状态码 + 统一错误信封的事
-         *     （规范 §1.3）。客户端据此把"改钥匙"与"改地址"分成两档——一次连不上变成
+         *     （规范 1.3）。客户端据此把"改钥匙"与"改地址"分成两档——一次连不上变成
          *     一句"凭据无效"是最让人绕路的一种错。
          */
         ProviderHandshakeOut: {
@@ -3330,7 +3330,7 @@ export interface components {
              * @description **握手协议版本**：整数、只增。
              *
              *     M3 的值是 ``1``。客户端规则：**不认识（大于自己所知）即判不可用**，
-             *     原因句子里带上版本号，**绝不硬试**（方案 §1.2 裁量 3）——一个"试着发一条
+             *     原因句子里带上版本号，**绝不硬试**（方式 1.2 裁量 3）——一个"试着发一条
              *     请求看看能不能用"的实现会把新协议的语义错误当成网络故障。
              */
             protocol_version: number;
@@ -3350,7 +3350,7 @@ export interface components {
             caller: components["schemas"]["ProviderCallerOut"];
             /**
              * Knowledge Bases
-             * @description **这次调用看得见**的库（受限 key 只看到范围内的：方案 R9 要防的元信息泄露）。
+             * @description **这次调用看得见**的库（受限 key 只看到范围内的：方式 R9 要防的元信息泄露）。
              */
             knowledge_bases?: components["schemas"]["ProviderKbBriefOut"][];
             /**
@@ -3384,7 +3384,7 @@ export interface components {
             /**
              * Dedup
              * @description 去重口径：``content_hash`` = 同一份内容重复上传回 ``is_duplicate=true``，
-             *     不会入两份（幂等键 ``Idempotency-Key`` 是另一件事，见规范 §1.6）。
+             *     不会入两份（幂等键 ``Idempotency-Key`` 是另一件事，见规范 1.6）。
              * @default
              */
             dedup: string;
@@ -4047,7 +4047,7 @@ export interface components {
         };
         /**
          * SystemLoadOut
-         * @description 负载面板（§12.115）：CPU / 内存 / 队列 / 槽位 / 云端额度。
+         * @description 负载面板（12.115）：CPU / 内存 / 队列 / 槽位 / 云端额度。
          */
         SystemLoadOut: {
             hardware: components["schemas"]["HardwareLoadOut"];
@@ -4308,7 +4308,7 @@ export interface components {
         };
         /**
          * UploadAccepted
-         * @description 上传响应。``is_duplicate`` 对应架构 §6.3 的"检测到相同文件"提醒。
+         * @description 上传响应。``is_duplicate`` 对应架构 6.3 的"检测到相同文件"提醒。
          */
         UploadAccepted: {
             document: components["schemas"]["DocumentOut"];
@@ -5337,7 +5337,7 @@ export interface operations {
                 folder_id?: string | null;
             };
             header?: {
-                /** @description 可选。带上它则同一键的重试不会产生第二份文档（架构 §3.2） */
+                /** @description 可选。带上它则同一键的重试不会产生第二份文档（架构 3.2） */
                 "Idempotency-Key"?: string | null;
                 /** @description 可选。使用者名册里的 id（形如 user_xxx），记录是谁传的（G6）。不参与鉴权。**用 id 而不是名字**：HTTP 头只能是 ASCII，而名字可能是中文（实测浏览器与 curl 都会报编码错） */
                 "X-Kylab-Operator"?: string | null;

@@ -1,4 +1,4 @@
-"""``TabularStore`` 的 DuckDB 实现（M2 / T2.11）。
+"""``TabularStore`` 的 DuckDB 实现（ / ）。
 
 **为什么是列式库而不是又一张 SQLite 表**：见 ``storage/base.py`` 里
 ``TabularStore`` 的说明——按行列定位的查询、与主库物理分离。
@@ -38,7 +38,7 @@ def _duckdb() -> Any:
     """第一次建连接时才导入 duckdb（模块级导入会让**客户端运行时**凭空多背一份 ×）。
 
     为什么惰性：这个模块挂在 ``app.storage`` 的导入链上 √，而"表格副本"（DuckDB 文件）
-    只有**服务器**的导出/表格那条链会碰 √ —— 边车（客户端运行时）跑循环 + 工具 + 沙箱 √，
+    只有**服务器**的导出/表格那条链会碰 √ —— 旧版客户端（客户端运行时）跑循环 + 工具 + 沙箱 √，
     从不落表格副本。模块级 ``import duckdb`` 的后果实测过（P4-3，2026-09-29）：
     ``dist\\sidecar-runtime`` 里少一份 duckdb 就 ``ModuleNotFoundError`` ×。
 

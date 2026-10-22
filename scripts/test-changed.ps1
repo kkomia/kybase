@@ -1,9 +1,9 @@
-﻿# 只跑"这次改动影响到的"用例——工程规范 §5.2.1 那条内环纪律的可执行版本。
+﻿# 只跑"这次改动影响到的"用例——分层规则 5.2.1 那条内环纪律的可执行版本。
 #
 # （与 test-changed.sh 同一份逻辑：判定在 scripts/affected_tests.py 里，两个壳只负责
 #   找解释器、借测试库、把参数原样传下去。）
 #
-# 分工（与规范 §5.2.1 那张表一致，**不改变标准**）：
+# 分工（与规范 5.2.1 那张表一致，**不改变标准**）：
 #   内环（写代码 → 看行为）  →  powershell -File scripts\test-changed.ps1
 #   一个大版块收尾 / 交付前  →  scripts\check-backend.ps1 && scripts\check-frontend.ps1
 #   CI                       →  全量（裁判地位不受影响）

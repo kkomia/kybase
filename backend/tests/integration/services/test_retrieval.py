@@ -104,7 +104,7 @@ def test_hybrid_search_finds_relevant_document(seeded: StoreBundle,
 
 def test_hits_carry_source_metadata_for_the_console(seeded: StoreBundle,
                                                     retrieval: RetrievalService) -> None:
-    """调试台要显示来源文档、页码、相似度（架构 §3.3）。"""
+    """调试台要显示来源文档、页码、相似度（架构 3.3）。"""
     hit = retrieval.search(RetrievalQuery(query="sqlite-vec 分区", kb_ids=["kb_1"])).hits[0]
 
     assert hit.document_name
@@ -170,7 +170,7 @@ def test_injected_query_vector_is_used(seeded: StoreBundle,
 
 def test_results_are_scoped_to_requested_kbs(seeded: StoreBundle,
                                             retrieval: RetrievalService) -> None:
-    """架构 §8.3：检索先按 kb_id 收敛范围，不同库互不串味。"""
+    """架构 8.3：检索先按 kb_id 收敛范围，不同库互不串味。"""
     kb_1 = retrieval.search(RetrievalQuery(query="Docker Compose 部署", kb_ids=["kb_1"]))
     kb_2 = retrieval.search(RetrievalQuery(query="Docker Compose 部署", kb_ids=["kb_2"]))
 
@@ -376,7 +376,7 @@ def test_rerank_not_requested_is_skipped(seeded: StoreBundle,
 
 def test_rerank_failure_degrades_to_rrf_order(seeded: StoreBundle,
                                               embedder: DeterministicEmbedder) -> None:
-    """rerank 是可选增强：它挂了不能把整次检索也拖挂（架构 §5）。"""
+    """rerank 是可选增强：它挂了不能把整次检索也拖挂（架构 5）。"""
     baseline = RetrievalService(seeded, embedder=embedder, reranker=NoopReranker())
     degraded = RetrievalService(seeded, embedder=embedder, reranker=_FakeReranker(fail=True))
 
@@ -773,7 +773,7 @@ def test_vector_mode_without_candidates_does_not_judge(
 
 # ------------------------------------------------- 相关度地板：比的是余弦，不是名次分
 #
-# 现场（方案 14，真机实测）：一条明显不相关的查询照样回满 top_k=8，而向量第 1 名的
+# 现场（方式 14，真机实测）：一条明显不相关的查询照样回满 top_k=8，而向量第 1 名的
 # `score` 恒为 0.0164（hybrid 档 0.0328）——那是**名次分**（``1/(k+rank)``）。
 # 所以必须钉住两件事：
 #   1. 地板比的是**真实余弦**（``similarity`` / ``raw_scores['vector']``）；

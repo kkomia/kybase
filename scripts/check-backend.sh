@@ -2,7 +2,7 @@
 # 后端门禁（**只改后端时跑这一个**）：ruff + 分层纪律 + emoji + API 类型核对 + pytest
 #
 # 用法：sh scripts/check-backend.sh
-# 范围纪律见 scripts/check-frontend.sh 的说明与开发计划 §12.24。
+# 范围纪律见 scripts/check-frontend.sh 的说明与开发记录 12.24。
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -39,14 +39,14 @@ step "ruff" sh -c "cd '$ROOT/backend' && uv run ruff check app/ tests/"
 step "emoji 扫描（后端）" "$PY" "$ROOT/scripts/scan_emoji.py" "$ROOT/backend/app"
 step "结构性规范（分层 / 测试位置 / 界面文案 / 版本号）" "$PY" "$ROOT/scripts/check_layering.py" "$ROOT"
 # **没有域间引用检查**（原先那一步跑 scripts/check_domains.py）：它守的是"KB 域 ↔ Agent 域
-# 不许互引"那张归属表（架构设计 §3.1），而本仓只剩 KB 域——名单里的 Agent 侧模块
+# 不许互引"那张归属表（设计 3.1），而本仓只剩 KB 域——名单里的 调用方模块
 # （app.services.chat / skill* / sandbox / app.api.v1.local / app.storage.sqlite_impl …）
 # 整族已删，跑起来只是围着不存在的模块报旧账，还会往 docs/计划与记录/ 写一份本仓没有的
 # 报告目录。分层引用方向本身由上面那条 check_layering.py 全量守着（L1–L6 覆盖
 # api / services / storage / parsers），所以连一个退化的域检查都不留：重复的门禁
 # 只会多一处要跟着仓库形态改的地方。
 if [ -x "$VENV_PY" ]; then
-    # **不生成《API 接口规范》**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文
+    # **不生成接口规则**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文
     # 是 kylab 时代的（整段讲技能分类 / 精选），落点 docs/规范/ 本仓也没有，跑一次就是
     # FileNotFoundError。接口事实的权威处是运行中的 /api/v1/openapi.json；真要维护一份
     # kybase 版规范，先改那个脚本的正文与落点再把它接回来。

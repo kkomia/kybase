@@ -1,4 +1,4 @@
-"""FastAPI 入口（工程规范 §3.1）。"""
+"""FastAPI 入口（分层规则 3.1）。"""
 
 import asyncio
 import logging
@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
         logger.warning("日志文件建不出来，本次只输出到控制台", exc_info=True)
 
     app = FastAPI(
-        title="KYLAB 知识库服务",
+        title="kybase 知识库服务",
         version=settings.app_version,
         docs_url=f"/api/{API_VERSION}/docs",
         redoc_url=f"/api/{API_VERSION}/redoc",
@@ -100,8 +100,8 @@ def create_app() -> FastAPI:
         # FastAPI 默认会注册 /docs/oauth2-redirect，不带版本前缀，必须显式归位
         swagger_ui_oauth2_redirect_url=f"/api/{API_VERSION}/docs/oauth2-redirect",
         description=(
-            "轻量知识库产品（架构设计 v0.2）。"
-            "产品边界：对外只返回检索结果原文，不做任何 LLM 预处理。"
+            "自托管知识库服务。"
+            "对外只返回检索结果原文，不做 LLM 预处理。"
         ),
         lifespan=lifespan,
     )
@@ -113,8 +113,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     register_exception_handlers(app)
-    # **只有一张路由表**（v0.1.0 瘦身）：原先按部署档挂 ``api_router`` / ``local_router``
-    # 两张表，而本机档那一张已随边车一起拆除——这一份就是知识库服务对外的那张表。
+    # **只有一张路由表**（v0.1.0 精简）：原先按部署档挂 ``api_router`` / ``local_router``
+    # 两张表，而旧版那一张已随旧版客户端一起拆除——这一份就是知识库服务对外的那张表。
     app.include_router(api_router, prefix=f"/api/{API_VERSION}")
     return app
 

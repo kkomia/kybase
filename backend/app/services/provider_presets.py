@@ -102,8 +102,8 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
             PresetModel("deepseek-ai/DeepSeek-V4-Flash", "DeepSeek V4 Flash"),
             PresetModel("zai-org/GLM-5.2", "GLM-5.2"),
             PresetModel("Qwen/Qwen3.6-27B", "Qwen3.6 27B"),
-            PresetModel("BAAI/bge-m3", "BGE-M3", ("embedding",), 1024),
-            PresetModel("BAAI/bge-reranker-v2-m3", "BGE Reranker v2 M3", ("rerank",), None),
+            PresetModel("BAAI/bge-m3", "BGE-", ("embedding",), 1024),
+            PresetModel("BAAI/bge-reranker-v2-m3", "BGE Reranker v2 ", ("rerank",), None),
         ),
     ),
     ProviderPreset(

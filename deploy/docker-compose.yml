@@ -72,7 +72,7 @@ services:
     volumes:
       - kybase-objects:/data
     ports:
-      # 控制台只在宿主机本机可达；S3 API 端口供 compose 网络内的后端使用
+      # 控制台只在宿主机本地可达；S3 API 端口供 compose 网络内的后端使用
       - "127.0.0.1:${KYLAB_MINIO_CONSOLE_PORT:-9001}:9001"
       - "127.0.0.1:${KYLAB_MINIO_PORT:-9000}:9000"
     healthcheck:

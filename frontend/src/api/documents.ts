@@ -1,7 +1,7 @@
 /**
  * 文档接口（对应后端 /api/v1/knowledge-bases/{kb}/documents 与 /documents/{id}）。
  *
- * `stage` 是后端流水线状态机（架构 §4），前端只做展示映射，不自己发明状态值。
+ * `stage` 是后端流水线状态机（架构 4），前端只做展示映射，不自己发明状态值。
  */
 
 import { request, upload } from './client'
@@ -32,7 +32,7 @@ export type DocumentSummary = Omit<DocumentOut, 'original_kind'> & {
 }
 
 /**
- * 列表行上那条分段进度所需要的信息（§12.115）——契约同样来自后端。
+ * 列表行上那条分段进度所需要的信息（12.115）——契约同样来自后端。
  *
  * 字段含义（为什么**没有百分比**、`stalled` 为什么是最可信的那条判据等）
  * 写在 `./schema.d.ts` 里带过来的说明中，后端改一处两边都变。
@@ -56,7 +56,7 @@ export interface DocumentChunk {
   heading_path: string | null
   page: number | null
   image_ids: string[]
-  /** 被禁用的块不再参与检索，但仍在库里（§G3）。 */
+  /** 被禁用的块不再参与检索，但仍在库里（G3）。 */
   disabled: boolean
   /** 入库时为这一段生成的问题（v23）。只读展示——用来判断"出题质量如何"。 */
   questions: string[]
@@ -145,7 +145,7 @@ export function listDocumentParts(documentId: string): Promise<{ items: Document
 }
 
 /**
- * 处理进度时间线（§12.115 的「处理明细」）。
+ * 处理进度时间线（12.115 的「处理明细」）。
  *
  * 与列表行上的 `progress` 是**同一份数据的两种粒度**：列表要"第几步"，
  * 抽屉要"每一步各花了多久、重试过几次、在哪一步停的"。
@@ -184,7 +184,7 @@ export function listDocumentChunks(documentId: string, limit = 5): Promise<Chunk
 }
 
 /**
- * 切块的人工干预（调研报告 G3）——改正文、禁用、删除。
+ * 切块的人工干预（调研 G3）——改正文、禁用、删除。
  *
  * **刻意用 `(documentId, ordinal)` 而不是 `chunk_id` 寻址**：chunk_id 形如
  * `doc_xxx#00000`，里面的 `#` 是 URL 的片段分隔符。直接拼进路径会被截断，

@@ -1,6 +1,6 @@
 """统一领域异常与错误响应映射。
 
-分层约定（工程规范 §3.3）：``api/`` 与 ``mcp_server/`` 不写业务判断；
+分层规则（分层规则 3.3）：``api/`` 与 ``mcp_server/`` 不写业务判断；
 业务错误一律以本模块的领域异常从 ``services/`` 抛出，由处理器统一转成响应体。
 """
 
@@ -52,9 +52,9 @@ class InvalidRequestError(KylabError):
 
 
 class BadRequestError(InvalidRequestError):
-    """请求本身就不对（**400 那一档**，M5 阶段 1 加的）。
+    """请求本身就不对（**400 那一档**， 阶段 1 加的）。
 
-    与父类只差状态码，``code`` 仍是 ``invalid_request``（《API 接口规范》§1.3 那两档
+    与父类只差状态码，``code`` 仍是 ``invalid_request``（接口规则1.3 那两档
     本来就是同一个码的两种状态：422 是"字段校验没过"，400 是"请求形状对、内容与事实对不上"）。
     用它的是备份上传那两条：**sha256 / bytes 与实收不符**（服务端边收边算，对不上就拒收）、
     以及路径段与清单归属那类"这个请求描述的东西本身不成立"。
@@ -111,8 +111,8 @@ class EmbeddingError(Exception):
     被 ingest / retrieval / queue_worker 就地捕获并改写成任务失败状态，
     改基类会同时改掉异常信封与各处 ``except`` 的行为。
 
-    **为什么住在这里而不是 ``services/embedding/base.py``**（2026-10-08 剥离阶段 0）：
-    Agent 侧的 `services/failures.py` 要把"向量化失败"翻成用户能读懂的一句话，
+    **为什么住在这里而不是 ``services/embedding/base.py``**（2026-10-08 早期 0）：
+    调用方的 `services/failures.py` 要把"向量化失败"翻成用户能读懂的一句话，
     而它是**按类型**分档的（``EmbeddingNotConfiguredError`` 先于 ``EmbeddingError``）——
     类型搬走就翻不了，复制一份又会让 ``isinstance`` 落空。
     故按本模块既有的那条约定（``SecretStoreUnavailable`` 同一个理由）：
@@ -137,7 +137,7 @@ class EmbeddingNotConfiguredError(EmbeddingError):
 
 
 class SecretStoreUnavailable(KylabError):
-    """系统钥匙串现在用不上（M5 阶段 6，方案 §4.1 的第二条口径）。
+    """系统钥匙串现在用不上（ 阶段 6，方式 4.1 的第二条口径）。
 
     **503 而不是 500**：这台机器**没有**系统钥匙串（Linux 桌面 / 容器里 / CI），
     这是"这个部署现在没有这个能力"，不是"我们出错了"——500 会把"凭据只能留在本机库里"
@@ -145,11 +145,11 @@ class SecretStoreUnavailable(KylabError):
 
     它同时是**写不进去**时的失败信号：``SecretStore.set`` 在不可用时抛它，
     而调用方（迁移器、设置写入路径）**绝不因此把秘密写回明文**——写不了就如实报，
-    让用户决定（方案 §4.3-5：不清明文 = 不算迁完）。
+    让用户决定（方式 4.3-5：不清明文 = 不算迁完）。
 
     为什么住在这里而不是 ``services/secrets.py``：本仓的领域异常一律住这个模块
-    （见文件头那条分层约定），而"HTTP 状态码 + code"这套信封也在这里——服务层只抛类，
-    协议层不写映射。``services/secrets.py`` 会再导出一次，方案里那个落点仍然成立。
+    （见文件头那条分层规则），而"HTTP 状态码 + code"这套信封也在这里——服务层只抛类，
+    协议层不写映射。``services/secrets.py`` 会再导出一次，方式里那个落点仍然成立。
     """
 
     code = "secret_store_unavailable"
@@ -163,7 +163,7 @@ class SecretTooLarge(InvalidRequestError):
     截断是最坏的一种处置：它写进去一个"看起来存下来了"的半个钥匙，而用户要等到
     某次调用失败才会发现。422 的语义（"把内容改对再来"）在这里正好：用更短的那种令牌。
 
-    用它的主要是 MCP 那类"整段 env / headers"的值（方案 §4.2 把它们列为"只登记不迁"，
+    用它的主要是 MCP 那类"整段 env / headers"的值（方式 4.2 把它们列为"只登记不迁"，
     技术理由之一就是这条上限）。
     """
 
@@ -178,7 +178,7 @@ class ServiceUnavailableError(KylabError):
 
     - **401** 的意思是"你是谁我不知道 / 你的凭据不对"，前端据此**跳登录页**——那是设计；
     - 而"这台机器还没有下载签名密钥"是**我们这边没配好**：用户没做错任何事，把他踢到
-      登录页只会让他以为账号出了问题（桌面壳里实测到的那次就是这样：点一张产物卡片的
+      登录页只会让他以为账号出了问题（客户端里实测到的那次就是这样：点一张产物卡片的
       预览，人直接被弹到登录页）。
     - 也不是 500：500 会把"缺一件事、补上/重试就好"这条出路藏起来。
 
@@ -206,8 +206,8 @@ class UnauthorizedError(KylabError):
 
     def __init__(self, message: str | None = None) -> None:
         super().__init__(message)
-        # RFC 7235：401 必须带 WWW-Authenticate，否则客户端不知道该用哪种方案
-        self.headers = {"WWW-Authenticate": 'Bearer realm="kylab"'}
+        # RFC 7235：401 必须带 WWW-Authenticate，否则客户端不知道该用哪种方式
+        self.headers = {"WWW-Authenticate": 'Bearer realm="kybase"'}
 
 
 class ForbiddenError(KylabError):
@@ -310,7 +310,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
-        """**兜底：没被认领的异常也要留下完整栈**（D16，2026-09-29 实测的洞）。
+        """**兜底：没被认领的异常也要留下完整栈**（，2026-09-29 实测的洞）。
 
         之前 500 只回一句 ``Internal Server Error``、日志里**一条 traceback 都没有** ——
         "报错但没有栈"等于没法排障（那次排查只能靠排除法，代价很大）。

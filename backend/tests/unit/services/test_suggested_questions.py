@@ -381,7 +381,7 @@ def test_batches_are_sent_concurrently(bundle, kb, document) -> None:  # type: i
     """**批与批要并发发**：出题是摄入链路里最慢的一步，而这些调用在等远端。
 
     实机量级：一份 400 段的文档 = 50 批，每批一次模型调用（思考型模型 1~2 分钟），
-    串行就是 50~100 分钟，还把后面排队的所有文档一起堵住（§12.113）。
+    串行就是 50~100 分钟，还把后面排队的所有文档一起堵住（12.113）。
     """
     _seed_chunks(bundle, kb.id, document.id, count=_CHUNKS_PER_CALL * 4)
     chat = SlowChat(delay=0.08)

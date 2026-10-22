@@ -1,10 +1,10 @@
 /**
- * 知识库详情页：文档列表（《前端设计规范》§6）——旧 `views/KnowledgeBaseView.vue` 逐条对齐。
+ * 知识库详情页：文档列表（界面规则6）——旧 `views/KnowledgeBaseView.vue` 逐条对齐。
  *
  * 形态：文档是"条目型"对象且会很多，用**列表**而不是卡片。
  * 每行 = 类型图标 + 名称 + 状态（文字 + 语义色）+ 时间；大文件可展开子文件树。
  *
- * 上传走"提交后轮询"：后端是异步流水线（架构 §4），界面必须能看见任务在动，
+ * 上传走"提交后轮询"：后端是异步流水线（架构 4），界面必须能看见任务在动，
  * 否则用户会以为"点了没反应"。
  *
  * 与旧实现一致的三处关键约定：
@@ -416,7 +416,7 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
   const hasActive = documents.some((item) => ACTIVE_STAGES.has(item.stage))
   /** 出题任务不改变文档阶段，`hasActive` 看不到它，必须单列（否则"点了没反应"）。 */
   const questionsPending = documents.some((item) => item.questions_pending)
-  // 轮询规则**一个字都没动**（§4.3-⑤）：还是只看"有没有在跑的活儿"
+  // 轮询规则**一个字都没动**（4.3-⑤）：还是只看"有没有在跑的活儿"
   usePolling(loadDocuments, {
     active: hasActive || questionsPending,
     intervalMs: POLL_INTERVAL_MS,
@@ -859,7 +859,7 @@ export function KnowledgeBaseView({ kbId: kbIdProp }: KnowledgeBaseViewProps) {
         其中「上传文档」是这一页的主动作（进库之后大多数人的下一步就是往里放东西）。
 
         齿轮留在标题同一行、**不给标题 `flex: 1`**——它是"这个库本身"的入口，
-        放进右侧动作区会被读成"页面的动作"（对照记录 §3 第 3 条）。
+        放进右侧动作区会被读成"页面的动作"（对照记录 3 第 3 条）。
       */}
       <header className="m-page-head">
         <div className="m-page-heading kb-title-row">

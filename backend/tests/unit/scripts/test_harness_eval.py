@@ -103,7 +103,7 @@ def test_the_rubric_actually_judges() -> None:
 def test_a_case_that_should_deliver_and_does_not_is_red() -> None:
     """K-03（要求"把图给我"）：没交付 → 不过；交付了 png → 过。
 
-    这条钉的正是 §12.338 里 K-03 交白卷的那个缺口——**交付物数量是判据的一部分**。
+    这条钉的正是 12.338 里 K-03 交白卷的那个缺口——**交付物数量是判据的一部分**。
     """
     no_delivery = harness_eval.score_trace(_trace("K-03", tools=["run_command"]))
     delivered = harness_eval.score_trace(
@@ -117,7 +117,7 @@ def test_a_case_that_should_deliver_and_does_not_is_red() -> None:
 
 def test_g03_prefers_the_tool_over_the_sandbox() -> None:
     """G-03 的判据里有一条"**零 run_command**"：带图表的表该用 export_table 做，
-    不该去沙箱里硬造（§12.338 里这一条绕了 80 步）。"""
+    不该去沙箱里硬造（12.338 里这一条绕了 80 步）。"""
     good = harness_eval.score_trace(_trace("G-03", tools=["export_table"], artifacts=["q.xlsx"]))
     detour = harness_eval.score_trace(
         _trace("G-03", tools=["run_command", "export_file"], artifacts=["q.xlsx"])
@@ -149,7 +149,7 @@ def test_harness_name_changes_with_the_config() -> None:
 
     摘要不变就意味着两份记分卡会顶着同一个名字比——而它们本来不是同一个 harness。
     原先摘要里还带着从 `tool_loop.py` 读出的步数与墙钟预算（改一个数字就换 harness），
-    那个文件随 Agent 侧代码拆除了；现在这一档由**配置项本身**代表。
+    那个文件随 调用方代码拆除了；现在这一档由**配置项本身**代表。
     """
     baseline = harness_eval.config_digest({"model_pk": "m1", "thinking_effort": "medium"})
     changed = harness_eval.config_digest({"model_pk": "m1", "thinking_effort": "high"})
@@ -184,7 +184,7 @@ def test_scorecard_keeps_the_spread_and_the_conversation_ids() -> None:
     item = card["cases"][0]
 
     # 一次工具调用会发 running + done 两条 step，所以"工具次数"是 2 / 4
-    # （与 §12.338 那批实测口径一致：那里数的是 step 事件）
+    # （与 12.338 那批实测口径一致：那里数的是 step 事件）
     assert item["tool_calls"] == {"min": 2, "median": 3.0, "max": 4}
     # 去掉 running 占位之后是"真正几次调用"：1 次与 2 次
     assert item["steps"] == {"min": 1, "median": 1.5, "max": 2}

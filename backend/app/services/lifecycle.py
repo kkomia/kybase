@@ -1,6 +1,6 @@
-"""数据生命周期：影响清单、级联删除、回收站（M6 / T6.3、T6.4）。
+"""数据生命周期：影响清单、级联删除、回收站（ / 、）。
 
-**这是计划里欠得最久的一块。** 存储层从 M1 起就有 ``trash`` 表、
+**这是计划里欠得最久的一块。** 存储层从  起就有 ``trash`` 表、
 ``move_to_trash``、``purge_expired_trash``，但**从来没有任何调用者**：
 接口层连一个 ``DELETE /documents/{id}`` 都没有。于是：
 - 用户传错一份文档只能看着它留在库里；
@@ -12,10 +12,10 @@
 **为什么删除不是"一步到位"**：知识库下面挂着文档、切块、向量、全文索引、对象
 存储里的原文与产物、以及未跑完的任务。删错一个库可能连带几百份文档——
 所以先把"会删掉什么"算清楚给用户看（``impact_of_*``），再动手。
-这是《界面信息架构草案》§2 里"破坏性动作必须二次确认"的后端一半。
+这是《界面信息架构草案》2 里"破坏性动作必须二次确认"的后端一半。
 
 **为什么放过期而不是立刻抹掉**：删错是常事，而原文一旦删掉就只能重新上传。
-保留 7 天（架构 §6.2）几乎零成本——对象存储里挪个文件而已。
+保留 7 天（架构 6.2）几乎零成本——对象存储里挪个文件而已。
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ __all__ = ["TRASH_RETENTION_DAYS", "ImpactReport", "LifecycleService"]
 
 logger = logging.getLogger(__name__)
 
-#: 回收站保留天数（架构 §6.2 "原文保留 7 天冷备"）。
+#: 回收站保留天数（架构 6.2 "原文保留 7 天冷备"）。
 TRASH_RETENTION_DAYS = 7
 
 @dataclass(slots=True)
@@ -80,7 +80,7 @@ class LifecycleService:
         notifier: Callable[[str, dict], None] | None = None,
     ) -> None:
         self._stores = stores
-        # Webhook 是旁路（T4.6）：默认什么都不做，组合根才接上它。
+        # Webhook 是旁路（）：默认什么都不做，组合根才接上它。
         # 与摄入那边同一个形状——通知失败不该影响删除本身
         self._notify = notifier or (lambda event, payload: None)
 

@@ -1,6 +1,6 @@
 """``FullTextStore`` 的行为测试（集成）。
 
-覆盖架构 §5 的全文召回路径：chunk 写入索引、中文可检索、按库收敛、与图片锚点回填。
+覆盖架构 5 的全文召回路径：chunk 写入索引、中文可检索、按库收敛、与图片锚点回填。
 
 需要 PostgreSQL 测试库（``KYLAB_TEST_DATABASE_URL``），未配置则整文件跳过。
 """
@@ -77,7 +77,7 @@ def test_scores_are_positive_and_sorted_desc(store: MetaStore,
 
 def test_kb_filter_scopes_results(store: MetaStore, fulltext_store: FullTextStore,
                                   kb) -> None:
-    """架构 §5：元数据过滤要能按知识库收敛。"""
+    """架构 5：元数据过滤要能按知识库收敛。"""
     store.create_knowledge_base(
         KnowledgeBaseRecord(id="kb_2", name="第二库", embedding_model_id="m", embedding_dim=4)
     )
@@ -120,7 +120,7 @@ def test_delete_chunks_removes_from_index(store: MetaStore,
 def test_image_anchors_are_returned_with_hits(store: MetaStore,
                                               fulltext_store: FullTextStore, kb,
                                               document) -> None:
-    """架构 §7：命中含图段落时要把图片引用带出来。"""
+    """架构 7：命中含图段落时要把图片引用带出来。"""
     _seed(store, fulltext_store, [_chunk("c1", 0, "如图所示，架构分层", image_ids=("img_1",))])
 
     hits = fulltext_store.search(query="架构分层", top_k=5)

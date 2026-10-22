@@ -82,7 +82,7 @@ def test_generative_services_all_go_through_the_same_llm_entry(bundle) -> None: 
 
 
 def test_worker_pool_size_follows_the_concurrency_setting(bundle) -> None:  # type: ignore[no-untyped-def]
-    """``KYLAB_WORKER_CONCURRENCY`` 决定**进程里有几个消费者**（§12.115）。
+    """``KYLAB_WORKER_CONCURRENCY`` 决定**进程里有几个消费者**（12.115）。
 
     钉三件事，每一件写错了都会很安静：数量、owner 互不相同、面板上的槽位与它同源。
     **owner 必须互不相同**：租约按 owner 校验，同名会让两个消费者互相认领对方的租约
@@ -115,8 +115,8 @@ def test_single_worker_is_the_default(bundle) -> None:  # type: ignore[no-untype
 def test_the_pipeline_is_the_real_one(bundle, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """**摄入流水线是进程内那套真服务**（M3 阶段 3 / R11）。
 
-    本机档在组合根里曾把 `ingest` / `documents` 换成两个"打远端"的窄网关，
-    那一整支随边车拆除了——这一条钉住"换线没有以任何形式漏回来"：
+    旧版在组合根里曾把 `ingest` / `documents` 换成两个"打远端"的窄网关，
+    那一整支随旧版客户端拆除了——这一条钉住"换线没有以任何形式漏回来"：
 
     - `Services.ingest` / `Services.documents` 是真服务（不是只有 `submit` 的窄视图）；
     - 数据源与批量动作拿到的也是它们（一份实现，不是各建各的）。

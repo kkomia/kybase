@@ -4,7 +4,7 @@
 
 `httpx/__init__.py` 里有 ``from ._main import main``（httpx 自带的 CLI 入口）——
 于是**任何** ``import httpx`` 都会顺带把 ``click`` + ``pygments`` + ``rich`` 拉进来
-（实测约 5.5 MB）。而**客户端运行时（本地边车）**只需要 httpx"发请求"那一部分能力，
+（实测约 5.5 MB）。而**客户端运行时（本地旧版客户端）**只需要 httpx"发请求"那一部分能力，
 不该为它背一套 CLI 依赖 ×。
 
 ## 怎么用

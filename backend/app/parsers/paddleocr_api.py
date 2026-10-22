@@ -1,4 +1,4 @@
-"""PaddleOCR-VL 云端解析（M2 T2.5）。
+"""PaddleOCR-VL 云端解析（ ）。
 
 接口来自官方示例（``paddleocr.aistudio-app.com/api/v2/ocr/jobs``），是**异步任务**模式：
 
@@ -11,12 +11,12 @@
    ``markdown.images`` 是"相对路径 → 图片 URL"的映射，需要自己下载。
 
 为什么两个云端解析器都留着：MinerU 强在版面还原与公式表格，PaddleOCR 是**另一条独立通道**——
-架构 §4.1 要求"云端失败可降级备选节点"，同一份文件换一个引擎成功率会明显不同。
+架构 4.1 要求"云端失败可降级备选节点"，同一份文件换一个引擎成功率会明显不同。
 
 关键提醒（官方示例里踩过的坑）：``multipart`` 的 ``optionalPayload`` 必须是 **JSON 字符串**，
 传 dict 会被当成字段展开而报错。
 
-实现只依赖 ``parsers/base.py`` 的 ``ParseResult``（工程规范 §3.3 的 L3 规则），
+实现只依赖 ``parsers/base.py`` 的 ``ParseResult``（分层规则 3.3 的 L3 规则），
 外加 ``core/page_markers.py`` 这个纯文本工具（core 是共享层，不违反插件层纪律）。
 """
 

@@ -1,12 +1,12 @@
-"""异步任务消费者（M2 T2.2 的调度侧）。
+"""异步任务消费者（  的调度侧）。
 
-把 SQLite 任务表当成队列用（架构 §2.1：不引入 Redis，重启可恢复）：
+把 SQLite 任务表当成队列用（架构 2.1：不引入 Redis，重启可恢复）：
 
 - **领取是原子单语句**（见 ``MetaStore.claim_task``），多个 worker 不会双领；
 - **执行期间持续续租**：解析可能跑几分钟，租约到期被别人回收就会重复干活；
 - **长任务放线程池**：摄入是同步阻塞逻辑，直接在事件循环里跑会卡住所有 API 请求
-  （这正是计划风险登记册 R5 提到的"云端解析轮询拖垮单进程 asyncio"）；
-- **失败按指数退避重回队列**，超过 ``max_attempts`` 才判终态失败（架构 §4）。
+  （这正是计划风险登记册  提到的"云端解析轮询拖垮单进程 asyncio"）；
+- **失败按指数退避重回队列**，超过 ``max_attempts`` 才判终态失败（架构 4）。
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ DEFAULT_WATCHDOG_INTERVAL = 60.0
 """入库看门狗扫描间隔（秒）。
 
 一分钟一次：看门狗的门槛是 `ingest.STALL_SECONDS`（4 分钟），再加上这个间隔，
-一份卡住的文档最迟 **5 分钟**被发现——与方案 8 要的"≤5 分钟自动完成或失败"对齐。
+一份卡住的文档最迟 **5 分钟**被发现——与方式 8 要的"≤5 分钟自动完成或失败"对齐。
 比这更勤没有意义（判定门槛是分钟级），更懒则会把"最迟多久被发现"顶到 5 分钟以上。"""
 
 DEFAULT_SUMMARY_INTERVAL = 30.0
@@ -98,7 +98,7 @@ class TaskWorker:
         #: 传 None 表示不做维护——测试与只跑单任务的场景用得上。
         self._maintain = maintain
         self._maintain_interval = maintain_interval
-        # 数据源拉取的执行体（M6 / T6.1）。可选：没有它时 FETCH_SOURCE 任务会
+        # 数据源拉取的执行体（ / ）。可选：没有它时 FETCH_SOURCE 任务会
         # 明确失败，而不是被静默丢掉——静默丢掉会让"拉取一直没反应"极难排查
         self._sync_source = sync_source
         # Wiki 重建（v24）。同样是可选回调：没接上时 WIKI 任务明确失败，
@@ -279,7 +279,7 @@ class TaskWorker:
     def _reclaim_expired(self, *, force: bool = False) -> None:
         """把租约过期、还写着 ``running`` 的任务回收掉（回到队列或判失败）。
 
-        **这是断点续跑的兜底那一环**：架构 §4 承诺"进程崩溃后超时任务回到 PENDING"，
+        **这是断点续跑的兜底那一环**：架构 4 承诺"进程崩溃后超时任务回到 PENDING"，
         而它过去只写在 ``MetaStore.reclaim_expired_tasks`` 与文档里，**生产代码里没有
         任何调用者**——于是任何被中断的任务都永远停在 running：既不会被重试，
         也不会失败，文档就永远钉在 parsing/chunking 上。实测有一篇这样挂了 8 小时。
@@ -410,11 +410,11 @@ class TaskWorker:
             self._compile_wiki(kb_id)
             return
         if task.kind is TaskKind.SCHEDULED:
-            # 定时任务是 Agent 侧的产品面，随 2026-10-20 的数据分家一起删掉了。
+            # 定时任务是 调用方的产品面，随 2026-10-20 的数据拆分一起删掉了。
             # 枚举值还留着（旧库的 tasks 行可能还是它，删枚举会让读行直接抛错），
             # 但这里**明确失败**而不是静默跳过——跳过会让"到点了什么都没发生"变成
             # 一个查不出原因的现象。
-            raise NotImplementedError("定时任务已随 Agent 侧拆除，不再有执行体")
+            raise NotImplementedError("定时任务已随 调用方拆除，不再有执行体")
         if task.kind is TaskKind.QUESTIONS:
             # 补出题不走摄入阶段机（文档已 indexed，只读现有块），所以**不能**
             # 落进下面那条 `self._ingest.ingest(...)`——那会按断点续跑规则什么也不做。
@@ -429,7 +429,7 @@ class TaskWorker:
         self._ingest.ingest(task.document_id)
 
     def _handle_source(self, task: TaskRecord) -> None:
-        """拉取一个数据源（M6 / T6.1）。
+        """拉取一个数据源（ / ）。
 
         **它没有 document_id**，所以不能走上面那条路——这也是当初把
         "数据源动作"单列成一个任务类型的原因（见 TaskKind 的注释）。
@@ -488,7 +488,7 @@ class TaskWorker:
         )
 
     def backoff_for(self, attempts: int) -> float:
-        """指数退避：2s、4s、8s…上限 ``max_backoff``（架构 §4 的"指数退避"）。"""
+        """指数退避：2s、4s、8s…上限 ``max_backoff``（架构 4 的"指数退避"）。"""
         exponent = max(attempts - 1, 0)
         return float(min(self._max_backoff, self._base_backoff * (2**exponent)))
 

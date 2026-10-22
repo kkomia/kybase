@@ -1,19 +1,19 @@
-"""旧明文收编：把库里那几处凭据搬进系统钥匙串（M5 阶段 6，方案 §4.2 / §4.3）。
+"""旧明文收编：把库里那几处凭据搬进系统钥匙串（ 阶段 6，方式 4.2 / 4.3）。
 
-**v0.1.0 瘦身之后这个服务在 NAS 部署里是"空转"的**：系统钥匙串只存在于桌面机器上，
-而这个进程只有服务器形态（`NullSecretStore`，R14）——所以 :meth:`status` 如实报
+**v0.1.0 精简之后这个服务在 NAS 部署里是"空转"的**：系统钥匙串只存在于桌面机器上，
+而这个进程只有服务器形态（`NullSecretStore`，）——所以 :meth:`status` 如实报
 ``store: unavailable``、``pending_migration: 0``，:meth:`migrate` 则抛
 ``SecretStoreUnavailable``（绝不退回库里写明文）。它跟着共享底座留下，
 是因为钥匙串那一整套读写（含 :meth:`nas_token` 三个方法）本身没有业务语义。
 
-## 搬哪几处、不搬哪几处（方案 §4.2 那张表）
+## 搬哪几处、不搬哪几处（方式 4.2 那张表）
 
 **收编这一处**（读路径也跟着改道了，见 ``model_registry``）：
 
 - ``model_providers.api_key`` → ``kylab:model_provider:<id>``
   （模型注册表在读；迁完**清列**，行本身留着）。
 
-原先还有 ``app_settings['web.search_api_key']`` 那一处——联网搜索随 Agent 侧代码
+原先还有 ``app_settings['web.search_api_key']`` 那一处——联网搜索随 调用方代码
 拆除了，那个键不复存在（见 `runtime_config.KEYCHAIN_SETTING_KEYS`：现在是空集）。
 
 **只登记、不迁**（这里一行代码都没有——留在库里是**有意的**，不是漏了）：
@@ -28,11 +28,11 @@
    **库里已经空了 → 那一项根本不出现**（"没什么可迁"不是"跳过了一项"）；
 2. **先写钥匙串、后清库**：顺序反过来的话，一次崩在中间就永久丢了一把钥匙
    （而"库里还有明文"至少是可重跑的状态）；
-3. **失败不清明文**（§4.3-5）：那一条进 ``failed``、库里那份原样留着，
+3. **失败不清明文**（4.3-5）：那一条进 ``failed``、库里那份原样留着，
    下次可以重跑——"不清就不算迁完"；
 4. **清页**：迁移完在源库上收一次空闲页（见 :meth:`CredentialsService._shrink`）。
 
-## 过渡态可观测（§4.2 末段）
+## 过渡态可观测（4.2 末段）
 
 **不静默迁移**：改用户的存储位置要有意识。所以有一个能读到的数
 （:meth:`CredentialsService.status` → ``pending_migration``）：
@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 MIGRATED_SETTING_KEYS: tuple[str, ...] = ()
 """``app_settings`` 里**真的会被搬走**的那几个键（收编档）。
 
-加一个新键之前先回答两个问题：**谁在读它**（本机档上真的有人读吗）、
+加一个新键之前先回答两个问题：**谁在读它**（旧版上真的有人读吗）、
 它会不会超过钥匙串单条上限（2560 字节）。答不上来就进
 :data:`REGISTERED_ONLY_CELLS`——"只登记"是一个正当结论，不是待办。
 """
@@ -77,7 +77,7 @@ REGISTERED_ONLY_CELLS: tuple[tuple[str, str], ...] = (
     ("app_settings", "mineru.token"),
     ("app_settings", "paddleocr.token"),
 )
-"""**只登记、不迁**的那几处（方案 §4.2）与理由——这份清单是给读代码的人看的。
+"""**只登记、不迁**的那几处（方式 4.2）与理由——这份清单是给读代码的人看的。
 
 它同时是一份"我们想过这件事"的证据：将来谁要收编其中一处，先删掉这里的一行，
 再去改 :data:`MIGRATED_SETTING_KEYS` / 加一条新的迁移动作。
@@ -128,7 +128,7 @@ class _Item:
 
 
 class CredentialsService:
-    """把本机库里那几处明文凭据收进系统钥匙串（方案 §4.2）。
+    """把本机库里那几处明文凭据收进系统钥匙串（方式 4.2）。
 
     它是**显式动作**的服务：没有任何调用点会顺手调它（不静默迁移），
     三个入口（端点 / 面板 / CLI）都落在 :meth:`migrate` 上。
@@ -144,7 +144,7 @@ class CredentialsService:
         """``GET /local/secrets`` 的那两个字段（**只报数与可用性，绝不回显秘密**）。
 
         ``pending_migration`` 在钥匙串不可用的档上恒为 0——那种机器上"等着迁"这件事
-        根本不存在（库就是凭据的家，R14 的服务器档与 §4.5 的 CI 边界都是这一支）。
+        根本不存在（库就是凭据的家， 的服务器档与 4.5 的 CI 边界都是这一支）。
         """
         return {"store": self._store_word(), "pending_migration": self.pending()}
 
@@ -167,7 +167,7 @@ class CredentialsService:
             raise SecretStoreUnavailable(
                 "这台机器没有可用的系统钥匙串（Windows 凭据管理器）："
                 "凭据只能留在本机库里，做不到「收进钥匙串」这一步。"
-                "（Linux 桌面 / 容器 / CI 都属于这一档，方案 §4.5 的边界）"
+                "（Linux 桌面 / 容器 / CI 都属于这一档，方式 4.5 的边界）"
             )
         report = MigrationReport(store=self._store_word())
         for item in self._items():
@@ -215,14 +215,14 @@ class CredentialsService:
         report.migrated.append({"item": item.item, "reason": ""})
 
     def _shrink(self) -> None:
-        """清页：把腾出来的那些页**真的**交还给系统（方案 §4.3-3）。
+        """清页：把腾出来的那些页**真的**交还给系统（方式 4.3-3）。
 
         清掉库里的行 / 列之后，腾出来的空闲空间还留在表里，所以迁移完在源库上收一次页
         （``MetaStore.vacuum``；PG 的 ``VACUUM`` 幂等，重跑无害）。
 
         **只剩这一步了**：原先还有一条 ``StoreBundle.eraser`` 的
         ``secure_delete`` → ``VACUUM`` → ``wal_checkpoint(TRUNCATE)`` 三连，
-        那是给 SQLite 主库 + ``-wal`` 收尾用的（本机档与那个库随 v0.1.0 瘦身一起拆除）。
+        那是给 SQLite 主库 + ``-wal`` 收尾用的（旧版与那个库随 v0.1.0 精简一起拆除）。
         PG 的预写日志在服务端，进程内没有"顺手把 WAL 截掉"这件事。
         """
         self._stores.meta.vacuum()
@@ -272,7 +272,7 @@ class CredentialsService:
         """读 NAS 长期钥匙（``kylab:nas_token:<origin>``）；``None`` = 没配。
 
         给**壳侧那半**与阶段 8 的对拍用（壳启动时自己也会读同一把），
-        后端这条路本身不需要它——边车的 ``--token`` 仍然从引导级来（R3/R14：
+        后端这条路本身不需要它——旧版客户端的 ``--token`` 仍然从引导级来（/：
         令牌不进 HTTP 请求体、不落库）。
         """
         return self._secrets.get(nas_token_target(origin))
@@ -287,7 +287,7 @@ class CredentialsService:
 
 
 class _DeleteSetting:
-    """清掉库里那一行（``app_settings``：**删行**而不是写空——方案 §4.2 的原话）。"""
+    """清掉库里那一行（``app_settings``：**删行**而不是写空——方式 4.2 的原话）。"""
 
     __slots__ = ("_key", "_stores")
 

@@ -330,7 +330,7 @@ def test_a_key_that_is_not_in_the_database_is_remembered_too(
 
 
 def test_many_reads_share_one_query(runtime, bundle, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """``get_many`` 只发一条 SQL（§12.116 的口径），且第二次不再发。"""
+    """``get_many`` 只发一条 SQL（12.116 的口径），且第二次不再发。"""
     keys = ["embedding.batch_size", "mineru.endpoint", "paddleocr.endpoint"]
     calls = _count_reads(bundle, monkeypatch)
 
@@ -387,7 +387,7 @@ def test_entries_expire_after_the_ttl(runtime, bundle, monkeypatch) -> None:  # 
 # ------------------------------------------------------------ 钥匙串收编（M5 阶段 6）
 #
 # 原先这一节自带本机库（SQLite）与钥匙串，逐条验"收编过的键只问钥匙串"。**那一整套
-# 随本机档一起拆除了**：这个进程只有服务器形态（恒 `NullSecretStore`，R14），
+# 随旧版一起拆除了**：这个进程只有服务器形态（恒 `NullSecretStore`，R14），
 # 于是"哪些键改道"成了空集。这里只留下那份不变量的守卫——它仍然有意义：
 # 哪天有人往清单里加回一个键，必须同时改读取路径与迁移器（下面那条等式会当场红）。
 
@@ -395,7 +395,7 @@ def test_entries_expire_after_the_ttl(runtime, bundle, monkeypatch) -> None:  # 
 def test_the_redirect_list_is_empty_and_still_consistent() -> None:
     """改道清单恒空，且与 `SECRET_KEYS` 的自洽关系仍然成立。
 
-    两个集合的关系（方案 §4.2）：**改道的那些**必须是 `SECRET_KEYS` 的子集，
+    两个集合的关系（方式 4.2）：**改道的那些**必须是 `SECRET_KEYS` 的子集，
     且与 `MIGRATED_SETTING_KEYS` 的交集就是它本身——读取路径改了而迁移器没搬
     （或反过来）都会在这里露出来。
     """

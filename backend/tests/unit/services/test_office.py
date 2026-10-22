@@ -21,7 +21,7 @@ from app.parsers.base import ProbeResult
 from app.parsers.local_office import LocalOfficeParser
 from app.services import office
 
-MARKDOWN = """# 随访方案
+MARKDOWN = """# 随访方式
 
 眼轴长度是近视防控的核心指标，建议每三个月测量一次。
 这一句与上一句之间没有空行，它们应当合成同一个段落。
@@ -108,7 +108,7 @@ def test_heading_levels_are_kept() -> None:
 
 def test_docx_round_trips_through_our_own_parser() -> None:
     """写出去的 docx 要**被我们自己的解析器读得回来**，且标题/列表/表格都在。"""
-    text = _read_office("随访方案.docx", office.build_docx(MARKDOWN, title="近视防控随访"))
+    text = _read_office("随访方式.docx", office.build_docx(MARKDOWN, title="近视防控随访"))
 
     assert "近视防控随访" in text
     assert "一、操作步骤" in text
@@ -173,7 +173,7 @@ def test_xlsx_sheet_name_is_clipped_to_excels_limit() -> None:
 # ------------------------------------------------------------------ xlsx 内嵌图表
 #
 # 这一组对着 **G-03 那个缺口**：xlsx 的数字全对、但"要求带图表"而没图表
-# （§12.338 第五节 2）。手法沿用文件头那条——**写出去再读回来**，
+# （12.338 第五节 2）。手法沿用文件头那条——**写出去再读回来**，
 # 只是这回回读的判据是 `ws._charts` 与它引用的单元格范围：
 # "图表对象在文档里"与"图表指着那几列数"是两件事，少检一样都会漏掉
 # "图在、但引用的是空区域"这种打开后一片空白的交付物。
@@ -314,13 +314,13 @@ def test_xlsx_chart_needs_a_data_row() -> None:
 
 def test_pptx_round_trips_titles_and_bullets() -> None:
     text = _read_office(
-        "方案.pptx",
+        "方式.pptx",
         office.build_pptx(
-            [{"title": "监测频率", "bullets": ["三个月一次", "首次全套"]}], title="随访方案"
+            [{"title": "监测频率", "bullets": ["三个月一次", "首次全套"]}], title="随访方式"
         ),
     )
 
-    assert "随访方案" in text  # 封面
+    assert "随访方式" in text  # 封面
     assert "监测频率" in text
     assert "三个月一次" in text and "首次全套" in text
 
@@ -393,7 +393,7 @@ def test_markdown_export_reads_back_through_the_ingest_pipeline() -> None:
     from app.parsers.plain_text import PlainTextParser
 
     parsed = PlainTextParser().parse(
-        filename="随访方案.md", content=office.build_text(MARKDOWN, kind="md")
+        filename="随访方式.md", content=office.build_text(MARKDOWN, kind="md")
     )
 
     assert parsed.markdown == MARKDOWN

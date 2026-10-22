@@ -215,7 +215,7 @@ describe('页头', () => {
     const title = await screen.findByRole('heading', { level: 1, name: '产品手册' })
     // 与标题同处一行的那个容器：旧 `PageHeader.vue` 的 `title-suffix` 槽就是这个位置
     // （"这类控件属于这个对象本身，放在右侧动作区会读成页面的动作"）。
-    // 给的 `h1` 一旦带上 `flex: 1`，齿轮就会被推到页面右缘——对照记录 §3 第 3 条。
+    // 给的 `h1` 一旦带上 `flex: 1`，齿轮就会被推到页面右缘——对照记录 3 第 3 条。
     const row = title.parentElement as HTMLElement
     expect(row.className).toContain('kb-title-row')
     expect(within(row).getByRole('button', { name: '产品手册 的设置' })).toBeInTheDocument()
@@ -324,7 +324,7 @@ describe('文档列表', () => {
       expect(listCall).not.toHaveProperty('stage')
     })
 
-    // 就地的那个入口按 §工作台 "过滤" 口径命名（与开弹层的「按内容检索」区分开）
+    // 就地的那个入口按 工作台 "过滤" 口径命名（与开弹层的「按内容检索」区分开）
     await user.type(screen.getByLabelText('按文件名过滤'), '白皮书')
     // 防抖 300ms 之后才发请求
     await waitFor(() => expect(calledWith((filter) => filter.q === '白皮书')).toBe(true), {

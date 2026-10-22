@@ -1,5 +1,5 @@
 /**
- * 知识库域的样式（旧前端各页 `<style scoped>` 的合体）。
+ * 知识库域的样式（旧前端各页 `<style scoped>` 的早期）。
  *
  * 三条纪律与旧前端一致：
  * 1. **颜色、间距、圆角一律引用 `tokens.css` 的变量**，这里不出现色值与裸像素
@@ -27,7 +27,7 @@
  *   所以这一批是**逐页重拍对照**过的（`.shots/round-d/` vs `.shots/round-c/`），
  *   外加一份"同一时刻、层内 vs 层外"的结构探针（`.shots/batch3c-probe-layer.cjs`）。
  *
- * 两条与 `@/ui/*` 交接时必须知道的：
+ * 两条与 `@/ui/*` 衔接时必须知道的：
  * - 要把原语的默认取值改成别样，**只有**调用点的 `cn()` 这一条路（同类冲突后写者胜，
  *   判据确定、不靠源码顺序，如 `.kb-switch` 与文件名过滤框的调用点）。在这里写一条
  *   同属性声明已经压不住工具类——**选择器写得更具体也没用**，层的先后与优先级无关
@@ -267,11 +267,11 @@
 
   /*
  * 弹窗壳（遮罩 / 表面 / 标题栏 / 底部）**不在本文件里**：它已经是 `@/ui/dialog`
- * 与 `@/ui/alert-dialog`（组合方式见各页面，取值见 `src/styles/tokens.css` §2/§3）。
+ * 与 `@/ui/alert-dialog`（组合方式见各页面，取值见 `src/styles/tokens.css` 2/3）。
  * 这里只留弹窗里那句导语与后果说明的排版。
  */
 
-  /* 弹窗里的一句导语（规范 §5.1 保留项） */
+  /* 弹窗里的一句导语（规范 5.1 保留项） */
   .kb-lead {
     margin: 0 0 var(--space-3);
     font-size: var(--text-meta-size);
@@ -314,7 +314,7 @@
 
   /*
  * 行菜单（浮层表面 / 项高 / 悬停底色）**不在本文件里**：它已经是
- * `@/ui/dropdown-menu`，取值见 `src/styles/tokens.css` §2（`--bg-menu` / `--menu-pad` /
+ * `@/ui/dropdown-menu`，取值见 `src/styles/tokens.css` 2（`--bg-menu` / `--menu-pad` /
  * `--menu-item-height`）。这里只剩"菜单触发器在行里怎么摆"。
  */
 
@@ -456,7 +456,7 @@
   /* 知识库**详情**的页头：标题与它的行内控件（设置齿轮）同处一行、**紧贴标题**。
    旧 `PageHeader.vue` 的 `title-suffix` 槽就是这个语义——它那条 `.page-title-row`
    也是 `display: flex; align-items: center; gap: var(--space-1)`（齿轮属于"这个库本身"，
-   摆到最右端会被读成"页面的动作"，见对照记录 §3 第 3 条）。 */
+   摆到最右端会被读成"页面的动作"，见对照记录 3 第 3 条）。 */
   .kb-title-row {
     display: flex;
     align-items: center;
@@ -1039,7 +1039,7 @@
 
   /* ------------------------------------------------------------ 文档清单
  *
- * 行高与单元格字号**逐值对过旧 `KnowledgeBaseView.vue`**（对照记录 §3 第 2 条），
+ * 行高与单元格字号**逐值对过旧 `KnowledgeBaseView.vue`**（对照记录 3 第 2 条），
  * 结论是这一块本来就已经一致，两处都写下来免得下次再对一遍：
  *
  * | 取值 | 旧（`KnowledgeBaseView.vue`） | 新 |

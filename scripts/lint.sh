@@ -39,7 +39,7 @@ step() {
 step "ruff" sh -c "cd '$ROOT/backend' && uv run ruff check app/ tests/"
 step "emoji 扫描（后端）" "$PY" "$ROOT/scripts/scan_emoji.py" "$ROOT/backend/app"
 step "结构性规范（分层 / 测试位置 / 界面文案 / 版本号）" "$PY" "$ROOT/scripts/check_layering.py" "$ROOT"
-# **不生成《API 接口规范》**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
+# **不生成接口规则**（原先那一步跑 scripts/gen_api_spec.py）：那个脚本的正文是
 # kylab 时代的（整段讲技能分类 / 精选），落点 docs/规范/ 本仓也没有，跑一次就是
 # FileNotFoundError。接口事实的权威处是运行中的 /api/v1/openapi.json；真要维护一份
 # kybase 版规范，先改那个脚本的正文与落点再把它接回来。

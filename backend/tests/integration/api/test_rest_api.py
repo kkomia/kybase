@@ -191,7 +191,7 @@ def test_upload_can_skip_ingest(client: TestClient, kb_id: str) -> None:
 
 
 def test_duplicate_upload_is_flagged(client: TestClient, kb_id: str) -> None:
-    """架构 §6.3：命中相同 hash 要提醒"检测到相同文件"，且不重复入库。"""
+    """架构 6.3：命中相同 hash 要提醒"检测到相同文件"，且不重复入库。"""
     first = _upload(client, kb_id).json()
     second = _upload(client, kb_id, name="copy.md").json()
 
@@ -230,7 +230,7 @@ def test_upload_limit_is_the_documented_one() -> None:
 
     钉住它是为了防"改一处漏一处"：D21 的结论是"超限要等传到服务端才报错"，
     前端预校验补上之后，两边的数字必须是同一个，否则会出现"前端放行、后端 413"
-    这种最难解释的组合。**会话文件那一条上传路已随边车拆除**，只剩文档这一条。
+    这种最难解释的组合。**会话文件那一条上传路已随旧版客户端拆除**，只剩文档这一条。
     """
     import app.api.v1.documents as documents_api
 
@@ -245,7 +245,7 @@ def test_upload_keeps_chinese_filename_readable(client: TestClient, kb_id: str) 
     确保文件名在"入库"这一步已经被还原成可读中文。
     """
     boundary = "----kylabtest"
-    filename_bytes = "架构设计.md".encode()
+    filename_bytes = "设计.md".encode()
     body = b"".join(
         [
             f"--{boundary}\r\n".encode(),
@@ -265,9 +265,9 @@ def test_upload_keeps_chinese_filename_readable(client: TestClient, kb_id: str) 
     )
 
     assert response.status_code == 202
-    assert response.json()["document"]["name"] == "架构设计.md"
+    assert response.json()["document"]["name"] == "设计.md"
     listed = client.get(f"/api/v1/knowledge-bases/{kb_id}/documents").json()["items"]
-    assert [item["name"] for item in listed] == ["架构设计.md"]
+    assert [item["name"] for item in listed] == ["设计.md"]
 
 
 # --------------------------------------------------------------------- 列表与详情
@@ -697,8 +697,8 @@ def test_create_kb_without_an_embedding_model_is_rejected(monkeypatch) -> None:
 
 # **搬走一条**（2026-10-05）：``test_settings_reports_whether_embedding_is_configured``
 # （原判据：`GET /settings` 要能区分"没配"与"配了"，前端据此决定建库入口能不能点）——
-# 它打的是 ``/settings``，而那一族随 NAS 网页端退役**只在本机档**了（运行期配置表
-# 在本机 SQLite 里）。所以它搬去 `test_settings_api.py`（本机档那一份，同一条判据
+# 它打的是 ``/settings``，而那一族随 NAS 网页端退役**只在旧版**了（运行期配置表
+# 在本机 SQLite 里）。所以它搬去 `test_settings_api.py`（旧版那一份，同一条判据
 # 一个字没改）。
 
 

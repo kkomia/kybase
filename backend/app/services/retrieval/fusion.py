@@ -1,4 +1,4 @@
-"""RRF 融合（M3 T3.3）。
+"""RRF 融合（ ）。
 
 Reciprocal Rank Fusion：``score(d) = Σ_r 1 / (k + rank_r(d))``，``rank`` 从 1 开始。
 

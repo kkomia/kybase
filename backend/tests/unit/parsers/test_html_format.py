@@ -59,7 +59,7 @@ def test_extracts_the_article_body() -> None:
     ["首页", "关于我们", "联系方式", "立即购买", "版权所有", "window.track"],
 )
 def test_strips_navigation_ads_and_scripts(noise: str) -> None:
-    """**剥离噪声是这一层存在的理由。**
+    """**拆分噪声是这一层存在的理由。**
 
     导航与广告进了库会污染检索：用户问什么都能匹配到菜单里的"首页 关于 联系方式"。
     """

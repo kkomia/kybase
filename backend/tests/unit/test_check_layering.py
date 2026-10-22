@@ -92,7 +92,7 @@ def test_comments_are_not_flagged(checker: ModuleType, tmp_path: Path) -> None:
     path = _write(
         tmp_path,
         "Notes.tsx",
-        "// 原来这里挂着 PageShell 的 description（「这一页是什么」），§12.168 删掉了\n"
+        "// 原来这里挂着 PageShell 的 description（「这一页是什么」），12.168 删掉了\n"
         '// 也不要写成 className="page-desc"\n',
     )
     assert checker.check_ui_copy(path) == []

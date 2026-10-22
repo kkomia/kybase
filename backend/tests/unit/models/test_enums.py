@@ -1,7 +1,7 @@
 """``app/models/enums.py`` 的单元测试。
 
-镜像同构：``app/models/enums.py`` → ``tests/unit/models/test_enums.py``（工程规范 §5.1）。
-本文件里对状态序列的断言就是《架构设计 v0.2》§4 的契约快照——改枚举必须同时改架构文档。
+镜像同构：``app/models/enums.py`` → ``tests/unit/models/test_enums.py``（分层规则 5.1）。
+本文件里对状态序列的断言就是本项目4 的契约快照——改枚举必须同时改架构文档。
 """
 
 from app.models.enums import (
@@ -17,7 +17,7 @@ from app.models.enums import (
 
 
 def test_pipeline_stage_order_matches_architecture() -> None:
-    """主链路顺序必须与架构 §4 逐字一致。"""
+    """主链路顺序必须与架构 4 逐字一致。"""
     assert tuple(stage.value for stage in PIPELINE_STAGE_ORDER) == (
         "uploaded",
         "probing",
@@ -35,23 +35,23 @@ def test_terminal_stages_are_indexed_failed_and_canceled() -> None:
 
 
 def test_enhancement_branch_is_outside_main_chain() -> None:
-    """图谱/Wiki 增强分支默认关闭且不在主链路上（架构 §4、§11）。"""
+    """图谱/Wiki 增强分支默认关闭且不在主链路上（架构 4、11）。"""
     assert DocumentStage.ENRICHING not in PIPELINE_STAGE_ORDER
     assert DocumentStage.ENRICHED not in PIPELINE_STAGE_ORDER
 
 
 def test_api_key_permission_has_exactly_two_levels() -> None:
-    """架构 §3.2：只读 / 读写两种权限，无第三种。"""
+    """架构 3.2：只读 / 读写两种权限，无第三种。"""
     assert {permission.value for permission in ApiKeyPermission} == {"readonly", "readwrite"}
 
 
 def test_data_source_kinds_cover_p0_and_reserved() -> None:
-    """P0：本地上传 / HTML / RSS；WebDAV 为框架预留（架构 §10、§14）。"""
+    """P0：本地上传 / HTML / RSS；WebDAV 为框架预留（架构 10、14）。"""
     assert {kind.value for kind in DataSourceKind} == {"upload", "html", "rss", "webdav"}
 
 
 def test_task_kinds_cover_each_pipeline_stage() -> None:
-    """每个摄入阶段都能独立成任务，才能按阶段重试（架构 §4）。"""
+    """每个摄入阶段都能独立成任务，才能按阶段重试（架构 4）。"""
     stage_like = {
         TaskKind.PROBE.value,
         TaskKind.PARSE.value,

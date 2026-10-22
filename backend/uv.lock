@@ -1216,7 +1216,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kylab-backend"
+name = "kybase-backend"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

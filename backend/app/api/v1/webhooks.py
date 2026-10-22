@@ -1,10 +1,10 @@
-"""Webhook 端点（M4 / T4.6）。
+"""Webhook 端点（ / ）。
 
 **为什么订阅管理是控制台级**（``require_admin``）：一个 webhook 订阅意味着
 "这个服务会主动往某个地址发文档内容"。拿到读写 API Key 的集成方不该能
 凭空把知识库内容转发到它自己的服务器——那是数据外泄，不是普通写操作。
 
-**密钥只回显掩码**：与设置页那套凭据同一条纪律（架构 §13）。
+**密钥只回显掩码**：与设置页那套凭据同一条纪律（架构 13）。
 订阅的 secret 用来给载荷签名，接收端拿它验签；它一旦明文出库，
 任何能读到列表的人都能伪造签名。所以列表只回 ``sk-…abcd`` 这种形状，
 **明文只在上面的响应里出现一次**，让用户自己存起来。
@@ -106,7 +106,7 @@ def create_webhook(
         )
     except ValueError as exc:
         # 拼错事件名是调用方错误，不是 500：``invalid_request`` 是这套接口
-        # 对"你给的东西不对"的统一答复（《API 接口规范》§1.2）
+        # 对"你给的东西不对"的统一答复（接口规则1.2）
         raise InvalidRequestError(str(exc)) from exc
     return _out(record, reveal_secret=record.secret)
 

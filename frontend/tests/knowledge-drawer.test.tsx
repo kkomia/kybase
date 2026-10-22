@@ -352,7 +352,7 @@ describe('切块的人工干预', () => {
     expect(successToast).toHaveBeenCalledWith('已禁用，该块不再参与检索')
   })
 
-  it('删除切块要二次确认，并说清"其实想禁用"的那条替代方案', async () => {
+  it('删除切块要二次确认，并说清"其实想禁用"的那条替代方式', async () => {
     deleteChunkMock.mockResolvedValue(undefined)
     const user = userEvent.setup()
     renderDrawer()

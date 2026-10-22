@@ -29,9 +29,9 @@
  * | `Button variant="subtle"` | `variant="secondary"`（`--bg-subtle` 底） |
  * | `Button variant="ghost"` / `IconButton` | `variant="ghost"`（图标按钮加 `size="icon"` / `"icon-sm"`） |
  * | `Button variant="danger"` | `variant="destructive"`（红字，不是红实心） |
- * | `Input` / `Textarea` | `@/ui/input` / `@/ui/textarea`（字号 14 → 15px，见 ui/README §2.2） |
+ * | `Input` / `Textarea` | `@/ui/input` / `@/ui/textarea`（字号 14 → 15px，见 ui/README 2.2） |
  * | `Select`（原生） | `@/ui/select`（Radix；`''` 作值的地方用了哨兵值，见各页面注释） |
- * | `Modal` | `@/ui/dialog`（弹窗宽 560 → 480、内边距 20 → 16，见 ui/README §2.2） |
+ * | `Modal` | `@/ui/dialog`（弹窗宽 560 → 480、内边距 20 → 16，见 ui/README 2.2） |
  * | `ConfirmDialog` | `@/ui/alert-dialog`（role 变 `alertdialog`，点确认即关闭、Esc 不再关） |
  * | `RowMenu` / `MenuItem` | `@/ui/dropdown-menu`（走 Portal，选中即自动关闭） |
  * | `StatusTag` / `Skeleton` / `EmptyState` / `MeterBar` / `InfoTip` | `./composites.tsx` 里的同名（或 `SkeletonRows`）组合件 |

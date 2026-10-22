@@ -1,4 +1,4 @@
-"""知识库端点（M4）。
+"""知识库端点（）。
 
 只做协议适配：校验入参 → 调用 ``KnowledgeBaseService`` → 转成响应模型。
 """
@@ -37,7 +37,7 @@ def kb_access_flags(record: Any, caller: Caller, services: Services) -> tuple[bo
     - `can_write` 直接复用 ``api_keys.check_access(need=WRITE)``——
       界面据此决定要不要显示「上传文档」「添加数据源」，避免给出一个点了必然 403 的入口。
 
-    **为什么提出来**（M3 阶段 1）：知识库提供者的握手（`api/v1/provider.py`）也要报
+    **为什么提出来**（ 阶段 1）：知识库提供者的握手（`api/v1/provider.py`）也要报
     "这把凭据能不能写这个库"。两处各写一份必然漂，而漂的表现是**界面自相矛盾**
     （列表上说能传、点进去 403，或反过来把能用的入口收起来）。所以口径只留这一份，
     两个端点都从这里取。

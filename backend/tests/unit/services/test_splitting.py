@@ -311,7 +311,7 @@ class TestPageRangeSplitter:
         assert names[0] == "大书_P1-6.pdf"
 
     def test_一段失败不影响其余段(self) -> None:
-        # 架构 §4.2：单个子文件失败只需重跑该子文件。
+        # 架构 4.2：单个子文件失败只需重跑该子文件。
         # 放弃全部会让用户重跑整个 1500 页
         parser = FakeParser(fail_on={1})
         outcome = _run_splitter(parser)

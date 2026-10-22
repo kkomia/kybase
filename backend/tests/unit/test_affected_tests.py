@@ -2,7 +2,7 @@
 
 **为什么这一份必须有**：那个脚本存在的唯一理由是"别让人手算影响面"——而它一旦算错，
 错的形状恰恰是最坏的一种：**静默漏跑**。门禁全绿、CI 也绿，问题留到收尾跑全量才红
-（规范 §5.2.1 记着 2026-09-27 就是这么漏的：只跑了 `misc-settings`，
+（规范 5.2.1 记着 2026-09-27 就是这么漏的：只跑了 `misc-settings`，
 钉住那次改动的断言其实在 `misc-registry` 里）。
 
 所以这里钉的不是"脚本能跑"，而是几个**已知答案**：
@@ -64,7 +64,7 @@ def _frontend(module: ModuleType, changed: list[str]) -> dict:
 def test_mirrored_unit_test_is_always_in_scope(affected: ModuleType) -> None:
     """镜像同构：``app/services/summary.py`` → ``tests/unit/services/test_summary.py``。
 
-    （原先这条用的是 ``memory.py`` 那一对，它随 Agent 侧拆除——换一对仍然存在的。）
+    （原先这条用的是 ``memory.py`` 那一对，它随 调用方拆除——换一对仍然存在的。）
     """
     info = _backend(affected, ["backend/app/services/summary.py"])
 
@@ -97,9 +97,9 @@ def test_repo_level_script_is_found_by_name(affected: ModuleType) -> None:
     assert "tests/unit/test_check_layering.py" in info["targets"]
 
 
-# **那条"子目录脚本按路径找到用例"的守卫已删**（v0.1.0 瘦身）：它举例的那一对
+# **那条"子目录脚本按路径找到用例"的守卫已删**（v0.1.0 精简）：它举例的那一对
 # 是 `scripts/deck/render.mjs` ↔ `tests/unit/services/deck/test_render.py`，
-# 而 deck（出片）整条链路随 Agent 侧拆除了——脚本里那条按路径匹配的机制还在，
+# 而 deck（出片）整条链路随 调用方拆除了——脚本里那条按路径匹配的机制还在，
 # 但这个仓里已经没有"子目录脚本 + 钉住它的用例"这一对了，留着断言只会指向虚处。
 
 

@@ -1,11 +1,11 @@
 /**
- * 主题（《前端设计规范》§2、§8）——与旧前端 `composables/useTheme.ts` 对应。
+ * 主题（界面规则2、8）——与旧前端 `composables/useTheme.ts` 对应。
  *
  * 约定：
  * - 主题落在 `document.documentElement.dataset.theme`，与 index.html 的首屏脚本
  *   共用 localStorage 键 `kylab-theme`（这一条不能改，否则首屏脚本读不到）；
  * - 未手动选择时跟随系统，手动选择后以用户选择为准；
- * - 切换只改 CSS 变量，无过渡动画（§8：切换无闪烁）。
+ * - 切换只改 CSS 变量，无过渡动画（8：切换无闪烁）。
  *
  * 为什么放在这一域而不是等应用壳：设置 → 外观这一节今天就要能改主题，
  * 而它读写的就是那一个属性 + 一个 localStorage 键——与壳将来实现的是同一份约定。

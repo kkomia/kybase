@@ -1,10 +1,10 @@
-# ---- 密钥与本地配置（工程规范 §6：任何 token/API key 禁止提交）----
+# ---- 密钥与本地配置（任何 token / API key 禁止提交）----
 .env
 .env.*
 !.env.example
 
 # ---- 运行期数据（上传原文、Markdown 产物、图片、DuckDB 表格副本）----
-# 剥离后这些目录整体归本服务；除 `.env.example` 外一律不入库。
+# 运行期数据目录；除 `.env.example` 外一律不入库。
 data/
 *.duckdb
 *.duckdb.wal

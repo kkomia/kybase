@@ -7,7 +7,7 @@
 前端轮询 `GET /knowledge-bases/{kb_id}/wiki` 的 `status`。
 
 页面正文里的 `[n]` 与 `sources[].index` 一一对应——**出处是这一层的核心承诺**，
-没有出处的自动 Wiki 没人敢信（调研报告 §3.5）。
+没有出处的自动 Wiki 没人敢信（调研 3.5）。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from app.services.api_key import Caller
 
 router = APIRouter(tags=["wiki"])
 
-# 页面/出处的组装放在这里，但**不 import 存储层的记录类型**（工程规范 §3.3 L1：
+# 页面/出处的组装放在这里，但**不 import 存储层的记录类型**（分层规则 3.3 L1：
 # 协议适配层只能转发 services/）。与 documents.py 的 `_to_out` 同一套写法——
 # 参数不加类型标注，形状由 services 返回的对象保证。
 

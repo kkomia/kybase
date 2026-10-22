@@ -1,8 +1,8 @@
 """全局配置。
 
-约定（工程规范 §6）：
+约定（分层规则 6）：
 - 密钥只从环境变量读取，模板见 ``backend/.env.example``，禁止入库；
-- 用户级配置（解析节点、API Key、模型登记）运行期落**数据库**，M1 起接管。
+- 用户级配置（解析节点、API Key、模型登记）运行期落**数据库**， 起接管。
 
 **两级配置，别混**（v0.12 起明确）：
 
@@ -11,8 +11,8 @@
 2. **运行期级**（``app_settings`` 表）：可以改、改完即刻生效的东西——
    解析节点 token、模型登记、检索阈值。这些落库，带掩码，不回显明文。
 
-**只有一个部署形态**（v0.1.0 瘦身）：这个进程就是知识库服务本体，跑在服务器上；
-原先那个「本机档」（桌面壳的边车）与它的 ``deployment`` 开关已随 Agent 侧代码
+**只有一个部署形态**（v0.1.0 精简）：这个进程就是知识库服务本体，跑在服务器上；
+原先那个「旧版」（客户端的旧版客户端）与它的 ``deployment`` 开关已随 调用方代码
 一起拆除——于是"这一份数据写哪儿"不再有两处答案。
 """
 
@@ -22,7 +22,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 API_VERSION = "v1"
-"""对外 API 主版本，所有路径前缀 ``/api/v1``（工程规范 §3.2）。"""
+"""对外 API 主版本，所有路径前缀 ``/api/v1``（分层规则 3.2）。"""
 
 
 class Settings(BaseSettings):
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "kylab"
+    app_name: str = "kybase"
     app_version: str = "0.1.0"
     host: str = "127.0.0.1"
     port: int = 8000
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     cors_origins: str = "http://127.0.0.1:5173"
     slow_query_ms: int = 500
-    """超过该耗时的检索留一条 WARNING（架构 §12 可观测性）。"""
+    """超过该耗时的检索留一条 WARNING（架构 12 可观测性）。"""
 
     run_worker: bool = True
     """应用启动时是否内嵌任务消费者。测试里关掉它，改为手动驱动，避免时序不确定。"""
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     **为什么这件事值得一个开关**：摄入链路的绝大部分时间在等远端（云端解析轮询、
     embedding、出题），单消费者时这些等待会**串行**——实测一篇文档的分段出题有
-    51 批、每批 1~2 分钟，它一个人就把后面 30 篇排队文档堵死（见 §12.113）。
+    51 批、每批 1~2 分钟，它一个人就把后面 30 篇排队文档堵死（见 12.113）。
     换成 N 个消费者，等待就能重叠，吞吐按倍数走。
 
     **为什么默认仍是 1**：并发要花 CPU 与内存（本地切词、向量化都在进程内），
@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     s3_prefix: str = ""
     """桶内的 key 前缀，便于一个桶放多套环境。留空即桶根。"""
 
-    # 鉴权（M4 T4.4；《架构设计 v0.2》§3.2）
+    # 鉴权（ ；本项目3.2）
     #
     # v0.11：**鉴权永远生效**，没有开关也没有第二种管理员凭据。
     # 第一次打开时唯一能调的是 /auth/status 与 /auth/setup（先建管理员账号），
@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     留空时工具目录的 ``mcp_endpoint`` 为 ``None``（不猜、不拼）。
     """
 
-    # 云端解析节点（M2 启用）
+    # 云端解析节点（ 启用）
     mineru_token: str | None = None
     paddleocr_token: str | None = None
     questions_concurrency: int = 4
@@ -146,7 +146,7 @@ class Settings(BaseSettings):
 
     出题是摄入链路里最慢的一步，而这些调用是在**等远端**：串行发等于把等待叠起来。
     实测一份 400 段的文档有 50 批、每批 1~2 分钟（思考型模型），
-    串行就是 50~100 分钟，还把后面所有排队文档一起堵住（§12.113）。
+    串行就是 50~100 分钟，还把后面所有排队文档一起堵住（12.113）。
 
     别开太大：模型的 RPM/TPM 限额是真的，撞上去只会拿到 429。
     """
@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     用户只会看到"卡住不动"。负载面板把``今日已用 / 额度``显示出来，
     这种"看起来卡住"就有了可核查的原因。配额是云端政策、会变，所以做成配置。"""
 
-    # Embedding（M2 启用；模型切换规则见架构设计 v0.2 §6.4）
+    # Embedding（ 启用；模型切换规则见本项目 6.4）
     #
     # **模型的地址 / 密钥 / 名称 / 维度不在这里**：它们属于"注册了哪个模型"，
     # 统一由模型注册表（供应商 → 模型）承担，见 services/model_registry.py。

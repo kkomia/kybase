@@ -1,7 +1,7 @@
 """领域枚举。
 
 集中放置跨层共享的枚举，避免各层各写一套字符串常量。
-pip 线状态序列的权威定义见《架构设计 v0.2》§4，本模块与之逐字对齐，并由
+pip 线状态序列的权威定义见本项目4，本模块与之逐字对齐，并由
 ``tests/unit/models/test_enums.py`` 守住。
 """
 
@@ -20,7 +20,7 @@ __all__ = [
 
 
 class DocumentStage(StrEnum):
-    """文档摄入流水线状态（《架构设计 v0.2》§4）。
+    """文档摄入流水线状态（本项目4）。
 
     主链路：``uploaded → probing → parsing → parsed → chunking → chunked → embedding → indexed``。
     ``enriching/enriched`` 是可选增强分支（图谱/Wiki，默认关闭，失败不影响主链路）。
@@ -56,7 +56,7 @@ PIPELINE_STAGE_ORDER: tuple[DocumentStage, ...] = (
     DocumentStage.EMBEDDING,
     DocumentStage.INDEXED,
 )
-"""主链路顺序，供 M2 的状态机校验"只允许向前一步"与"断点续跑定位"。"""
+"""主链路顺序，供  的状态机校验"只允许向前一步"与"断点续跑定位"。"""
 
 TERMINAL_STAGES: frozenset[DocumentStage] = frozenset(
     {DocumentStage.INDEXED, DocumentStage.FAILED, DocumentStage.CANCELED}
@@ -92,7 +92,7 @@ class TaskKind(StrEnum):
     """
 
     MEMORY = "memory"
-    """**已退场**（v0.56 档案制；随 2026-10-20 分家彻底删除）：记忆沉淀是 Agent 侧的事。
+    """**已退场**（v0.56 档案制；随 2026-10-20 拆分彻底删除）：记忆沉淀是 调用方的事。
 
     枚举值本身留着：``TaskKind`` 是按字符串从库里读回来的，**旧库的 ``tasks`` 表里
     可能还留着这个 kind 的行**——删掉枚举成员会让读那些行直接抛错，而"读不动自己的
@@ -101,7 +101,7 @@ class TaskKind(StrEnum):
     """
 
     SCHEDULED = "scheduled"
-    """**已退场**（2026-10-20 数据分家）：定时任务是 Agent 侧的产品面，本服务没有它。
+    """**已退场**（2026-10-20 数据拆分）：定时任务是 调用方的产品面，本服务没有它。
 
     与 ``MEMORY`` 同一个理由保留枚举值：旧库的队列行还要读得动。被领到时
     worker 明确失败（"不再有执行体"），不会"到点了却什么都不发生"。
@@ -122,9 +122,9 @@ class TaskState(StrEnum):
 
 
 class DataSourceKind(StrEnum):
-    """数据源类型（《架构设计 v0.2》§10）。
+    """数据源类型（本项目10）。
 
-    ``WEBDAV`` 为框架预留，MVP 不实现（架构 §14「缓做」）。
+    ``WEBDAV`` 为框架预留，MVP 不实现（架构 14「缓做」）。
     """
 
     UPLOAD = "upload"
@@ -134,7 +134,7 @@ class DataSourceKind(StrEnum):
 
 
 class ApiKeyPermission(StrEnum):
-    """API Key 权限（《架构设计 v0.2》§3.2：只读 / 读写 两种）。"""
+    """API Key 权限（本项目3.2：只读 / 读写 两种）。"""
 
     READONLY = "readonly"
     READWRITE = "readwrite"
@@ -159,7 +159,7 @@ class SharePermission(StrEnum):
 
 
 class TrashKind(StrEnum):
-    """回收站条目类型（《架构设计 v0.2》§6.2：原文保留 7 天冷备，向量立即删除）。"""
+    """回收站条目类型（本项目6.2：原文保留 7 天冷备，向量立即删除）。"""
 
     ORIGINAL = "original"
     IMAGE = "image"

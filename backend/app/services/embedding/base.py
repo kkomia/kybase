@@ -1,7 +1,7 @@
 """Embedding 提供方协议。
 
 错误类（``EmbeddingError`` / ``EmbeddingNotConfiguredError``）**定义在
-`app/core/exceptions.py`**（2026-10-08 剥离阶段 0 搬过去）——它们要被两侧按类型分档，
+`app/core/exceptions.py`**（2026-10-08 早期 0 搬过去）——它们要被两侧按类型分档，
 而"领域异常一律住 core"是本仓既有约定；这里 import 再导出，调用点一行没改。
 """
 
@@ -60,7 +60,7 @@ class EmbeddingProvider(ABC):
     """向量化提供方。
 
     ``model_id`` 与 ``dim`` 是模型锁定的依据：知识库记录它们，**不一致就必须拒绝写入**
-    （架构 §6.4：维度相同不等于向量空间兼容）。
+    （架构 6.4：维度相同不等于向量空间兼容）。
     """
 
     model_id: str = "unnamed"

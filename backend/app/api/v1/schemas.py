@@ -1,7 +1,7 @@
 """API 请求/响应模型（协议层）。
 
 命名与字段刻意贴近期望的界面：``stage`` 给状态列，``channels``/``raw_scores`` 给调试台，
-``image_ids`` 给图片锚点。**不在此处做业务判断**，只做形状定义（工程规范 §3.3）。
+``image_ids`` 给图片锚点。**不在此处做业务判断**，只做形状定义（分层规则 3.3）。
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ _RECORD_CONFIG = ConfigDict(from_attributes=True, use_attribute_docstrings=True)
 
 调用方写 ``DocumentOut.model_validate(record)``，字段名对不上会在改字段时立刻报错，
 比手写一遍 ``_to_out`` 映射少一处"加了字段忘了同步"的漏点。
-这也是协议层不 import ``app.storage`` 还能拼出响应的原因（工程规范 §3.3 L1）。
+这也是协议层不 import ``app.storage`` 还能拼出响应的原因（分层规则 3.3 L1）。
 
 ``use_attribute_docstrings=True``（v0.2）：把**字段下面那段文档字符串**放进 OpenAPI 的
 description。不加它，前端的派生类型只能拿到字段名——而 `schema.d.ts` 是生成的，
@@ -64,7 +64,7 @@ class KnowledgeBaseCreate(BaseModel):
     """建库时选定的嵌入模型（注册表主键）。留空 = 用服务端默认。
 
     嵌入模型是**知识库属性**：文档量小的库可以选高精度模型，量大的选小模型提速。
-    模型 ID 与维度在建库时冻结，换模型必须新建库（架构 §6.4 模型锁）。
+    模型 ID 与维度在建库时冻结，换模型必须新建库（架构 6.4 模型锁）。
     """
 
     #: 分段问题生成（v19 起，v23 起是"入库时为每个分段出题"）。**建库时就能定**，
@@ -214,7 +214,7 @@ class KnowledgeBaseList(BaseModel):
 
 
 class DocumentProgressOut(BaseModel):
-    """列表行上那条分段进度所需要的信息（§12.115）。
+    """列表行上那条分段进度所需要的信息（12.115）。
 
     **不给百分比**（用户也这么要求）：6 个环节的耗时极不均（解析几分钟、切分几秒），
     百分比只会编出一个对不上的数字——"第 3/6 步 · 解析内容 · 已用 2 分 14 秒"
@@ -252,7 +252,7 @@ class DocumentOut(BaseModel):
     error: str | None = None
     chunk_count: int = 0
     uploaded_by: str | None = None
-    """上传者的使用者 id（G6）。``None`` = 未记录，界面显示"未记录"而不是编一个名字。"""
+    """上传者的使用者 id（）。``None`` = 未记录，界面显示"未记录"而不是编一个名字。"""
     uploaded_by_name: str = ""
     """解析后的名字。**由后端解析**：前端拿 id 还得再查一次名册，
     列表里就会有 N 次多余请求。"""
@@ -281,7 +281,7 @@ class DocumentOut(BaseModel):
     """入库时生成的文档摘要（v25）。**问答上下文靠它省 token**，
     界面也把它当一句话说明（抽屉里显示、列表行悬浮显示）。空串 = 还没生成。"""
     progress: DocumentProgressOut | None = None
-    """分段进度的摘要（§12.115）。列表行的进度条吃它；完整那棵树在
+    """分段进度的摘要（12.115）。列表行的进度条吃它；完整那棵树在
     ``GET /documents/{id}/timeline``。``None`` = 这条路径没算（老调用点）。"""
 
 
@@ -477,7 +477,7 @@ class ChunkOut(BaseModel):
     page: int | None = None
     image_ids: list[str] = Field(default_factory=list)
     disabled: bool = False
-    """被禁用的块不再参与检索，但仍留在库里（§G3）。"""
+    """被禁用的块不再参与检索，但仍留在库里（）。"""
     questions: list[str] = Field(default_factory=list)
     """入库时为这一段生成的问题（v23）。**只读展示**——它由模型产出，
     用户要判断"出题质量如何、值不值得开着"，就得看得见它。"""
@@ -489,7 +489,7 @@ class ChunkList(BaseModel):
 
 
 class UploadAccepted(BaseModel):
-    """上传响应。``is_duplicate`` 对应架构 §6.3 的"检测到相同文件"提醒。"""
+    """上传响应。``is_duplicate`` 对应架构 6.3 的"检测到相同文件"提醒。"""
 
     document: DocumentOut
     is_duplicate: bool
@@ -522,7 +522,7 @@ class TaskOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     health: str = "idle"
-    """``running`` / ``stalled`` / ``overdue`` / ``idle`` / ``done``（M7 / T7.4）。
+    """``running`` / ``stalled`` / ``overdue`` / ``idle`` / ``done``（ / ）。
 
     **由后端判定而不是前端猜**：它要比较租约到期时间与当前时刻，
     还要知道租约时长，那些只有后端有。前端只负责按这个值上色。
@@ -544,7 +544,7 @@ class TaskHealthOut(BaseModel):
 
 
 class HealthOverviewOut(BaseModel):
-    """运行态总览（T7.4）。"""
+    """运行态总览（）。"""
 
     total: int = 0
     running: int = 0
@@ -598,7 +598,7 @@ class ParserQuotaOut(BaseModel):
 
 
 class SystemLoadOut(BaseModel):
-    """负载面板（§12.115）：CPU / 内存 / 队列 / 槽位 / 云端额度。"""
+    """负载面板（12.115）：CPU / 内存 / 队列 / 槽位 / 云端额度。"""
 
     hardware: HardwareLoadOut
     queue: QueueLoadOut
@@ -974,7 +974,7 @@ class StorageOverviewOut(BaseModel):
     """无主的向量分区（知识库已删、表还留在库里）。「整理存储」会丢掉它们。"""
 
 
-# --------------------------------------------------------------------- 切块干预（G3）
+# --------------------------------------------------------------------- 切块干预（）
 
 
 class ChunkUpdateIn(BaseModel):
@@ -993,7 +993,7 @@ class ChunkToggleIn(BaseModel):
     disabled: bool
 
 
-# --------------------------------------------------------------------- 模型注册器（G1）
+# --------------------------------------------------------------------- 模型注册器（）
 
 
 class ProviderCreateIn(BaseModel):
@@ -1125,7 +1125,7 @@ class SlotBindIn(BaseModel):
 
 
 class DataSourceCreateIn(BaseModel):
-    """登记一个数据源（M6 / T6.1）。"""
+    """登记一个数据源（ / ）。"""
 
     kind: str = Field(description="html 或 rss")
     name: str = Field(default="", max_length=64)
@@ -1170,7 +1170,7 @@ class SyncResultOut(BaseModel):
 
 
 class TableRowsOut(BaseModel):
-    """表格文档的结构化副本（M2 / T2.11）。
+    """表格文档的结构化副本（ / ）。
 
     ``rows`` 是**字符串矩阵**而不是对象数组：表格副本刻意不做类型推断
     （``007`` 变成 ``7`` 是数据损失），所以返回时也保持原样。
@@ -1184,7 +1184,7 @@ class TableRowsOut(BaseModel):
 
 
 class ImpactOut(BaseModel):
-    """删除会波及什么（M6 / T6.3）。
+    """删除会波及什么（ / ）。
 
     **数字要具体**：说"这会删除该知识库及其内容"没人会有感觉；
     说"3 份文档、412 个切块"才会让人停一下。这是二次确认能有意义的前提。
@@ -1289,7 +1289,7 @@ class UsageTotalsOut(UsageBucketOut):
 
 
 class UsageOut(BaseModel):
-    """模型用量汇总（G7）。
+    """模型用量汇总（）。
 
     **刻意不含费用**：单价随供应商与版本变化，内置价目表必然过期，
     而过期的价钱比不给更糟。只给客观的 token 与调用量，让用户自己换算。
@@ -1508,14 +1508,14 @@ class DocumentTimelineOut(BaseModel):
     total_ms: int
     steps: list[TimelineStepOut] = Field(default_factory=list)
     stalled: bool = False
-    """执行租约已过期 = 没有 worker 在续约（§12.115）。
+    """执行租约已过期 = 没有 worker 在续约（12.115）。
 
     抽屉要显示它，而它是**唯一能确定说"卡住"**的判据——光看"某一步跑了一小时"
     说明不了问题（解析大文件本来就慢）。判据来自 ``ObservabilityService``，
     与任务中心那一列同源。"""
 
 
-# ------------------------------------------------- 知识库提供者（M3 握手）
+# ------------------------------------------------- 知识库提供者握手
 
 
 _PROVIDER_CONFIG = ConfigDict(
@@ -1565,7 +1565,7 @@ class ProviderIngestCapsOut(BaseModel):
     """
     dedup: str = ""
     """去重口径：``content_hash`` = 同一份内容重复上传回 ``is_duplicate=true``，
-    不会入两份（幂等键 ``Idempotency-Key`` 是另一件事，见规范 §1.6）。"""
+    不会入两份（幂等键 ``Idempotency-Key`` 是另一件事，见规范 1.6）。"""
     max_bytes: int = 0
     """单文件上限（字节）。**就是上传端点自己的那个常量**，
     界面据此做上传前的校验，不再自己硬编码一份。"""
@@ -1621,7 +1621,7 @@ class ProviderEmbeddingCapsOut(BaseModel):
 
 
 class ProviderCapabilitiesOut(BaseModel):
-    """提供者的能力集（方案 §1.2 契约）。
+    """提供者的能力集。
 
     每一项都回答"这台提供者**现在**能不能做这件事"，而不是"这份代码支持不支持"。
     客户端按它决定摆哪些入口；**不认识的字段忽略、不认识的能力位就不摆**——
@@ -1641,7 +1641,7 @@ class ProviderCallerOut(BaseModel):
     """这次调用在提供者看来**是谁**。
 
     带这一段是因为**同一个服务上有两套身份是事实**（页面用登录会话、外部客户端用
-    长期 API Key，方案 §1.4 R7）：客户端把它显示出来，两边对不上时用户能自己看出来，
+    长期 API Key）：客户端把它显示出来，两边对不上时用户能自己看出来，
     而不是遇到一个说不清的 403。
     """
 
@@ -1657,7 +1657,7 @@ class ProviderCallerOut(BaseModel):
     ``can_write``**，那才是判定。
     """
     is_admin: bool = False
-    """**如实报**。长期 API Key **不是管理员**（方案 §1.4）：
+    """**如实报**。长期 API Key **不是管理员**：
     管理员专属的那些端点（``/settings``、``/api-keys``、``/users``、``/trash``、
     ``/maintenance``）对它是 403，界面据此**隐藏**这类入口，
     而不是摆出来等着失败。
@@ -1697,13 +1697,13 @@ class ProviderKbBriefOut(BaseModel):
 
 
 class ProviderHandshakeOut(BaseModel):
-    """知识库提供者握手（方案 §1.2）。
+    """知识库提供者握手。
 
     一次调用回答三件事：**连通且凭据有效**（否则根本到不了这里——凭据问题走 401/403，
     见 `api/v1/provider.py` 的模块头）、**这台提供者能做什么**、**我能用哪些库**。
 
     **响应体里没有"凭据错"这类字段**：那是 HTTP 状态码 + 统一错误信封的事
-    （规范 §1.3）。客户端据此把"改钥匙"与"改地址"分成两档——一次连不上变成
+    。客户端据此把"改钥匙"与"改地址"分成两档——一次连不上变成
     一句"凭据无效"是最让人绕路的一种错。
     """
 
@@ -1714,8 +1714,8 @@ class ProviderHandshakeOut(BaseModel):
     protocol_version: int
     """**握手协议版本**：整数、只增。
 
-    M3 的值是 ``1``。客户端规则：**不认识（大于自己所知）即判不可用**，
-    原因句子里带上版本号，**绝不硬试**（方案 §1.2 裁量 3）——一个"试着发一条
+    当前值是 ``1``。客户端规则：**不认识（大于自己所知）即判不可用**，
+    原因句子里带上版本号，**绝不硬试**——一个"试着发一条
     请求看看能不能用"的实现会把新协议的语义错误当成网络故障。
     """
     app_version: str
@@ -1727,7 +1727,7 @@ class ProviderHandshakeOut(BaseModel):
     caller: ProviderCallerOut
     """这次调用在提供者看来是谁。"""
     knowledge_bases: list[ProviderKbBriefOut] = Field(default_factory=list)
-    """**这次调用看得见**的库（受限 key 只看到范围内的：方案 R9 要防的元信息泄露）。"""
+    """**这次调用看得见**的库（受限 key 只看到范围内的：方式  要防的元信息泄露）。"""
     server_time: datetime
     """服务端当前时间（UTC，带时区）。界面据此显示"上次确认是什么时候"。"""
 

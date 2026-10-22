@@ -1,5 +1,5 @@
 /**
- * 处理明细（§12.115；旧 `ProcessingTimeline.vue` 的行为逐条对齐）。
+ * 处理明细（12.115；旧 `ProcessingTimeline.vue` 的行为逐条对齐）。
  *
  * 三块内容，对应三个问题：
  *

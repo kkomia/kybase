@@ -138,7 +138,7 @@ def test_version_newer_than_schema_version_is_rejected(fresh_db: Database) -> No
 
 
 def test_legacy_interleaved_head_is_rejected_with_an_ops_hint(fresh_db: Database) -> None:
-    """分家前那台库（交错序列头 v19）拒绝启动，并把一次性运维命令写进报错里。
+    """拆分前那台库（交错序列头 v19）拒绝启动，并把一次性运维命令写进报错里。
 
     这不是"版本太新"的同一句话：它是**已计划的一次升动作**，运维要跑的是
     ``python -m app.storage.postgres_impl.remap --apply``，而不是去降级库。
@@ -147,7 +147,7 @@ def test_legacy_interleaved_head_is_rejected_with_an_ops_hint(fresh_db: Database
     with fresh_db.session() as conn:
         conn.execute(
             "insert into schema_migrations (version, description) values (%s, %s)",
-            (LEGACY_INTERLEAVED_HEAD, "kylab 合体期的交错序列头"),
+            (LEGACY_INTERLEAVED_HEAD, "kylab 早期版本的交错序列头"),
         )
 
     with pytest.raises(SchemaError, match=r"postgres_impl\.remap"):

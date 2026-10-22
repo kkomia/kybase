@@ -2,7 +2,7 @@
 
 **为什么必须有这一条**：``remap --apply`` 是**只在存量库上跑一次**的动作，而它做的
 恰好是最不该出错的一件事——重写 ``schema_migrations``。本机没有 PG 测试库时它只能靠
-代码推演；这里用一条真实库把整条路走通（伪造一份"分家前"的版本行 → 跑 remap →
+代码推演；这里用一条真实库把整条路走通（伪造一份"拆分前"的版本行 → 跑 remap →
 核对新序列），于是有 PG 的环境一跑就验到了。
 
 运行方式（与其它 PG 集成用例同一把钥匙）：
@@ -38,7 +38,7 @@ def _open() -> Database:
 
 
 def _forge_legacy_sequence(db: Database) -> None:
-    """把版本表伪造成分家前的交错序列（1..19）。"""
+    """把版本表伪造成拆分前的交错序列（1..19）。"""
     with db.session() as conn:
         conn.execute("delete from schema_migrations")
         for version in range(1, schema.LEGACY_INTERLEAVED_HEAD + 1):

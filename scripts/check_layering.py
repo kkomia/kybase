@@ -1,13 +1,13 @@
 """仓库结构性规范自动核查：分层纪律、测试位置、脚本编码、界面文案、版本号、CSS 分层。
 
-对应《项目工程规范 v0.4》§3.3（分层纪律）、§5.1（测试存放铁律）与 §6（脚本约定）、
-《前端设计规范》§5.1（界面里不写解释性小字、不写实现细节），以及 CHANGELOG「附：版本号约定」。
+对应分层规则3.3（分层纪律）、5.1（测试存放铁律）与 6（脚本约定）、
+界面规则5.1（界面里不写解释性小字、不写实现细节），以及 CHANGELOG「附：版本号约定」。
 这些约束靠人工 review 容易漏，故做成机械检查接入 CI：
 ``L1`` 协议层越界、``L2`` 业务层直连数据库/SQL、``L3`` 解析器互引、
 ``L4`` 解析器反向依赖业务层、``L5`` 业务层依赖协议层、``L6`` app 根下的游离模块、
 ``A1`` 异步端点里没有 await（假异步，会按住事件循环）、
 ``C1`` CSS 分层纪律（层序声明 + 层外规则）、
-``T1`` 测试位置、``S1`` .ps1 缺少 UTF-8 BOM、``U1`` 界面里的解释性小字、
+```` 测试位置、``S1`` .ps1 缺少 UTF-8 BOM、``U1`` 界面里的解释性小字、
 ``U2`` 界面文案里的实现细节、``V1`` 手写版本号不一致、``PARSE`` 语法错误。
 
 用法：python scripts/check_layering.py [仓库根目录，默认当前目录]
@@ -84,7 +84,7 @@ SERVICE_LAYER_MSG = "业务层不得依赖协议适配层（api / mcp_server）�
 # 等于分层纪律对它不存在**：它 import 谁都不会红——而那块代码恰好管着工具准入与会话
 # 范围收口，是全项目最需要护栏的地方。规则靠"命名空间白名单"而不是"记得加清单"。
 #
-# `sidecar`（桌面壳那第二个入口）**已随 Agent 侧代码拆除**（v0.1.0 瘦身），
+# `sidecar`（客户端那第二个入口）**已随 调用方代码拆除**（v0.1.0 精简），
 # 白名单里不再留它——这个仓只有一个入口。
 APP_ROOT_ALLOWED = {"__init__", "main"}
 APP_ROOT_MSG = (
@@ -107,7 +107,7 @@ ASYNC_MSG = (
     "请改成普通的 def（Starlette 会丢进线程池），或真的用异步驱动。"
 )
 
-# T1：测试代码绝不进入源码目录
+# ：测试代码绝不进入源码目录
 SOURCE_ROOTS = ("backend/app", "frontend/src")
 # 后缀要跟着前端走：P5 之后组件测试是 `.test.tsx` / `.spec.tsx`（Vue 时代只有 `.ts`）。
 # 与 U1 那次是同一类漏：只认老后缀，规则对新写法视而不见。
@@ -128,7 +128,7 @@ SQL_START_RE = re.compile(
 
 # ---------------------------------------------------------------- U1：界面文案
 #
-# 《前端设计规范》§5.1：**界面里不写"这一页/这一节是什么"的解释性小字**。
+# 界面规则5.1：**界面里不写"这一页/这一节是什么"的解释性小字**。
 # 它是用户明确要求删干净的一类东西（原话"所有类似这种的全部删除，一个不留"），
 # 而它删完还会长回来——`PageShell` 的 `description` prop 就是被写回来的口子，
 # 所以那个 prop 连同一整套样式都删了。
@@ -294,7 +294,7 @@ CSS_UNLAYERED_MARKER = "@unlayered:"
 CSS_UNLAYERED_FILES: dict[str, str] = {
     "frontend/src/styles/tokens.css": (
         "基座：层序的唯一声明者本身；`:root` 令牌与全局 `:focus-visible`、遗留辅助类"
-        "（`.text-meta` / `.panel` …）按既有记载有意留在层外（`src/styles/tokens.css` §1.1 写着"
+        "（`.text-meta` / `.panel` …）按既有记载有意留在层外（`src/styles/tokens.css` 1.1 写着"
         "它们就是靠层外身份压过 utilities），收它们属于另一批工作"
     ),
     "frontend/src/index.css": (
@@ -458,7 +458,7 @@ def check_async_endpoints(path: Path, root: Path, tree: ast.AST) -> list[Violati
 
 
 def check_test_placement(path: Path, root: Path) -> list[Violation]:
-    """T1：源码目录内不得出现测试文件。``path`` 为绝对路径。"""
+    """：源码目录内不得出现测试文件。``path`` 为绝对路径。"""
     rel = path.relative_to(root)
     rel_posix = rel.as_posix()
     if not any(rel_posix.startswith(source) for source in SOURCE_ROOTS):
@@ -466,17 +466,17 @@ def check_test_placement(path: Path, root: Path) -> list[Violation]:
     if "__tests__" in path.parts or TEST_FILE_RE.match(path.name):
         return [
             Violation(
-                "T1",
+                "",
                 rel,
                 1,
-                "测试文件不得放入源码目录，请按工程规范 §5.1 放到 backend/tests 或 frontend/tests",
+                "测试文件不得放入源码目录，请按分层规则 5.1 放到 backend/tests 或 frontend/tests",
             )
         ]
     return []
 
 
 def check_ui_copy(path: Path) -> list[Violation]:
-    """U1：界面里不许出现"这一页是什么"的解释性小字（《前端设计规范》§5.1）。
+    """U1：界面里不许出现"这一页是什么"的解释性小字（界面规则5.1）。
 
     两条判据都是**机械可判的**：
 
@@ -668,7 +668,7 @@ U2_ALLOWED: tuple[tuple[str, str, str], ...] = (
     (
         "frontend/src/features/misc/settings/KnowledgeConnectionSection.tsx",
         "http://nas:8000/api/v1",
-        "「知识库地址」输入框的占位符示例（M3 阶段 6）：示范这一格该填什么格式，"
+        "「知识库地址」输入框的占位符示例（ 阶段 6）：示范这一格该填什么格式，"
         "本身就是可复制的那条数据，不是对实现的解释——与上面两条示例地址同一口径",
     ),
     # ---- 以下三条是 kybase 管理台自己的（2026-10-09 搬迁后按本仓现实补的白名单）----
@@ -677,7 +677,7 @@ U2_ALLOWED: tuple[tuple[str, str, str], ...] = (
     (
         "frontend/src/api/sidecar.ts",
         "http://127.0.0.1:8765",
-        "边车默认地址常量（`DEFAULT_SIDECAR_BASE`，可被 `VITE_SIDECAR_URL` 覆盖）："
+        "旧版客户端默认地址常量（`DEFAULT_SIDECAR_BASE`，可被 `VITE_SIDECAR_URL` 覆盖）："
         "它只被 `sidecarStatus().reason` 用来说清「打的是哪个基址」，是可复制、可核对的那条"
         "数据本身，与上面那条示例地址同一口径——不是把实现说给用户听",
     ),
@@ -1053,16 +1053,16 @@ U3_ALLOWED: tuple[tuple[str, str, str], ...] = (
     (
         "frontend/src/features/misc/settings/KnowledgeConnectionSection.tsx",
         "连不上，所以现在看不到任何库",
-        "① 失败态（M3 阶段 6）：「看得见的库」那一块在后端**没给出原因**时的兜底一句——"
+        "① 失败态（ 阶段 6）：「看得见的库」那一块在后端**没给出原因**时的兜底一句——"
         "空清单会被读成「一个库都没有」，而这句说的是「现在读不到、因为连不上」；"
         "有原因时显示的是后端那句原话，这一句只在原因为空时出现",
     ),
     (
         "frontend/src/features/misc/settings/KnowledgeConnectionSection.tsx",
         "哪几个库参与检索",
-        "③ 表单字段约束（M3 阶段 6）：这一节只管「连接」，**不设默认库集**——"
+        "③ 表单字段约束（ 阶段 6）：这一节只管「连接」，**不设默认库集**——"
         "不含这一句，用户会在这里找一个「默认查哪些库」的开关"
-        "（而它由对话输入框那个「知识库」开关决定，方案 §4.1 明确要求写清，"
+        "（而它由对话输入框那个「知识库」开关决定，方式 4.1 明确要求写清，"
         "避免再发明一个概念）",
     ),
     # ② 空态/首态：现在是什么、点哪儿开始。
@@ -1188,7 +1188,7 @@ def check_ps1_bom(root: Path) -> list[Violation]:
 #
 # 这条约定一直写在 CHANGELOG 的「附：版本号约定」里，但**没有任何检查**——
 # 于是 0.1.0 → 0.2.0 那次升级才发现实际有六处，而文档说的是三处
-# （见《开发计划》§12.171）。手写约定不加机械核查的失效方式，与 §12.32 记的"文档绿着撒谎"
+# （见开发记录12.171）。手写约定不加机械核查的失效方式，与 12.32 记的"文档绿着撒谎"
 # 一模一样，故补这条 V1。
 
 VERSION_MSG = "手写版本号必须一致（约定见 CHANGELOG「附：版本号约定」）"
@@ -1536,7 +1536,7 @@ def main() -> int:
 
     if violations:
         print(
-            f"\n共发现 {len(violations)} 处违规，违反《项目工程规范》§3.3 / §5.1、"
+            f"\n共发现 {len(violations)} 处违规，违反分层规则3.3 / 5.1、"
             f"脚本编码约定、界面文案条款（解释性小字 / 实现细节 / 解释性长句）、"
             f"CSS 分层纪律或 CHANGELOG「附：版本号约定」。"
         )

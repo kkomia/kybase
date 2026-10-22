@@ -2,10 +2,10 @@
 
 镜像同构：``app/services/credentials.py`` → ``tests/unit/services/test_credentials.py``。
 
-**v0.1.0 瘦身之后的形态**：这个服务在 NAS 部署里是空转的（没有系统钥匙串），
+**v0.1.0 精简之后的形态**：这个服务在 NAS 部署里是空转的（没有系统钥匙串），
 所以这里钉的是那两条**如实**的行为（不可用时 ``pending=0`` / ``migrate`` 抛），
 以及在**有**钥匙串时那套逐项幂等的收编语义——库侧换成 PG 测试仓储，
-原先那些"从 ``kylab.db`` 的字节里 grep 明文"的断言随本机档拆除。
+原先那些"从 ``kylab.db`` 的字节里 grep 明文"的断言随旧版拆除。
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def test_the_keychain_wins_when_it_holds_a_different_value(bundle: StoreBundle) 
 def test_only_the_provider_cell_is_still_collected(bundle: StoreBundle) -> None:
     """收编清单里只剩模型供应商标记那一处。
 
-    原先还有 ``web.search_api_key``（联网搜索随 Agent 侧拆除而消失）——
+    原先还有 ``web.search_api_key``（联网搜索随 调用方拆除而消失）——
     这一条是那个边界变更的刹车：清单里再冒出键名时，它得是有意识加的。
     """
     assert MIGRATED_SETTING_KEYS == ()

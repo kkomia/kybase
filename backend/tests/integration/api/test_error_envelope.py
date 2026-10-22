@@ -104,9 +104,9 @@ def test_error_envelope(
 
 
 def test_unauthorized_carries_www_authenticate(client: TestClient) -> None:
-    """RFC 7235：401 必须带 WWW-Authenticate，否则客户端不知道用哪种方案。"""
+    """RFC 7235：401 必须带 WWW-Authenticate，否则客户端不知道用哪种方式。"""
     response = client.get("/unauthorized")
-    assert response.headers.get("www-authenticate") == 'Bearer realm="kylab"'
+    assert response.headers.get("www-authenticate") == 'Bearer realm="kybase"'
 
 
 def test_validation_error_uses_the_same_envelope(client: TestClient) -> None:

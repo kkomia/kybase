@@ -266,7 +266,7 @@ const TAG_VARIANTS = {
  * **形状取胶囊**（`shape="pill"`）：旧 `StatusTag.vue` 的 `.status` 是
  * `height: 22px; padding: 0 var(--space-2); border-radius: var(--radius-pill)`。
  * Badge 默认那个 4px 方角是给卡片里的 `chip` 的（旧 `.chip` 也是方角），
- * 两者本来就是两种东西——所以形状做成变体，不动默认值（见对照记录 §3 第 4 条）。
+ * 两者本来就是两种东西——所以形状做成变体，不动默认值（见对照记录 3 第 4 条）。
  */
 export function StatusTag({
   label,
@@ -414,7 +414,7 @@ const MODAL_SIZES = {
 } as const
 
 /**
- * 弹窗：`@/ui/dialog` 的组合（`src/styles/tokens.css` §3 的那套三段式）。
+ * 弹窗：`@/ui/dialog` 的组合（`src/styles/tokens.css` 3 的那套三段式）。
  *
  * **行为一件都不在这里**：Esc 关闭、点遮罩关闭、打开时锁滚动、关闭后把焦点还给打开它的
  * 那个元素、`aria-modal` 与标题关联——全部由 Radix 的 Dialog 给（旧实现自己补了其中几件，

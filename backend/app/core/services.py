@@ -4,17 +4,17 @@
 API 层通过依赖注入拿到服务，自己不 new 任何东西。
 
 解析器注册顺序即优先级，且**必须由本模块决定**：`parsers/` 内部禁止互相 import，
-"谁先试"这种跨实现的决策只能放在 services/（工程规范 §3.3 L3）。
+"谁先试"这种跨实现的决策只能放在 services/（分层规则 3.3 L3）。
 
 当前顺序：纯文本直通 → MinerU 云端 → PaddleOCR 云端。
 前两个都靠 ``supports()`` 自己排除纯文本类文件，所以顺序不会误伤本地直读。
 云端解析器在未配置 token 时 ``supports()`` 恒为 False，因此**没配凭据也能跑通整条链路**。
 
-## 一个根（2026-10-09 瘦身收口）
+## 一个根（2026-10-09 精简收口）
 
-``Services`` 原先把 KB 与 Agent 的服务混装在一张图上，剥离阶段 1 一度拆成
-``Services``（Agent）与 ``KbServices``（KB）两个数据类；**Agent 侧代码整体拆除之后
-只剩 KB 域，两个根又合并回这一个**（架构设计 §6 阶段 1 第 3 步的终态）。
+``Services`` 原先把 KB 与 Agent 的服务混装在一张图上，早期 1 一度拆成
+``Services``（Agent）与 ``KbServices``（KB）两个数据类；**调用方代码整体拆除之后
+只剩 KB 域，两个根又合并回这一个**（设计 6 阶段 1 第 3 步的终态）。
 
 模块里因此只剩一件事：按一条链把 KB 域服务与它要的共享底座件装出来。
 依赖注入一处：KB 侧的模块（`api/v1/` 下那批 + `api/auth.py` + `mcp_server/`）
@@ -104,13 +104,13 @@ class Services:
     """驾驶舱统计：把散在几张表里的数字聚合成仪表盘要的形状。"""
 
     api_keys: ApiKeyService
-    """API Key 的发放、校验与作用域判定（架构 §3.2）。"""
+    """API Key 的发放、校验与作用域判定（架构 3.2）。"""
 
     chunks: ChunkService
-    """切块人工干预：改正文并重新向量化、禁用、删除（调研报告 G3）。"""
+    """切块人工干预：改正文并重新向量化、禁用、删除（调研 ）。"""
 
     users: UserService
-    """使用者名册：记录"是谁传的"，不参与鉴权（调研报告 G6）。"""
+    """使用者名册：记录"是谁传的"，不参与鉴权（调研 ）。"""
 
     auth: AuthService
     """账号引导、登录与会话校验（v10：名册升级为账号体系）。"""
@@ -122,7 +122,7 @@ class Services:
     """知识库分享：owner 把库授给其他成员，读/写两档（v10）。"""
 
     lifecycle: LifecycleService
-    """数据生命周期：影响清单、级联删除、回收站（M6 / T6.3、T6.4）。"""
+    """数据生命周期：影响清单、级联删除、回收站（ / 、）。"""
 
     batch: DocumentBatchService
     """文档批量动作：多选后的删除 / 重新摄入，逐条返回成败。"""
@@ -131,13 +131,13 @@ class Services:
     """存储维护：空间概览与"整理"（丢无主向量分区 + VACUUM，v17）。"""
 
     sources: SourceService
-    """数据源：HTML / RSS 的登记与拉取（M6 / T6.1–T6.3）。"""
+    """数据源：HTML / RSS 的登记与拉取（ / –）。"""
 
     observability: ObservabilityService
-    """运行态判据：任务是否卡住、是否长时间没被领取（M7 / T7.4）。"""
+    """运行态判据：任务是否卡住、是否长时间没被领取（ / ）。"""
 
     tabular: TabularService
-    """表格结构化副本：读写 CSV/Excel 的行列（M2 / T2.11）。"""
+    """表格结构化副本：读写 CSV/Excel 的行列（ / ）。"""
 
     summaries: DocumentSummaryService
     """文档摘要（v25）：入库时生成，检索上下文与界面都用它。"""
@@ -152,7 +152,7 @@ class Services:
     """知识库 Wiki：把已入库内容整理成带出处的百科式页面（v24）。"""
 
     webhooks: WebhookService
-    """Webhook 订阅与事件推送（M4 / T4.6）。"""
+    """Webhook 订阅与事件推送（ / ）。"""
 
     embedder: EmbeddingProvider
 
@@ -166,10 +166,10 @@ class Services:
     """运行期配置（凭据与模型）：各 provider 每次调用现取快照。"""
 
     models: ModelRegistryService
-    """模型注册器：供应商 → 模型目录 → 按用途绑定（调研报告 G1）。"""
+    """模型注册器：供应商 → 模型目录 → 按用途绑定（调研 ）。"""
 
     usage: UsageService
-    """用量统计：按次记 token 与调用量（调研报告 G7）。"""
+    """用量统计：按次记 token 与调用量（调研 ）。"""
 
     search_stats: SearchStatsService
     """检索命中趋势（v0.61）：一次检索按知识库记一行候选 / 留存 / 契合度。
@@ -178,10 +178,10 @@ class Services:
     读侧给 ``/stats/search-hits`` 与概览页那条活跃度曲线。"""
 
     idempotency: IdempotencyService
-    """幂等键：上传类接口防重试造成重复入库（架构 §3.2）。"""
+    """幂等键：上传类接口防重试造成重复入库（架构 3.2）。"""
 
     load: SystemLoadService
-    """负载面板数据源：CPU / 内存 / 队列深度 / 并发槽位 / 云端解析额度（§12.115）。"""
+    """负载面板数据源：CPU / 内存 / 队列深度 / 并发槽位 / 云端解析额度（12.115）。"""
 
     workers: list[TaskWorker] = field(default_factory=list)
     """进程里全部消费者（``KYLAB_WORKER_CONCURRENCY`` 个），应用启动时各起一个协程。
@@ -190,23 +190,23 @@ class Services:
     但它**必须包含 ``worker``**（见 ``_build_workers``）。"""
 
     secrets: SecretStore | None = None
-    """**系统钥匙串**（M5 阶段 6）：凭据的家（那套是给桌面壳的，本服务恒不适用）。
+    """**系统钥匙串**（ 阶段 6）：凭据的家（那套是给客户端的，本服务恒不适用）。
 
     两个服务从它取：``runtime``（收编过的那几个设置键）与 ``models``（供应商的 API Key）。
     这一位是**进程级那一个**对象——两处各建一个就会出现"设置页存进去了、别处读不到"
     这类最难查的分叉（两边都"成功"了）。
 
-    NAS 部署里没有系统钥匙串，恒 ``NullSecretStore``（R14）：库里那份凭据照旧是
+    NAS 部署里没有系统钥匙串，恒 ``NullSecretStore``（）：库里那份凭据照旧是
     凭据的家；``secrets.use_keychain()`` 为假，两个服务走库与 ``.env`` 那条路。
 
     为什么带默认值：手工构造的 ``Services``（用例、脚本）留 ``None``——同样是
     "没有钥匙串"那一档。"""
 
     credentials: CredentialsService | None = None
-    """**旧明文收编**（M5 阶段 6）：把库里的明文凭据搬进钥匙串的那个服务。
+    """**旧明文收编**（ 阶段 6）：把库里的明文凭据搬进钥匙串的那个服务。
 
     它只有三个动作（``status`` / ``migrate`` / NAS 钥匙那三个方法），而且是**显式的**：
-    没有任何调用点会顺手调 ``migrate``（不静默迁移，方案 §4.2）。
+    没有任何调用点会顺手调 ``migrate``（不静默迁移，方式 4.2）。
 
     钥匙串不可用时 ``status()`` 如实回 ``store: unavailable`` 且
     ``pending_migration: 0``——那种机器上"等着迁"这件事不存在（库就是凭据的家）。"""
@@ -219,7 +219,7 @@ class _RuntimeEmbedder(EmbeddingProvider):
     所以这里不缓存实例，每次 ``embed``/``embed_query`` 都按当前配置现建一个——
     建对象本身是廉价的（真正昂贵的是 HTTP 调用）。
 
-    **用量记在这一层是刻意的**（G7）：向量化的调用点很多（摄入的每个分片、
+    **用量记在这一层是刻意的**（）：向量化的调用点很多（摄入的每个分片、
     每次检索的 query），逐个去记必然漏。包在 provider 外面就有唯一入口。
     向量化接口通常**不返回 usage**，所以这里的 token 是按字符数估的——
     因此 ``reported=False``，界面上会明确标注"这是估算"。
@@ -343,17 +343,17 @@ def _build_graph(
     resolved = settings or get_settings()
     bundle = stores or build_stores(resolved)
 
-    # 系统钥匙串（M5 阶段 6，方案 §4.1 / §4.5）：**先建它**，因为下面两个服务都要从它取。
+    # 系统钥匙串（ 阶段 6，方式 4.1 / 4.5）：**先建它**，因为下面两个服务都要从它取。
     #
-    # **NAS 这种服务端部署恒 NullSecretStore**（R14）：容器里没有系统钥匙串，它库里那份
+    # **NAS 这种服务端部署恒 NullSecretStore**（）：容器里没有系统钥匙串，它库里那份
     # 凭据照旧是凭据的家（`use_keychain` 为假 → 两个服务走库与 .env 那条路）。
     secrets: SecretStore = NullSecretStore()
     # 注册器先建、再交给 runtime：runtime 的快照要**优先取注册表里绑定的模型**，
     # 未绑定时才回退到设置页那套字段（叠加层，见 services/model_registry.py）
     registry = ModelRegistryService(bundle, secrets=secrets)
     runtime = RuntimeConfigService(bundle, resolved, registry=registry, secrets=secrets)
-    # 旧明文收编（M5 阶段 6）：**显式动作**的服务，没有任何调用点会顺手调它
-    # （不静默迁移，方案 §4.2 末段）。钥匙串不可用时它如实报
+    # 旧明文收编（ 阶段 6）：**显式动作**的服务，没有任何调用点会顺手调它
+    # （不静默迁移，方式 4.2 末段）。钥匙串不可用时它如实报
     # `store: unavailable` 且 `pending_migration: 0`。
     credentials = CredentialsService(bundle, secrets)
 
@@ -390,13 +390,13 @@ def _build_graph(
         # 落库是他自己的事——回调就是"检索层不认识存储"的那道边界
         search_recorder=search_stats.record,
     )
-    # webhook 先建：下面的摄入与生命周期都通过回调向它发事件（T4.6）。
+    # webhook 先建：下面的摄入与生命周期都通过回调向它发事件（）。
     # **用回调而不是直接依赖**：通知是旁路，它挂了不能让摄入卡住
     webhooks = WebhookService(bundle)
 
     # 摘要 / 出题 / Wiki / 库提示词这四处生成式**直接走 llm 那条通路**
     # （`llm.chat_for(runtime)`）：它们要的是模型的语言能力，不是检索结果，
-    # 所以不经过任何"对话服务"——那个服务已随 Agent 侧代码一起拆除。
+    # 所以不经过任何"对话服务"——那个服务已随 调用方代码一起拆除。
     #
     # **出题必须在摄入之前建**（v23）：摄入要依赖"分段出题"，
     # 反过来建的话 IngestService 只能拿到 None，"上传即出题"就永远不生效。
@@ -457,7 +457,7 @@ def _build_graph(
         # 365 天的窗口，照用量那套清会让"近一年"的后半段慢慢变空（见 search_stats 常量处）
         search_stats.purge_expired()
         # 任务与阶段事件这两张表只增不减，而它们都在热路径上（列表、队列概览、
-        # 每行的进度条都会读）。保留期见 services/maintenance.py（§12.116）。
+        # 每行的进度条都会读）。保留期见 services/maintenance.py（12.116）。
         MaintenanceService(bundle).prune_history()
         # 给还没有摘要的文档补摘要（v25）。挂在空闲分支上：它是"用空闲时间换
         # 后续每轮检索的 token"，一小批一小批地补，不需要用户点任何东西。

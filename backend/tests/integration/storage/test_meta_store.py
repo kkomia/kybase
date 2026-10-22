@@ -1,7 +1,7 @@
 """``MetaStore`` 的行为测试（集成）。
 
-覆盖架构里靠元数据兑现的承诺：文件去重（§6.3）、断点续跑的任务租约（§4）、
-回收站 7 天（§6.2）、embedding 模型锁（§6.4）、大文件切分（§4.2）。
+覆盖架构里靠元数据兑现的承诺：文件去重（6.3）、断点续跑的任务租约（4）、
+回收站 7 天（6.2）、embedding 模型锁（6.4）、大文件切分（4.2）。
 
 这套用例是把 921 行的行为契约喂给仓储接口——**当初正是靠它把一个实现换成
 另一个实现**（SQLite → PostgreSQL）而不用重写用例。需要 PostgreSQL 测试库
@@ -108,7 +108,7 @@ def test_list_knowledge_bases_returns_all(store: MetaStore, kb) -> None:
 
 
 def test_update_knowledge_base_embedding(store: MetaStore, kb) -> None:
-    """架构 §6.4：允许换 endpoint，模型 ID 与维度随库更新。"""
+    """架构 6.4：允许换 endpoint，模型 ID 与维度随库更新。"""
     store.update_knowledge_base_embedding(
         "kb_1", model_id="BAAI/bge-m3", dim=1024, base_url="http://127.0.0.1:11434/v1"
     )
@@ -121,7 +121,7 @@ def test_update_knowledge_base_embedding(store: MetaStore, kb) -> None:
 
 
 def test_get_document_by_hash_finds_duplicate(store: MetaStore, kb, document) -> None:
-    """架构 §6.3：上传前先按 hash 查重，命中则提醒"检测到相同文件"。"""
+    """架构 6.3：上传前先按 hash 查重，命中则提醒"检测到相同文件"。"""
     found = store.get_document_by_hash("kb_1", "hash-1")
     assert found is not None
     assert found.id == document.id
@@ -245,7 +245,7 @@ def test_pagination_is_stable_when_created_at_ties(store: MetaStore, kb) -> None
 
 
 def test_document_parts_are_ordered_by_index(store: MetaStore, document) -> None:
-    """架构 §4.2：大文件按页范围切子文件，顺序必须稳定。"""
+    """架构 4.2：大文件按页范围切子文件，顺序必须稳定。"""
     store.create_document_parts(
         [
             DocumentPartRecord(id="part_2", document_id="doc_1", part_index=2, page_start=401,
@@ -267,7 +267,7 @@ def test_document_parts_are_ordered_by_index(store: MetaStore, document) -> None
 
 def test_replace_chunks_stores_order_and_image_anchors(store: MetaStore, kb,
                                                        document) -> None:
-    """架构 §7：图片不入向量库，只在 chunk 元数据里记锚点。"""
+    """架构 7：图片不入向量库，只在 chunk 元数据里记锚点。"""
     store.replace_chunks(
         "doc_1",
         [_chunk("c2", 1, image_ids=("img_1", "img_2")), _chunk("c1", 0)],
@@ -352,7 +352,7 @@ def test_images_are_upserted_and_listed_by_page(store: MetaStore, document) -> N
 
 
 def test_parse_result_is_idempotent_and_keeps_probe_meta(store: MetaStore, document) -> None:
-    """重新解析应覆盖产物，而不是留下多份（架构 §6：解析产物分层持久化）。"""
+    """重新解析应覆盖产物，而不是留下多份（架构 6：解析产物分层持久化）。"""
     store.save_parse_result(
         ParseResultRecord(
             document_id="doc_1",
@@ -495,7 +495,7 @@ def test_reschedule_task_refuses_when_lease_moved_on(store: MetaStore,
 
 
 def test_reclaim_requeues_expired_task_with_budget_left(store: MetaStore) -> None:
-    """进程崩溃后：超时任务回到 PENDING，实现断点续跑（架构 §4）。"""
+    """进程崩溃后：超时任务回到 PENDING，实现断点续跑（架构 4）。"""
     store.enqueue_task(_task("t1"))
     store.claim_task(owner="worker-crashed", lease_seconds=1)
 
@@ -554,7 +554,7 @@ def test_tasks_follow_document_deletion(store: MetaStore, kb, document) -> None:
 
 
 def test_data_source_keeps_config_and_etag(store: MetaStore, kb) -> None:
-    """架构 §10：定时拉取靠 etag 做变更检测。"""
+    """架构 10：定时拉取靠 etag 做变更检测。"""
     store.create_data_source(
         DataSourceRecord(id="ds_1", knowledge_base_id="kb_1", kind=DataSourceKind.RSS,
                          name="技术日报", config={"url": "https://example.com/feed"}, etag="W/abc")
@@ -566,7 +566,7 @@ def test_data_source_keeps_config_and_etag(store: MetaStore, kb) -> None:
 
 
 def test_api_key_is_stored_and_looked_up_by_hash(store: MetaStore, kb) -> None:
-    """架构 §3.2：key 绑定知识库范围与只读/读写权限。"""
+    """架构 3.2：key 绑定知识库范围与只读/读写权限。"""
     store.create_api_key(
         ApiKeyRecord(id="key_1", name="只读客户端", key_hash="sha256:deadbeef",
                      permission=ApiKeyPermission.READONLY, knowledge_base_ids=("kb_1",))
@@ -592,7 +592,7 @@ def test_webhook_round_trip(store: MetaStore) -> None:
 
 
 def test_trash_keeps_original_for_retention_window(store: MetaStore, document) -> None:
-    """架构 §6.2：原文进回收站保留 7 天。"""
+    """架构 6.2：原文进回收站保留 7 天。"""
     store.add_to_trash(
         TrashRecord(id="tr_1", document_id="doc_1", kind=TrashKind.ORIGINAL,
                     storage_path="data/originals/doc_1.pdf",
@@ -652,7 +652,7 @@ def test_deleting_document_cascades_to_parts_chunks_and_images(store: MetaStore,
 
 def test_deleting_knowledge_base_removes_everything_inside(store: MetaStore, kb,
                                                            document) -> None:
-    """架构 §6.2 级联删除在库一级同样成立。"""
+    """架构 6.2 级联删除在库一级同样成立。"""
     store.replace_chunks("doc_1", [_chunk("c1", 0)])
     store.delete_knowledge_base("kb_1")
 
@@ -740,7 +740,7 @@ def test_update_password_and_disable(store: MetaStore) -> None:
 def test_claim_legacy_ownership_only_touches_ownerless_rows(store: MetaStore, kb) -> None:
     """认领只动 owner 为 NULL 的老数据；已有归属的行绝不能被改（否则 setup 会变成夺权）。
 
-    分家之后只认领知识库（会话/笔记那几张 Agent 表已删）。
+    拆分之后只认领知识库（会话/笔记那几张 Agent 表已删）。
     """
     store.create_user(UserRecord(id="user_a", name="管理员", username="admin"))
     store.create_knowledge_base(

@@ -1,5 +1,5 @@
 /**
- * 联网那几步"查了哪些站点"的**本机站点表 + 域名解析**（纯函数，§12.334 第二节）。
+ * 联网那几步"查了哪些站点"的**本机站点表 + 域名解析**（纯函数，12.334 第二节）。
  *
  * 用户的原话："网页搜索 一定要把 网页的 logo 给显示出来。这样用户大致可以知道
  * 在查询哪些常见的网页。" 所以这一步要给出来的信息是**站点**（github.com、
@@ -83,7 +83,7 @@ export interface WebSite {
 }
 
 /**
- * **本机已知站点表**（§12.334：github.com / arxiv.org / wikipedia.org / stackoverflow.com /
+ * **本机已知站点表**（12.334：github.com / arxiv.org / wikipedia.org / stackoverflow.com /
  * developer.mozilla.org / 常见中文站点…）。
  *
  * 收录口径：搜索引擎里高频出现、且名字一眼认得出的站点。**没有品牌色**——

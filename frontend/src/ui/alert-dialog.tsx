@@ -6,7 +6,7 @@ import { Button } from '@/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
- * 确认弹窗。表面取值**与 `dialog.tsx` 同一口径**（README §2 的弹窗那一行）：
+ * 确认弹窗。表面取值**与 `dialog.tsx` 同一口径**（README 2 的弹窗那一行）：
  * 遮罩 `--overlay-scrim`、表面 `--bg-overlay`、圆角 `--radius-overlay`（20px）、
  * 内边距 `--space-4`（16px）、默认宽度 480px、阴影 `--shadow-popover`。
  * 上游这里是 `bg-background + rounded-lg + p-6`，本仓的弹窗只有一套取值。
