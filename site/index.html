@@ -1,505 +1,661 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>kybase · 自托管的知识库服务</title>
-    <meta
-      name="description"
-      content="kybase 是自托管的知识库服务：摄入、切块、混合检索，检索时先给判定、再给带出处的原文片段。MCP / REST / Skill 三条等价路径，MIT 协议。"
-    />
-    <meta name="theme-color" content="#f2efe9" />
-    <meta name="color-scheme" content="light dark" />
-    <link rel="canonical" href="https://kkomia.github.io/kybase/" />
-    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
-    <script>
-      // 首屏前定主题，避免深浅切换闪一下；app.js 之后会接管
-      try {
-        var saved = localStorage.getItem('kybase-site-theme');
-        document.documentElement.dataset.theme =
-          saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-      } catch (error) {
-        /* 隐私模式下读不到 localStorage，保持默认浅色 */
-      }
-      // 动效开启时先立起标题的初始态，避免第一帧标题先露出来再被推下去
-      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        document.documentElement.classList.add('motion-ready');
-      }
-    </script>
-    <link rel="stylesheet" href="./styles.css" />
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="kybase · 自托管的知识库服务" />
-    <meta
-      property="og:description"
-      content="让每一句引用，都翻得到原文。摄入、混合检索、判定与出处，MCP / REST / Skill 三条等价路径。"
-    />
-    <meta property="og:url" content="https://kkomia.github.io/kybase/" />
-    <meta property="og:image" content="https://kkomia.github.io/kybase/assets/og.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <script src="./vendor/gsap.min.js" defer></script>
-    <script src="./vendor/ScrollTrigger.min.js" defer></script>
-    <script src="./app.js" defer></script>
-  </head>
-  <body>
-    <a class="skip-link" href="#main">跳到正文</a>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kybase · 给 Agent 的知识库插件</title>
+<meta name="description" content="kybase 是给 Agent 用的知识库插件：MCP / Skill 一行接入，Agent 自己上传、解析、管理、检索 PDF 与 Word；命中带着原文切片、页码与标题路径回来，检索参数按分布自己调。MIT 自托管。" />
+<meta name="theme-color" content="#0a0b0c" />
+<meta name="color-scheme" content="dark" />
+<link rel="canonical" href="https://kkomia.github.io/kybase/" />
+<link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+<script>
+  try {
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.documentElement.classList.add('motion-ready');
+    }
+  } catch (error) { /* 老浏览器不认 matchMedia，直接当静态页 */ }
+  try {
+    if (/[?&]motion=off/.test(location.search)) {
+      document.documentElement.classList.remove('motion-ready');
+      document.documentElement.classList.add('motion-off');
+    }
+  } catch (error) { /* 隐私模式拿不到 location 也没关系 */ }
+  // app.js 没加载成功时，2.6 秒后把首屏初始态撤掉，内容不会停在透明态
+  window.setTimeout(function () {
+    var el = document.documentElement;
+    if (!el.classList.contains('is-ready')) el.classList.remove('motion-ready');
+  }, 2600);
+</script>
+<link rel="stylesheet" href="./styles.css" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="kybase · 给 Agent 的知识库插件" />
+<meta property="og:description" content="MCP / Skill 一行接入。上传、解析、管理、检索由 Agent 自己完成；每条命中带原文切片、页码与标题路径。" />
+<meta property="og:url" content="https://kkomia.github.io/kybase/" />
+<meta property="og:image" content="https://kkomia.github.io/kybase/assets/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<script src="./vendor/gsap.min.js" defer></script>
+<script src="./vendor/ScrollTrigger.min.js" defer></script>
+<script src="./app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
 
-    <header class="topbar" data-topbar>
-      <div class="topbar-inner">
-        <a class="brand" href="#top" aria-label="kybase 首页">
-          <svg
-            class="brand-mark"
-            width="27"
-            height="22"
-            viewBox="0 0 370 299"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <circle cx="182.5" cy="148.5" r="145.75" stroke-width="7" />
-            <ellipse
-              cx="185.5"
-              cy="155.5"
-              rx="192"
-              ry="44"
-              transform="rotate(-18.5 185.5 155.5)"
-              stroke-width="3"
-            />
-            <circle cx="318.5" cy="147" r="13.75" stroke-width="7" />
-          </svg>
-          <span class="brand-word">kybase</span>
-        </a>
+<header class="topbar" data-topbar>
+  <div class="topbar-inner">
+    <a class="brand" href="#top" aria-label="kybase 首页">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
+        <circle cx="32" cy="32" r="16.5" stroke="currentColor" stroke-width="2.4" />
+        <ellipse cx="32" cy="32" rx="21" ry="5.4" transform="rotate(-18.5 32 32)" stroke="currentColor" stroke-width="1.5" />
+        <circle cx="46.6" cy="28" r="2.6" class="brand-dot" />
+      </svg>
+      <span class="brand-word">kybase</span>
+      <span class="brand-chip">MCP / SKILL 插件</span>
+    </a>
 
-        <nav class="nav" aria-label="页面导航">
-          <a href="#capability">能力</a>
-          <a href="#pipeline">过程</a>
-          <a href="#connect">接入</a>
-          <a href="#console">界面</a>
-          <a href="#deploy">部署</a>
-        </nav>
+    <nav class="nav" aria-label="页面导航">
+      <a href="#tools">工具面</a>
+      <a href="#answer">返回</a>
+      <a href="#pages">页码</a>
+      <a href="#formats">双格式</a>
+      <a href="#tuning">调参</a>
+      <a href="#free">免费栈</a>
+      <a href="#deploy">部署</a>
+    </nav>
 
-        <div class="topbar-actions">
-          <button
-            class="menu-toggle"
-            type="button"
-            id="menu-toggle"
-            aria-expanded="false"
-            aria-controls="mobile-nav"
-          >
-            目录
-          </button>
-          <a
-            class="ghost-link"
-            href="https://github.com/kkomia/kybase"
-            target="_blank"
-            rel="noreferrer"
-          >
-            GitHub
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-              <path
-                d="M3.2 8.8 8.8 3.2M4.4 3.2h4.4v4.4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linecap="round"
-              />
-            </svg>
-          </a>
-          <button
-            class="theme-toggle"
-            type="button"
-            id="theme-toggle"
-            aria-label="切换为深色"
-            title="切换为深色"
-          >
-            <svg class="icon-sun" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.4" />
-              <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-                <path d="M8 1.2v1.7M8 13.1v1.7M1.2 8h1.7M13.1 8h1.7" />
-                <path d="m3.2 3.2 1.2 1.2M11.6 11.6l1.2 1.2M12.8 3.2l-1.2 1.2M4.4 11.6l-1.2 1.2" />
-              </g>
-            </svg>
-            <svg class="icon-moon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M13.4 9.9A5.9 5.9 0 0 1 6.1 2.6a5.9 5.9 0 1 0 7.3 7.3Z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
+    <div class="topbar-actions">
+      <span class="top-ver">v0.1.0</span>
+      <button class="menu-toggle" type="button" id="menu-toggle" aria-expanded="false" aria-controls="mobile-nav">目录</button>
+      <a class="ghlink" href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      <a class="top-cta" href="#deploy">接入</a>
+    </div>
+  </div>
+  <nav class="mobile-nav" id="mobile-nav" aria-label="页面导航" hidden>
+    <a href="#tools">工具面</a>
+    <a href="#answer">返回</a>
+    <a href="#pages">页码</a>
+    <a href="#formats">双格式</a>
+    <a href="#tuning">调参</a>
+    <a href="#free">免费栈</a>
+    <a href="#deploy">部署</a>
+  </nav>
+</header>
+
+<main id="main">
+  <!-- ============================= 首屏 ============================= -->
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="hero-inner">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <h1 class="display" id="hero-title">
+            <span class="line"><span>给 Agent</span></span>
+            <span class="line"><span>插一块<span class="mark">知识库</span>。</span></span>
+          </h1>
+        </div>
+        <div class="hero-side">
+          <p class="lede">
+            kybase 是一个 <b>MCP / Skill 插件</b>：Agent 在会话里就能上传、解析、管理、检索 PDF 与 Word；
+            每条命中带着<b>原文切片、页码与标题路径</b>回来。检索参数不写死，分布和 <code>suggested</code> 一起交还给 Agent。
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="#deploy">接入插件</a>
+            <a class="btn btn-ghost" href="#answer">看一次返回</a>
+          </div>
+          <ul class="hero-facts" aria-label="关键事实">
+            <li><span>11</span><small>个 MCP 工具</small></li>
+            <li><span>2</span><small>种传输：stdio / HTTP</small></li>
+            <li><span>0</span><small>订阅费用，MIT 自托管</small></li>
+          </ul>
         </div>
       </div>
 
-      <nav class="mobile-nav" id="mobile-nav" aria-label="页面导航" hidden>
-        <a href="#capability">能力</a>
-        <a href="#pipeline">过程</a>
-        <a href="#connect">接入</a>
-        <a href="#console">界面</a>
-        <a href="#deploy">部署</a>
-      </nav>
-    </header>
-
-    <main id="main">
-      <!-- 首屏 -->
-      <section class="hero" id="top" aria-labelledby="hero-title">
-        <div class="hero-inner">
-          <div class="hero-copy">
-            <h1 class="display" id="hero-title">
-              <span class="line"><span>让每一句引用，</span></span>
-              <span class="line"><span>都翻得到原文。</span></span>
-            </h1>
-            <p class="lede">
-              kybase 是自托管的知识库服务：把文件摄入成索引，检索时<strong>先给判定</strong>、再给
-              <strong>带出处的原文片段</strong>。它不生成回答，只把证据交给你的 Agent。
-            </p>
-            <div class="actions">
-              <a class="btn btn-primary" href="#deploy">
-                部署一套
-                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                  <path
-                    d="M2.5 7h8M7.5 3.5 11 7l-3.5 3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </a>
-              <a class="btn btn-ghost" href="#capability">看它如何判定</a>
-            </div>
-            <dl class="hero-facts">
-              <div>
-                <dt>检索</dt>
-                <dd>向量 + BM25 · RRF</dd>
-              </div>
-              <div>
-                <dt>判定</dt>
-                <dd>strong / weak /<br />none / unknown</dd>
-              </div>
-              <div>
-                <dt>路径</dt>
-                <dd>MCP · REST · Skill</dd>
-              </div>
-              <div>
-                <dt>许可</dt>
-                <dd>MIT，自托管</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div class="hero-visual">
-            <figure class="decision" data-demo aria-label="检索响应">
-              <div class="decision-head">
-                <span class="mono-label">POST /api/v1/search</span>
-                <span class="decision-scope">产品手册</span>
-              </div>
-
-              <div class="decision-query">
-                <span class="query-chevron" aria-hidden="true">›</span>
-                <span class="query-text" data-type="嵌入模型怎么标定？"></span>
-                <span class="query-caret" aria-hidden="true"></span>
-              </div>
-
-              <div class="verdict">
-                <div class="verdict-line">
-                  <span class="verdict-word">判定</span>
-                  <span class="fit-stamp" data-fit>strong</span>
-                  <span class="verdict-summary">候选 38 条，收敛后保留 5 条。</span>
-                </div>
-                <div class="dist" data-dist aria-hidden="true"></div>
-                <div class="verdict-facts">
-                  <span><code>keep 5</code></span>
-                  <span><code>min_score 0.42</code></span>
-                  <span><code>per_doc 2</code></span>
-                </div>
-              </div>
-
-              <ol class="hits" data-hits>
-                <li class="is-selected">
-                  <span class="hit-rank">1</span>
-                  <span class="hit-doc">部署手册-NAS.pdf</span>
-                  <span class="hit-page">p.7</span>
-                  <span class="hit-basis">hybrid</span>
-                  <span class="hit-score">0.71</span>
-                </li>
-                <li>
-                  <span class="hit-rank">2</span>
-                  <span class="hit-doc">检索设计-v2.md</span>
-                  <span class="hit-page">p.3</span>
-                  <span class="hit-basis">hybrid</span>
-                  <span class="hit-score">0.64</span>
-                </li>
-                <li>
-                  <span class="hit-rank">3</span>
-                  <span class="hit-doc">接入-MCP.md</span>
-                  <span class="hit-page">&mdash;</span>
-                  <span class="hit-basis">fulltext</span>
-                  <span class="hit-score">0.41</span>
-                </li>
-              </ol>
-
-              <div class="decision-foot">
-                <span>显示 3 / 5 条</span>
-                <button class="replay" type="button" data-replay aria-label="重放检索演示">
-                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                    <path
-                      d="M9.8 4.6A4 4 0 1 0 10 6M9.8 1.8v2.9H6.9"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                  重放
-                </button>
-              </div>
-            </figure>
-          </div>
+      <div class="session" data-session role="figure" aria-label="Agent 在会话里通过 kybase 工具上传文件、等待索引并检索出带页码的原文">
+        <div class="session-bar">
+          <span class="s-dot" aria-hidden="true"></span>
+          <span class="s-title">Claude Desktop</span>
+          <span class="s-sep" aria-hidden="true"></span>
+          <span class="s-url">kybase · http://kb.local:8765/mcp</span>
+          <span class="s-state"><i aria-hidden="true"></i>CONNECTED</span>
         </div>
+        <div class="session-body">
+          <div class="thread">
+            <div class="msg msg-user">
+              <span class="who">你</span>
+              <p class="bubble">把「产品手册.docx」和「部署手册-NAS.pdf」收进产品库，然后回答：嵌入模型怎么标定？</p>
+            </div>
+            <div class="msg msg-agent">
+              <span class="who">Agent</span>
+              <p class="bubble">先建库、上传，等索引完成，再检索。</p>
+            </div>
 
-        <figure class="plate hero-plate">
-          <a class="plate-frame" href="#console" aria-label="查看管理台截图">
-            <img
-              src="./assets/console-dashboard.png"
-              data-img-light="./assets/console-dashboard.png"
-              data-img-dark="./assets/console-dashboard-dark.png"
-              width="1440"
-              height="1000"
-              alt="kybase 管理台概览：知识库、文档与切块数量，近 365 天入库节奏热力图与趋势曲线"
-            />
-          </a>
-          <figcaption>
-            <span class="plate-no">图版 01</span>
-            概览：入库节奏、检索命中与用量。点开看管理台全貌。
-          </figcaption>
-        </figure>
-      </section>
+            <div class="msg msg-tool" data-call>
+              <span class="who">调用</span>
+              <div class="call"><span class="fn">list_knowledge_bases</span><span class="res">产品库 <em>kb_9f3c</em></span></div>
+            </div>
+            <div class="msg msg-tool" data-call>
+              <span class="who">调用</span>
+              <div class="call"><span class="fn">upload_document</span><span class="res">产品手册.docx → <em>doc_8f2a</em> · is_duplicate <b>false</b></span></div>
+            </div>
+            <div class="msg msg-tool" data-call>
+              <span class="who">调用</span>
+              <div class="call"><span class="fn">upload_document</span><span class="res">部署手册-NAS.pdf → <em>doc_1c7e</em> · is_duplicate <b>false</b></span></div>
+            </div>
+            <div class="msg msg-tool" data-call>
+              <span class="who">调用</span>
+              <div class="call"><span class="fn">get_document_status</span><span class="res">stage <b>indexed</b> · chunks 184 · searchable <b>true</b></span></div>
+            </div>
+            <div class="msg msg-tool" data-call>
+              <span class="who">调用</span>
+              <div class="call"><span class="fn">search</span><span class="res">fit <b>strong</b> · 38 candidates → 4 survived</span></div>
+            </div>
 
-      <!-- 主张 -->
-      <section class="manifesto" aria-label="产品主张">
-        <p class="manifesto-line" data-split>回答可以生成，出处不能。</p>
-        <p class="manifesto-note">
-          Agent 需要的不是一个更像人的答案，而是一段它引用得起、你核得动的原文。
+            <div class="hit" data-hit>
+              <div class="hit-top">
+                <span class="hit-doc">部署手册-NAS.pdf</span>
+                <span class="hit-page">p.7 · similarity 0.712</span>
+              </div>
+              <p class="hit-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
+              <div class="hit-meta"><span>basis <b>vector</b></span><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
+            </div>
+
+            <div class="msg msg-agent">
+              <span class="who">Agent</span>
+              <p class="bubble">答案是：<b>建议不超过 2000，推荐 1024</b>，超过后建不了 HNSW。<br /><span class="cite">— 部署手册-NAS.pdf, p.7 · 五、嵌入模型与维度</span><span class="caret" aria-hidden="true"></span></p>
+            </div>
+          </div>
+
+          <aside class="toolrail" aria-label="工具面">
+            <div class="rail-head"><span>工具面</span><b>11</b></div>
+            <ol class="rail-list">
+              <li>list_knowledge_bases</li>
+              <li>create_knowledge_base</li>
+              <li class="is-lit">upload_document</li>
+              <li>add_data_source</li>
+              <li class="is-lit">search</li>
+              <li>list_documents</li>
+              <li>get_document_status</li>
+              <li>get_document_content</li>
+              <li>get_document_pages</li>
+              <li>reparse_document</li>
+              <li>delete_document</li>
+            </ol>
+            <div class="rail-fp">
+              <span>surface_fingerprint</span>
+              <code>50f7fa2aaab1</code>
+            </div>
+            <p class="rail-note">指纹搭在 <code>serverInfo.version</code> 上；契约一改，客户端立刻知道。</p>
+          </aside>
+        </div>
+      </div>
+
+      <div class="hero-foot">
+        <p>演示会话：工具名与返回字段取自当前实现；文件、页码与数值为示例。</p>
+        <p class="hero-foot-r">200 MB REST · 32 MB MCP · 异步摄入八阶段</p>
+      </div>
+
+      <a class="scroll-cue" href="#tools" aria-label="向下滚动到工具面"><span>往下：它拿回来的东西</span><i aria-hidden="true"></i></a>
+    </div>
+  </section>
+
+  <!-- ============================= 工具面 ============================= -->
+  <section class="section section-dark tools" id="tools" aria-labelledby="tools-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">01 / 工具面</p>
+        <h2 id="tools-title">十一个工具，<br />一圈走完。</h2>
+        <p class="sec-lede">
+          上传、解析、管理、检索都在工具面里。Agent 不必知道背后的队列和索引，只要按状态往下走；
+          每一步都能调用、检查、重试。
         </p>
-      </section>
+      </div>
 
-      <!-- 能力 -->
-      <section class="section capability" id="capability" aria-labelledby="capability-title">
-        <div class="section-head">
-          <h2 id="capability-title">检索先给判定，再给原文。</h2>
-          <p>
-            大多数检索只回一串分数。kybase 先回答另一个问题：这份资料到底答不答得上。
-            <code>fit</code> 是内容结论，<code>none</code> 不是故障。
-          </p>
+      <div class="tool-explorer" data-tools>
+        <div class="tool-groups" role="tablist" aria-label="工具分组">
+          <button class="tool-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel" data-group="access">接入 <span>3</span></button>
+          <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="ingest">上传与解析 <span>3</span></button>
+          <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="manage">管理与取回 <span>3</span></button>
+          <button class="tool-tab" type="button" role="tab" aria-selected="false" aria-controls="tool-panel" data-group="retrieve">检索 <span>2</span></button>
+          <span class="tool-indicator" aria-hidden="true"></span>
         </div>
 
-        <ol class="feature-rows">
-          <li class="feature-row" data-reveal>
-            <div class="feature-index">01</div>
-            <div class="feature-body">
-              <h3>判定先于原文</h3>
-              <p>
-                <code>summary</code> 一句话说清候选与收敛结果，<code>distribution</code> 给出分布，
-                <code>decision</code> 记录这次按什么收敛。原文排在它们之后。
-              </p>
-            </div>
-            <div class="feature-viz">
-              <div class="viz-fit">
-                <span class="fit-chip is-on">strong</span>
-                <span class="fit-chip">weak</span>
-                <span class="fit-chip">none</span>
-                <span class="fit-chip">unknown</span>
-              </div>
-              <div class="viz-bars" aria-hidden="true">
-                <span style="--h: 18%"></span><span style="--h: 26%"></span><span style="--h: 34%"></span>
-                <span style="--h: 48%"></span><span style="--h: 72%"></span><span style="--h: 92%"></span>
-                <span style="--h: 64%"></span><span style="--h: 44%"></span><span style="--h: 30%"></span>
-                <span style="--h: 22%"></span><span style="--h: 16%"></span><span style="--h: 12%"></span>
-              </div>
-            </div>
-          </li>
-
-          <li class="feature-row" data-reveal>
-            <div class="feature-index">02</div>
-            <div class="feature-body">
-              <h3>页码只在能核对时出现</h3>
-              <p>
-                页码跟着文档自己的分页标记走；对不上就返回 <code>null</code>——报一个翻不到原文的页码，
-                比不报更糟。每条命中还标出是哪条通道捞上来的。
-              </p>
-            </div>
-            <div class="feature-viz">
-              <div class="viz-quote">
-                <p>“嵌入维度建议不超过 2000，推荐 1024……”</p>
-                <div class="viz-cite">
-                  <span>部署手册-NAS.pdf</span>
-                  <span class="viz-page">p.7</span>
-                  <span class="viz-basis">hybrid · 0.71</span>
-                </div>
-              </div>
-            </div>
-          </li>
-
-          <li class="feature-row" data-reveal>
-            <div class="feature-index">03</div>
-            <div class="feature-body">
-              <h3>收敛，是一页一页翻</h3>
-              <p>
-                <code>keep</code> 是一页几条，<code>top_k</code> 是这次能翻到的总量。
-                按 <code>offset</code> / <code>next_offset</code> 翻到 <code>null</code>，
-                判定在每一页上逐字相同。
-              </p>
-            </div>
-            <div class="feature-viz">
-              <div class="viz-pager">
-                <div class="viz-page-row is-active">第 1 页 · keep 5 · offset 0</div>
-                <div class="viz-page-row">第 2 页 · offset 5</div>
-                <div class="viz-page-row">第 3 页 · offset 10</div>
-                <div class="viz-page-end">next_offset: null</div>
-              </div>
-            </div>
-          </li>
-        </ol>
-      </section>
-
-      <!-- 过程：吸附叙述 -->
-      <section class="pipeline" id="pipeline" aria-labelledby="pipeline-title">
-        <div class="section-head">
-          <h2 id="pipeline-title">一张纸，走到一条引用。</h2>
-          <p>摄入、切块、检索、引用——四步都发生在服务端，调用方看到的是一份可核对的响应。</p>
+        <div class="tool-body" id="tool-panel" role="tabpanel">
+          <ol class="tool-list" data-tool-list></ol>
+          <div class="tool-detail" data-tool-detail aria-live="polite"></div>
         </div>
+        <noscript>
+          <ul class="tool-list tool-list-static">
+            <li><span class="tname">list_knowledge_bases</span><span class="tlabel">列库</span></li>
+            <li><span class="tname">create_knowledge_base</span><span class="tlabel">建库</span></li>
+            <li><span class="tname">add_data_source</span><span class="tlabel">挂 RSS / 网页源</span></li>
+            <li><span class="tname">upload_document</span><span class="tlabel">上传，异步摄入</span></li>
+            <li><span class="tname">get_document_status</span><span class="tlabel">看处理进度</span></li>
+            <li><span class="tname">reparse_document</span><span class="tlabel">清产物重解析</span></li>
+            <li><span class="tname">list_documents</span><span class="tlabel">列文档与状态</span></li>
+            <li><span class="tname">get_document_content</span><span class="tlabel">取全文 / 原件</span></li>
+            <li><span class="tname">delete_document</span><span class="tlabel">删除，进回收站</span></li>
+            <li><span class="tname">search</span><span class="tlabel">混合检索，返回原文片段</span></li>
+            <li><span class="tname">get_document_pages</span><span class="tlabel">按页取原文与页图</span></li>
+          </ul>
+        </noscript>
+      </div>
 
-        <div class="narrative" data-narrative>
-          <div class="narrative-inner">
-            <div class="narrative-side">
-              <div class="step-wrap">
-                <div class="step-progress" aria-hidden="true"><span data-progress></span></div>
-                <ol class="step-list" data-steps>
-                  <li class="step is-active" data-step="0"><span class="step-no">01</span>摄入</li>
-                  <li class="step" data-step="1"><span class="step-no">02</span>切块</li>
-                  <li class="step" data-step="2"><span class="step-no">03</span>检索</li>
-                  <li class="step" data-step="3"><span class="step-no">04</span>引用</li>
-                </ol>
-              </div>
+      <div class="tool-foot">
+        <p><code>surface_fingerprint</code> 覆盖工具名、描述、入参与返回；<code>--list-tools</code> 末行、<code>serverInfo.version</code> 与 <code>GET /api/v1/tools</code> 给的是同一个值。</p>
+        <p>每个请求都要 <code>Authorization: Bearer &lt;API Key&gt;</code>，没有匿名放行。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= 返回 ============================= -->
+  <section class="section section-paper answer" id="answer" aria-labelledby="answer-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">02 / 返回</p>
+        <h2 id="answer-title">先给判定，<br />再给原文。</h2>
+        <p class="sec-lede">
+          同一次检索里，<code>summary</code> 说清候选与收敛，<code>distribution</code> 给出分布和 <code>fit</code>，
+          <code>decision</code> 记录为什么只回这几条；原文排在它们后面。
+        </p>
+      </div>
+
+      <div class="answer-layout" data-answer>
+        <figure class="payload paper-sheet" aria-label="一次检索的返回示例">
+          <div class="payload-head">
+            <span class="method">POST</span>
+            <span class="path">/api/v1/search</span>
+            <span class="status">200 OK</span>
+          </div>
+          <div class="payload-query"><span>QUERY</span>嵌入模型怎么标定？</div>
+
+          <div class="pblock is-active" data-block="summary">
+            <span class="pkey">summary</span>
+            <p>候选 38 条、其中 5 条高于基线 0.531，收敛后留 4 条，收敛参数按程序建议：资料很对得上，按每篇最相关的收敛。</p>
+          </div>
+
+          <div class="pblock" data-block="distribution">
+            <div class="pblock-head"><span class="pkey">distribution</span><span class="fit">STRONG</span></div>
+            <div class="dist-chart" aria-hidden="true">
+              <span style="--h: 14%"></span><span style="--h: 20%"></span><span style="--h: 28%"></span>
+              <span style="--h: 36%"></span><span style="--h: 52%"></span><span class="hot" style="--h: 96%"></span>
+              <span class="hot" style="--h: 78%"></span><span class="hot" style="--h: 62%"></span>
+              <span style="--h: 44%"></span><span style="--h: 30%"></span><span style="--h: 22%"></span><span style="--h: 16%"></span>
             </div>
-
-            <div class="stage" data-stage>
-              <div class="stage-sheet" data-sheet>
-                <div class="sheet">
-                  <div class="sheet-head">
-                    <span class="sheet-tag">PDF</span>
-                    <span class="sheet-name">部署手册-NAS.pdf</span>
-                    <span class="sheet-meta">2.4 MB · 23 页</span>
-                  </div>
-                  <div class="sheet-lines" aria-hidden="true">
-                    <span style="--w: 92%"></span><span style="--w: 86%"></span><span style="--w: 96%"></span>
-                    <span style="--w: 74%"></span><span style="--w: 88%"></span><span style="--w: 54%"></span>
-                    <span style="--w: 90%"></span><span style="--w: 82%"></span>
-                  </div>
-                  <div class="sheet-note">解析为 Markdown，向量化只针对 Markdown</div>
-                </div>
-              </div>
-
-              <div class="stage-chunks" data-chunks aria-hidden="true">
-                <div class="chunk"><span class="chunk-no">#01 · p.3</span><span class="chunk-title">二、登记嵌入模型</span><span class="chunk-text">模型身份由注册表承担，</span><span class="chunk-text">不写进环境变量。</span></div>
-                <div class="chunk"><span class="chunk-no">#02 · p.5</span><span class="chunk-line" style="--w: 74%"></span><span class="chunk-line" style="--w: 88%"></span><span class="chunk-line" style="--w: 56%"></span></div>
-                <div class="chunk"><span class="chunk-no">#03 · p.7</span><span class="chunk-title">五、维度的上限</span><span class="chunk-text">建议不超过 2000，推荐 1024。</span><span class="chunk-text">超过后建不了 HNSW。</span></div>
-                <div class="chunk"><span class="chunk-no">#04 · p.9</span><span class="chunk-line" style="--w: 68%"></span><span class="chunk-line" style="--w: 80%"></span><span class="chunk-line" style="--w: 52%"></span></div>
-                <div class="chunk"><span class="chunk-no">#05 · p.12</span><span class="chunk-line" style="--w: 82%"></span><span class="chunk-line" style="--w: 56%"></span><span class="chunk-line" style="--w: 76%"></span></div>
-                <div class="chunk"><span class="chunk-no">#06 · p.15</span><span class="chunk-line" style="--w: 60%"></span><span class="chunk-line" style="--w: 72%"></span><span class="chunk-line" style="--w: 44%"></span></div>
-              </div>
-
-              <div class="stage-hits" data-hits-stage aria-hidden="true">
-                <div class="hits-wrap">
-                  <div class="stage-hits-head">
-                    <span class="mono-label">候选 38 · 保留 5</span>
-                    <span class="fit-stamp fit-stamp-small">strong</span>
-                  </div>
-                  <div class="hits-dist" aria-hidden="true">
-                    <span style="--h: 18%"></span><span style="--h: 26%"></span><span style="--h: 38%"></span>
-                    <span style="--h: 54%"></span><span style="--h: 74%"></span><span style="--h: 96%"></span>
-                    <span style="--h: 66%"></span><span style="--h: 46%"></span><span style="--h: 32%"></span>
-                    <span style="--h: 24%"></span><span style="--h: 18%"></span><span style="--h: 12%"></span>
-                  </div>
-                  <div class="hit-row is-selected"><span class="hit-doc">部署手册-NAS.pdf</span><span class="hit-page">p.7</span><span class="hit-score">0.71</span></div>
-                  <div class="hit-row"><span class="hit-doc">检索设计-v2.md</span><span class="hit-page">p.3</span><span class="hit-score">0.64</span></div>
-                  <div class="hit-row"><span class="hit-doc">混合检索与融合.md</span><span class="hit-page">p.5</span><span class="hit-score">0.58</span></div>
-                  <div class="hit-row"><span class="hit-doc">部署手册-干净机器.md</span><span class="hit-page">p.2</span><span class="hit-score">0.52</span></div>
-                  <div class="hit-row"><span class="hit-doc">评测-检索质量.md</span><span class="hit-page">p.9</span><span class="hit-score">0.47</span></div>
-                  <div class="hit-quote">
-                    <p>“嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。”</p>
-                    <div class="hit-quote-cite">
-                      <span class="hit-doc">部署手册-NAS.pdf</span>
-                      <span class="hit-page">p.7</span>
-                      <span class="hit-basis">hybrid</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="chapter-copy">
-              <article class="chapter is-active" data-chapter="0">
-                <h3>摄入：所有格式先变成 Markdown</h3>
-                <p>
-                  上传、逐文件探测、解析、切块、向量化、索引。异步流水线带租约与退避，
-                  中途断了能接着跑；云端与本地解析按文件动态路由。
-                </p>
-              </article>
-              <article class="chapter" data-chapter="1">
-                <h3>切块：每块都记得自己从哪来</h3>
-                <p>
-                  一块文本带着标题路径与页码离开原文。页码与文档自己的分页标记不自洽时，
-                  宁可留空，也不报一个翻不到的页。
-                </p>
-              </article>
-              <article class="chapter" data-chapter="2">
-                <h3>检索：两个通道各说各的，再合成一个判定</h3>
-                <p>
-                  向量与 BM25 各自出候选，RRF 融合之后先看分布，再决定留几条。
-                  命中太多时按 <code>keep</code> / <code>min_score</code> / <code>per_doc</code> 收敛。
-                </p>
-              </article>
-              <article class="chapter" data-chapter="3">
-                <h3>引用：把这段原文和它的来路一起交出去</h3>
-                <p>
-                  调用方拿到的是片段、页码、通道与分数。判定说资料答不上，就不该拿这几条噪声编答案。
-                </p>
-              </article>
+            <div class="dist-meta">
+              <span>base <b>0.531</b></span><span>max <b>0.712</b></span><span>median <b>0.640</b></span><span>band <b>0.138</b></span>
             </div>
           </div>
-        </div>
-      </section>
 
-      <!-- 接入 -->
-      <section class="section connect" id="connect" aria-labelledby="connect-title">
-        <div class="section-head">
-          <h2 id="connect-title">三条路径，同一套语义。</h2>
-          <p>
-            同一个检索、同一个判定、同一把 API Key。接入方式不同，返回的东西完全一样。
-          </p>
-        </div>
+          <div class="pblock" data-block="decision">
+            <span class="pkey">decision</span>
+            <div class="chips">
+              <span>keep <b>4</b></span><span>min_score <b>0.531</b></span><span>per_doc <b>null</b></span>
+              <span>decided_by <b>suggested</b></span><span>dropped <b>33</b></span><span>unscored_kept <b>0</b></span>
+            </div>
+          </div>
 
-        <div class="connect-body">
-          <div class="connect-main">
-            <div class="tabs" role="tablist" aria-label="接入方式">
-              <button class="tab is-active" role="tab" id="tab-mcp" aria-selected="true" aria-controls="panel-mcp" data-tab="mcp">MCP</button>
-              <button class="tab" role="tab" id="tab-rest" aria-selected="false" aria-controls="panel-rest" data-tab="rest">REST</button>
-              <button class="tab" role="tab" id="tab-skill" aria-selected="false" aria-controls="panel-skill" data-tab="skill">Skill</button>
-              <span class="tab-indicator" aria-hidden="true"></span>
+          <div class="pblock" data-block="hits">
+            <span class="pkey">hits</span>
+            <ol class="payload-hits">
+              <li class="on"><span class="r">01</span><span class="d">部署手册-NAS.pdf</span><span class="pg">p.7</span><span class="sc">0.712</span><span class="bs">vector</span></li>
+              <li><span class="r">02</span><span class="d">检索设计-v2.md</span><span class="pg">p.3</span><span class="sc">0.664</span><span class="bs">vector</span></li>
+              <li><span class="r">03</span><span class="d">产品手册.docx</span><span class="pg">—</span><span class="sc">0.588</span><span class="bs">vector</span></li>
+              <li><span class="r">04</span><span class="d">评测-检索质量.md</span><span class="pg">—</span><span class="sc">0.551</span><span class="bs">fulltext</span></li>
+            </ol>
+          </div>
+
+          <div class="pblock pblock-foot" data-block="next_offset">
+            <span class="pkey">next_offset</span>
+            <span class="next">4</span>
+            <span class="next-note">判定在每一页上逐字相同；翻到 <code>null</code> 就是到底</span>
+          </div>
+
+          <figcaption class="sheet-note">演示数据：字段名与判定口径取自真实响应；数值按示例排版，不是一次真实请求。</figcaption>
+        </figure>
+
+        <div class="answer-notes">
+          <div class="note-tabs" role="tablist" aria-label="响应字段说明">
+            <button class="note-tab" type="button" role="tab" aria-selected="false" data-note="summary">summary</button>
+            <button class="note-tab is-active" type="button" role="tab" aria-selected="true" data-note="distribution">distribution</button>
+            <button class="note-tab" type="button" role="tab" aria-selected="false" data-note="decision">decision</button>
+            <button class="note-tab" type="button" role="tab" aria-selected="false" data-note="hits">hits</button>
+            <button class="note-tab" type="button" role="tab" aria-selected="false" data-note="next_offset">next_offset</button>
+          </div>
+          <div class="note-body" data-note-body aria-live="polite"></div>
+          <ul class="note-aside">
+            <li><code>fit</code> 四档：<b>strong</b> 对得上 · <b>weak</b> 对上一部分 · <b>none</b> 答不了 · <b>unknown</b> 判不了</li>
+            <li><code>score</code> 是融合分，只反映名次；<code>similarity</code> 才是余弦</li>
+            <li><code>basis</code> 标出这条是 <code>vector</code> 还是 <code>fulltext</code> 捞上来的</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= 页码 ============================= -->
+  <section class="section section-dark pages" id="pages" aria-labelledby="pages-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">03 / 页码</p>
+        <h2 id="pages-title">页码，<br />不是猜出来的。</h2>
+        <p class="sec-lede">
+          解析产物把页边界写成 <code>&lt;!-- page:N --&gt;</code>。切块器只在页标记与总页数自洽时，才把页码挂到块上；
+          对不上，就回 <code>null</code>。报一个翻不到的页码，比不报更糟。
+        </p>
+      </div>
+    </div>
+
+    <div class="narrative" data-narrative>
+      <div class="narrative-pin">
+        <div class="narrative-top">
+          <div class="wrap narrative-top-inner">
+            <span>03 / 页码 · 一条原文的旅程</span>
+            <div class="narrative-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          </div>
+        </div>
+        <div class="narrative-grid">
+          <div class="stage" data-stage>
+            <div class="stage-item stage-doc is-active" data-stage-item="0">
+              <div class="doc-mock" aria-hidden="true">
+                <div class="doc-head"><span>部署手册-NAS.pdf</span><span>第 7 页</span></div>
+                <h3>五、嵌入模型与维度</h3>
+                <p>模型身份由模型注册表承担，不写进环境变量。建库之前先登记，服务不替你猜用哪个模型。</p>
+                <p class="doc-mark">&lt;!-- page:7 --&gt;</p>
+                <p class="doc-hl">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
+                <p>换模型等于换一把尺子：旧向量不会自动对齐，需要重建索引。</p>
+                <span class="doc-no">— 7 —</span>
+              </div>
+              <p class="stage-tag">解析 · 页标记落进 Markdown</p>
             </div>
 
-            <div class="panels">
-              <div class="panel is-active" role="tabpanel" id="panel-mcp" aria-labelledby="tab-mcp" data-panel="mcp">
-              <div class="code-card">
-                <div class="code-head">
-                  <span>Claude Desktop · Cursor · 任意 MCP 客户端</span>
-                  <button class="copy" type="button" data-copy>复制</button>
-                </div>
+            <div class="stage-item stage-chunks" data-stage-item="1">
+              <ol class="chunk-list">
+                <li><span class="cno">#03 · p.6</span><span class="ctext">四、对象存储与桶名</span><span class="cline" style="--w: 74%"></span></li>
+                <li class="pick"><span class="cno">#04 · p.7</span><span class="ctext">五、嵌入模型与维度</span><span class="cline" style="--w: 88%"></span><span class="ctag">命中候选</span></li>
+                <li><span class="cno">#05 · p.7</span><span class="ctext">嵌入维度建议不超过 2000……</span><span class="cline" style="--w: 92%"></span></li>
+                <li><span class="cno">#06 · p.8</span><span class="ctext">六、检索与重排</span><span class="cline" style="--w: 68%"></span></li>
+                <li><span class="cno">#07 · p.8</span><span class="ctext">为什么默认不开 rerank</span><span class="cline" style="--w: 56%"></span></li>
+              </ol>
+              <p class="stage-tag">切块 · 页码跟着块走，对不上就 null</p>
+            </div>
+
+            <div class="stage-item stage-hit" data-stage-item="2">
+              <div class="return-card" aria-hidden="true">
+                <div class="rc-query"><span>QUERY</span>嵌入模型怎么标定？</div>
+                <div class="rc-row"><span class="rc-doc">部署手册-NAS.pdf</span><span class="rc-pg">p.7</span><span class="rc-sc">0.712</span></div>
+                <p class="rc-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
+                <div class="rc-meta"><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
+                <span class="rc-stamp">已核 P.7</span>
+              </div>
+              <p class="stage-tag">检索 · 原文、页码、标题路径一起回去</p>
+            </div>
+          </div>
+
+          <div class="chapters">
+            <article class="chapter is-active" data-chapter="0">
+              <p class="ch-no">01</p>
+              <h3>解析时，页边界写进 Markdown</h3>
+              <p>MinerU 的 <code>content_list</code> 给出页码顺序，页标记插在合并产物的正确位置；纯文本与 Office 本来就没有页，如实留空。</p>
+            </article>
+            <article class="chapter" data-chapter="1">
+              <p class="ch-no">02</p>
+              <h3>切块时，页码跟着块走</h3>
+              <p>一个页码可信，当且仅当它后面紧跟着下一页标记，或它就是总页数。标记号倒退、与页数对不上，整篇都不给页码。</p>
+            </article>
+            <article class="chapter" data-chapter="2">
+              <p class="ch-no">03</p>
+              <h3>检索时，带着页码回来</h3>
+              <p>命中里有原文切片、页码与标题路径，还有 <code>chunk_id</code> 便于复现。PDF 还能按页取回原图——图、表、版式都在原位。</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <p class="section-note">
+        <code>get_document_pages</code> 一次可取 1–50 页：每页给解析文字；PDF 与图片类还给这一页原图的签名链接。
+        页标记不可信时 <code>pages_reliable</code> 为 <code>false</code>，这时别拿它当「第 N 页」引用。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================= 双格式 ============================= -->
+  <section class="section section-paper formats" id="formats" aria-labelledby="formats-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">04 / 双格式</p>
+        <h2 id="formats-title">原件和 Markdown，<br />两份都留着。</h2>
+        <p class="sec-lede">
+          上传的 PDF、Word 原样进对象存储；解析产物归一化成 Markdown。取用的时候按 <code>format</code> 选，
+          核对版式看原件，切块与检索看 Markdown。
+        </p>
+      </div>
+
+      <div class="format-layout" data-formats>
+        <div class="format-switch" role="tablist" aria-label="选择取哪种格式">
+          <button class="fmt-btn is-active" type="button" role="tab" aria-selected="true" data-format="original">原件 <span>original</span></button>
+          <button class="fmt-btn" type="button" role="tab" aria-selected="false" data-format="markdown">解析产物 <span>markdown</span></button>
+        </div>
+
+        <div class="format-viewer paper-sheet">
+          <div class="fmt-pane is-active" data-pane="original">
+            <div class="orig-file">
+              <div class="orig-icon" aria-hidden="true"><span>PDF</span></div>
+              <div class="orig-meta"><b>部署手册-NAS.pdf</b><span>23 页 · 2.4 MB · 原件按内容哈希寻址</span></div>
+              <span class="orig-badge">original</span>
+            </div>
+            <div class="orig-page" aria-hidden="true">
+              <div class="op-head">五、嵌入模型与维度</div>
+              <div class="op-line" style="--w: 96%"></div>
+              <div class="op-line" style="--w: 88%"></div>
+              <div class="op-line" style="--w: 92%"></div>
+              <div class="op-fig"><span></span><span></span><span></span><span></span><span></span></div>
+              <div class="op-line" style="--w: 70%"></div>
+              <div class="op-no">— 7 —</div>
+            </div>
+            <div class="fmt-side">
+              <p class="fmt-caption">按页出图：PDF 与图片类文档可以取回任意一页的原图（150 dpi），扫描件与版式不用二次转换。</p>
+              <ul class="fmt-points">
+                <li><b>原件通道</b><span>按内容哈希寻址，下载与预览都拿它；PDF 页图按 150 dpi 现场渲染并缓存。</span></li>
+                <li><b>Markdown 通道</b><span>切块、页标记、向量化都基于归一化产物；换解析器用 <code>reparse_document</code> 重跑。</span></li>
+                <li><b>两边的边界</b><span>Office 与纯文本没有「页」；页图只签给 PDF 与图片类，签不出来不报错。</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="fmt-pane" data-pane="markdown" hidden>
+            <div class="md-file">
+              <div class="md-head"><span class="md-tag">MD</span><b>doc_1c7e.md</b><span class="orig-badge">markdown</span></div>
+<pre class="md-code"><code><span class="md-dim">## 五、嵌入模型与维度</span>
+
+模型身份由模型注册表承担，不写进环境变量。
+
+<span class="md-mark">&lt;!-- page:7 --&gt;</span>
+嵌入维度建议不超过 2000，推荐 1024。超过之后
+pgvector 建不了 HNSW，检索会退化成精确扫描。
+
+<span class="md-dim">## 六、检索与重排</span></code></pre>
+            </div>
+            <p class="fmt-caption">切块与页标记都基于这份 Markdown；换解析器后 <code>reparse_document</code> 会从解析器重跑，而不是重切旧产物。</p>
+          </div>
+
+          <div class="format-callout">
+            <div class="fc-row"><code>get_document_content(document_id, format="original")</code><span>取原件</span></div>
+            <div class="fc-row"><code>get_document_content(document_id, format="markdown")</code><span>取解析产物</span></div>
+            <div class="fc-row"><code>200 MB</code> REST 上传上限 <span>·</span> <code>32 MB</code> MCP 单次</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= 调参 ============================= -->
+  <section class="section section-dark tuning" id="tuning" aria-labelledby="tuning-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">05 / 调参</p>
+        <h2 id="tuning-title">策略不是预设，<br />是这一次的参数。</h2>
+        <p class="sec-lede">
+          没有 fast / balanced / precise 的档位。检索模式三档、参数逐次给；分布顺手返回 <code>suggested</code>，
+          Agent 可以照建议收，也可以自己改，再用 <code>next_offset</code> 翻完。
+        </p>
+      </div>
+
+      <div class="tune-layout" data-tuning>
+        <div class="tune-chart paper-sheet">
+          <div class="tune-head">
+            <div><span class="pkey">distribution</span><span class="tune-fit" data-fit>STRONG</span></div>
+            <span class="tune-count" data-count>38 candidates · 4 survived</span>
+          </div>
+          <div class="tune-bars" data-bars aria-hidden="true">
+            <span style="--h: 14%"></span><span style="--h: 20%"></span><span style="--h: 28%"></span>
+            <span style="--h: 36%"></span><span style="--h: 52%"></span><span class="hot" style="--h: 96%"></span>
+            <span class="hot" style="--h: 78%"></span><span class="hot" style="--h: 62%"></span>
+            <span style="--h: 44%"></span><span style="--h: 30%"></span><span style="--h: 22%"></span><span style="--h: 16%"></span>
+          </div>
+          <div class="tune-axis"><span>0.37</span><span class="base">baseline 0.531</span><span>0.712</span></div>
+          <div class="tune-verdict" data-verdict>资料很对得上，按每篇最相关的收敛。</div>
+          <p class="tune-note">分布、基线、建议值都在同一次返回里；<code>fit=none</code> 时建议 <code>keep=0</code>，如实说没有。</p>
+        </div>
+
+        <div class="tune-panel">
+          <div class="tune-row">
+            <span class="tr-k">mode</span>
+            <div class="tr-modes" role="group" aria-label="检索模式">
+              <button class="mode is-active" type="button" data-mode="hybrid">hybrid</button>
+              <button class="mode" type="button" data-mode="vector">vector</button>
+              <button class="mode" type="button" data-mode="fulltext">fulltext</button>
+            </div>
+            <span class="tr-note">向量 + 词面，RRF 融合</span>
+          </div>
+          <div class="tune-row">
+            <span class="tr-k">keep</span>
+            <span class="tr-v" data-keep>4</span>
+            <span class="tr-note">一页回几条</span>
+          </div>
+          <div class="tune-row">
+            <span class="tr-k">min_score</span>
+            <span class="tr-v" data-min>0.531</span>
+            <span class="tr-note">绝对余弦下限</span>
+          </div>
+          <div class="tune-row">
+            <span class="tr-k">per_doc</span>
+            <span class="tr-v" data-perdoc>null</span>
+            <span class="tr-note">每篇最多几条</span>
+          </div>
+          <div class="tune-row">
+            <span class="tr-k">decided_by</span>
+            <span class="tr-v accent" data-decided>suggested</span>
+            <span class="tr-note">谁给的这三个数</span>
+          </div>
+
+          <button class="tune-toggle" type="button" data-tune-toggle aria-pressed="false">
+            <span class="tt-label">照 suggested 收</span>
+            <span class="tt-track" aria-hidden="true"><i></i></span>
+            <span class="tt-label-off">Agent 自己调</span>
+          </button>
+
+          <div class="tune-result" data-tune-result>
+            <p class="tr-title">下一次调用</p>
+            <code class="tr-code" data-code>{"keep": 4, "min_score": 0.531, "per_doc": null}</code>
+            <p class="tr-text" data-text>按分布建议收。三个旋钮原样带回，翻页时判定不变。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tune-foot">
+        <p><code>min_score</code> 只切向量通道；词面命中没有余弦可比，条数记在 <code>decision.unscored_kept</code>，要更严就自己按 <code>lexical_score</code> 筛。</p>
+        <p><code>offset</code> / <code>next_offset</code> 翻的是「幸存者」名单；越过末尾不是错，回空 <code>hits</code> 和 <code>next_offset: null</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= 免费栈 ============================= -->
+  <section class="section section-paper free" id="free" aria-labelledby="free-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">06 / 免费栈</p>
+        <h2 id="free-title">从免费额度开始，<br />把栈搭起来。</h2>
+        <p class="sec-lede">
+          解析和向量化都可以先不付钱：MinerU 与 PaddleOCR 的云端免费额度，加上硅基流动的 BGE-M3。
+          不配云端 token，也有本地直提保底。
+        </p>
+      </div>
+
+      <div class="stack-route" aria-label="解析与检索链路">
+        <div class="route-step"><span class="rs-no">01</span><b>文件</b><small>PDF · Word · 图片 · 表格</small></div>
+        <div class="route-arrow" aria-hidden="true">→</div>
+        <div class="route-step"><span class="rs-no">02</span><b>逐文件探测</b><small>文字型 / 扫描件 / 混合</small></div>
+        <div class="route-arrow" aria-hidden="true">→</div>
+        <div class="route-step route-stack"><span class="rs-no">03</span><b>解析路由</b><small>按文件挑引擎，失败降级</small>
+          <div class="rs-options"><span>本地直提</span><span>MinerU</span><span>PaddleOCR</span></div>
+        </div>
+        <div class="route-arrow" aria-hidden="true">→</div>
+        <div class="route-step"><span class="rs-no">04</span><b>Markdown + 页标记</b><small>切块、页码、检索都基于它</small></div>
+        <div class="route-arrow" aria-hidden="true">→</div>
+        <div class="route-step"><span class="rs-no">05</span><b>BGE-M3</b><small>1024 维 · 硅基流动预设</small></div>
+      </div>
+
+      <div class="provider-grid">
+        <article class="provider">
+          <div class="prov-head"><span class="prov-kind">云端 · 版面还原</span><span class="prov-free">免费额度</span></div>
+          <h3>MinerU</h3>
+          <p>PDF、Office、图片的版面还原与阅读顺序；云端标准 API，默认 VLM。大文件按页切段后串行解析。</p>
+          <dl><div><dt>额度</dt><dd>1000 页 / 天优先额度（本地记账）</dd></div><div><dt>可选</dt><dd>不配 token 时自动跳过</dd></div></dl>
+        </article>
+        <article class="provider">
+          <div class="prov-head"><span class="prov-kind">云端 · 扫描件</span><span class="prov-free">免费额度</span></div>
+          <h3>PaddleOCR</h3>
+          <p>扫描件与混合型 PDF 的 OCR；异步任务轮询，逐页产出。只接 PDF 与常见位图。</p>
+          <dl><div><dt>额度</dt><dd>以服务商当期政策为准</dd></div><div><dt>可选</dt><dd>token 为空时整条路由让给本地</dd></div></dl>
+        </article>
+        <article class="provider">
+          <div class="prov-head"><span class="prov-kind">API · 向量</span><span class="prov-free">免费额度</span></div>
+          <h3>硅基流动 · BGE-M3</h3>
+          <p>OpenAI 兼容的嵌入接口，1024 维；同一供应商还能接 BGE Reranker。模型身份登记在注册表，不写进环境变量。</p>
+          <dl><div><dt>预设</dt><dd><code>BAAI/bge-m3</code> · dim 1024</dd></div><div><dt>可选</dt><dd>未登记时建库会被拒</dd></div></dl>
+        </article>
+        <article class="provider provider-local">
+          <div class="prov-head"><span class="prov-kind">本地 · 保底</span><span class="prov-free">不花额度</span></div>
+          <h3>本地直提</h3>
+          <p>文字型 PDF、<code>.docx</code>、<code>.pptx</code>、Markdown 与纯文本直接在本地解析，不依赖网络。</p>
+          <dl><div><dt>范围</dt><dd>不做版面还原；扫描件仍需云端 OCR</dd></div><div><dt>部署</dt><dd>MIT · 自托管，无订阅</dd></div></dl>
+        </article>
+      </div>
+
+      <p class="section-note">
+        两家云端的免费额度、模型价格与可用地区以服务商当期政策为准；kybase 仓库不带 token、不代收费用。
+        嵌入模型需在「模型」页登记后建库，服务不替你猜用哪个模型。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================= 部署 ============================= -->
+  <section class="section section-dark deploy" id="deploy" aria-labelledby="deploy-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="sec-no">07 / 部署</p>
+        <h2 id="deploy-title">一条命令，<br />然后交给 Agent。</h2>
+        <p class="sec-lede">
+          带 Docker 的干净机器四件套一起起；已有 PostgreSQL 与 MinIO 的机器只起应用层。
+          起来之后，登记一个嵌入模型，把 API Key 交给 Agent。
+        </p>
+      </div>
+
+      <div class="deploy-grid">
+        <div class="deploy-code">
+          <div class="code-card">
+            <div class="code-head"><span>干净机器 · 四件套</span><button class="copy" type="button" data-copy>复制</button></div>
+<pre><code>git clone https://github.com/kkomia/kybase.git
+cd kybase
+
+docker compose -f deploy/docker-compose.yml up -d --build
+
+# 界面   http://localhost:8080
+# 健康   http://localhost:8080/api/v1/health</code></pre>
+          </div>
+          <div class="code-card">
+            <div class="code-head"><span>MCP 客户端 · Streamable HTTP</span><button class="copy" type="button" data-copy>复制</button></div>
 <pre><code>{
   "mcpServers": {
     "kybase": {
@@ -509,238 +665,65 @@
     }
   }
 }</code></pre>
-              </div>
-              <ul class="panel-notes">
-                <li>Streamable HTTP，路径 <code>/mcp</code>；每个请求都要凭据，没有匿名放行。</li>
-                <li>MCP 单独监听一个端口（示例 8765）；REST 与界面同源在 8081（干净机器 compose 是 8080）。</li>
-                <li>握手时 <code>serverInfo.version</code> 带工具面指纹，客户端据此判断契约有没有变过。</li>
-              </ul>
-            </div>
-
-            <div class="panel" role="tabpanel" id="panel-rest" aria-labelledby="tab-rest" data-panel="rest" hidden>
-              <div class="code-card">
-                <div class="code-head">
-                  <span>任何能发 HTTP 的系统</span>
-                  <button class="copy" type="button" data-copy>复制</button>
-                </div>
-<pre><code>curl -sS -X POST http://kb.example.com:8081/api/v1/search \
-  -H "Authorization: Bearer $KYBASE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "嵌入模型怎么标定？",
-    "kb_ids": ["kb_xxx"],
-    "top_k": 5
-  }'</code></pre>
-              </div>
-              <ul class="panel-notes">
-                <li>前缀 <code>/api/v1</code>，路径即版本；OpenAPI 在 <code>/api/v1/openapi.json</code>。</li>
-                <li><code>kb_ids</code> 必填；判定与原文在同一个响应里，顺序固定。</li>
-              </ul>
-            </div>
-
-            <div class="panel" role="tabpanel" id="panel-skill" aria-labelledby="tab-skill" data-panel="skill" hidden>
-              <div class="code-card">
-                <div class="code-head">
-                  <span>只会 shell 与 HTTP 的运行环境</span>
-                  <button class="copy" type="button" data-copy>复制</button>
-                </div>
-<pre><code>skills/
-├─ SKILL.md      # 工作流、工具用途、回答纪律
-└─ scripts/      # 纯 REST 查询脚本，不依赖 MCP
-
-# 放进 Agent 的技能目录后，它先读判定，再读原文</code></pre>
-              </div>
-              <ul class="panel-notes">
-                <li>Skill 是同一套 REST 契约的封装，不需要 MCP 运行时。</li>
-                <li>退出码区分「成功 / 用法错误 / 需要凭据」，方便脚本接。</li>
-              </ul>
-            </div>
-          </div>
-          </div>
-
-          <aside class="connect-aside">
-            <h3>鉴权只有一种</h3>
-            <p>
-              每个请求带 <code>Authorization: Bearer &lt;API Key&gt;</code>。
-              Key 的作用域决定它能看哪些库、能写什么；作用域外的请求按没权限拒绝。
-            </p>
-            <h3>库范围是钥匙的属性</h3>
-            <p>同一把钥匙可以只读一座库，也可以管全部；分享、管理员都是知识库语义的资产。</p>
-          </aside>
-        </div>
-      </section>
-
-      <!-- 界面 -->
-      <section class="section console" id="console" aria-labelledby="console-title">
-        <div class="section-head">
-          <h2 id="console-title">管理台不是装饰。</h2>
-          <p>
-            指标带、文档来路、模型用途——三个局部，一条从文件到引用的来路。
-          </p>
-        </div>
-
-        <div class="gallery">
-          <figure class="plate plate-wide">
-            <a class="plate-frame" href="./assets/console-metrics-crop.png" target="_blank" rel="noreferrer" aria-label="打开指标带原图">
-              <img
-                src="./assets/console-metrics-crop.png"
-                data-img-light="./assets/console-metrics-crop.png"
-                data-img-dark="./assets/console-metrics-crop-dark.png"
-                width="1140"
-                height="450"
-                alt="管理台指标带：知识库 9、文档 230、切块 28,598、原文件体积 919.7 MB、近一年入库 230"
-              />
-            </a>
-            <figcaption>
-              <span class="plate-no">图版 02</span>指标带：9 座库、230 篇文档、28,598 个切块（演示数据）。
-            </figcaption>
-          </figure>
-
-          <div class="gallery-grid">
-            <figure class="plate">
-              <a class="plate-frame" href="./assets/console-detail-crop.png" target="_blank" rel="noreferrer" aria-label="打开文档列表原图">
-                <img
-                  src="./assets/console-detail-crop.png"
-                  data-img-light="./assets/console-detail-crop.png"
-                  data-img-dark="./assets/console-detail-crop-dark.png"
-                  width="920"
-                  height="605"
-                  alt="文档列表局部：每一行是文件名、已索引状态、切块数、问题数、大小与更新时间"
-                />
-              </a>
-              <figcaption><span class="plate-no">图版 03</span>文档来路：状态、切块、问题数，一行一个来路。</figcaption>
-            </figure>
-
-            <figure class="plate">
-              <a class="plate-frame" href="./assets/console-models-crop.png" target="_blank" rel="noreferrer" aria-label="打开模型用途原图">
-                <img
-                  src="./assets/console-models-crop.png"
-                  data-img-light="./assets/console-models-crop.png"
-                  data-img-dark="./assets/console-models-crop-dark.png"
-                  width="1140"
-                  height="550"
-                  alt="模型用途局部：对话、向量化、重排三种用途各绑定一个模型"
-                />
-              </a>
-              <figcaption><span class="plate-no">图版 04</span>模型用途：嵌入 / 对话 / 重排，注册表里绑定。</figcaption>
-            </figure>
-          </div>
-
-          <figure class="plate plate-wide plate-narrow">
-            <a class="plate-frame" href="./assets/console-dashboard-dark.png" target="_blank" rel="noreferrer" aria-label="打开深色概览原图">
-              <img
-                src="./assets/console-dashboard-dark.png"
-                width="1440"
-                height="1000"
-                alt="深色主题下的概览页，同一套内容与层级"
-              />
-            </a>
-            <figcaption><span class="plate-no">图版 05</span>深色：概览页的同一组数据。</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <!-- 部署 -->
-      <section class="section deploy" id="deploy" aria-labelledby="deploy-title">
-        <div class="section-head">
-          <h2 id="deploy-title">一条命令，然后是四个决定。</h2>
-          <p>带 docker 的干净机器，四件套一起起；已有 PostgreSQL 与 MinIO 的机器，只起应用层。</p>
-        </div>
-
-        <div class="deploy-body">
-          <ol class="deploy-steps">
-            <li><span class="step-no">01</span><div><h3>起容器</h3><p>PostgreSQL（pgvector）、MinIO、后端与前端，四个服务一起。</p></div></li>
-            <li><span class="step-no">02</span><div><h3>登记嵌入模型</h3><p>模型身份由注册表承担，不塞进环境变量。没登记，建库会被拒。</p></div></li>
-            <li><span class="step-no">03</span><div><h3>建库、上传</h3><p>文件进去，摄入流水线自己跑；断了能接着跑。</p></div></li>
-            <li><span class="step-no">04</span><div><h3>给 Agent 一把钥匙</h3><p>建 API Key，按库给范围；MCP、REST、Skill 用同一把。</p></div></li>
-          </ol>
-
-          <div class="deploy-code">
-            <div class="code-card">
-              <div class="code-head">
-                <span>干净机器 · 四件套</span>
-                <button class="copy" type="button" data-copy>复制</button>
-              </div>
-<pre><code>git clone https://github.com/kkomia/kybase.git
-cd kybase
-
-docker compose -f deploy/docker-compose.yml up -d --build
-
-# 界面   http://localhost:8080
-# 健康   http://localhost:8080/api/v1/health</code></pre>
-            </div>
-            <p class="deploy-note">
-              四件套 compose 尚未在干净机器实测；作者机器上长期运行的是三件套（外部 PostgreSQL +
-              MinIO），差异见
-              <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>。
-            </p>
           </div>
         </div>
-      </section>
 
-      <!-- 收束 -->
-      <section class="cta-band" aria-labelledby="cta-title">
-        <div class="cta-inner">
-          <h2 id="cta-title">一条命令之后，交给 Agent。</h2>
-          <div class="cta-actions">
-            <a class="btn btn-primary" href="#deploy">
-              部署一套
-              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                <path
-                  d="M2.5 7h8M7.5 3.5 11 7l-3.5 3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </a>
-            <a
-              class="btn btn-ghost-inverse"
-              href="https://github.com/kkomia/kybase"
-              target="_blank"
-              rel="noreferrer"
-            >
-              在 GitHub 上读它
-            </a>
-          </div>
-          <p class="cta-note">MIT · 自托管 · 无托管服务</p>
-        </div>
-      </section>
-    </main>
-
-    <footer class="footer">
-      <div class="footer-inner">
-        <div class="footer-brand">
-          <svg class="brand-mark" width="31" height="25" viewBox="0 0 370 299" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
-            <circle cx="182.5" cy="148.5" r="145.75" stroke-width="7" />
-            <ellipse cx="185.5" cy="155.5" rx="192" ry="44" transform="rotate(-18.5 185.5 155.5)" stroke-width="3" />
-            <circle cx="318.5" cy="147" r="13.75" stroke-width="7" />
-          </svg>
-          <span class="brand-word">kybase</span>
-          <span class="footer-tag">自托管的知识库服务</span>
-        </div>
-
-        <nav class="footer-toc" aria-label="本页目录">
-          <a href="#capability">能力</a>
-          <a href="#pipeline">过程</a>
-          <a href="#connect">接入</a>
-          <a href="#console">界面</a>
-          <a href="#deploy">部署</a>
-        </nav>
-
-        <nav class="footer-links" aria-label="页脚链接">
-          <a href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">GitHub</a>
-          <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>
-          <a href="https://github.com/kkomia/kybase/blob/master/docs/外部接入指南-v0.1.md" target="_blank" rel="noreferrer">外部接入指南</a>
-          <a href="https://github.com/kkomia/kybase/blob/master/LICENSE" target="_blank" rel="noreferrer">MIT 许可</a>
-        </nav>
-
-        <p class="footer-fine">
-          部署与接入以仓库文档为准；截图数据来自演示实例。<span>© 2026 kkomia</span>
-        </p>
+        <ol class="deploy-steps">
+          <li><span class="step-no">01</span><div><h3>起容器</h3><p>PostgreSQL（pgvector）、MinIO、后端与前端；worker 跑在后端进程里。</p></div></li>
+          <li><span class="step-no">02</span><div><h3>登记嵌入模型</h3><p>模型身份由注册表承担，不塞进环境变量。没登记，建库会被拒。</p></div></li>
+          <li><span class="step-no">03</span><div><h3>建库、上传</h3><p>文件进去，异步流水线自己跑；租约、退避、断点续跑。</p></div></li>
+          <li><span class="step-no">04</span><div><h3>给 Agent 一把钥匙</h3><p>建 API Key，按库给范围；MCP、REST、Skill 用同一把。</p></div></li>
+        </ol>
       </div>
-    </footer>
-  </body>
+
+      <div class="deploy-foot">
+        <p>官方 Skill 包在仓库 <code>skills/</code>：只会 shell 与 HTTP 的运行环境也能用，不需要 MCP 运行时。</p>
+        <p>四件套 compose 的整体「一键起」尚在实测；部署细节与变量表以 <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a> 为准。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= 收束 ============================= -->
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap cta-inner">
+      <p class="sec-no">08 / 开始</p>
+      <h2 id="cta-title">下一个文件，<br />让 Agent 自己收。</h2>
+      <svg class="cta-mark" viewBox="0 0 370 299" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+        <circle cx="182.5" cy="148.5" r="145.75" stroke-width="3" />
+        <ellipse cx="185.5" cy="155.5" rx="192" ry="44" transform="rotate(-18.5 185.5 155.5)" stroke-width="1.5" />
+        <circle cx="318.5" cy="147" r="13.75" stroke-width="3" />
+      </svg>
+      <div class="cta-actions">
+        <a class="btn btn-primary" href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">在 GitHub 上读它</a>
+        <a class="btn btn-ghost" href="#deploy">看部署步骤</a>
+      </div>
+      <p class="cta-note">MIT · 自托管 · 11 个工具 · MCP / REST / Skill 同一套语义</p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <svg width="28" height="28" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <circle cx="32" cy="32" r="16.5" stroke="currentColor" stroke-width="2.4" />
+        <ellipse cx="32" cy="32" rx="21" ry="5.4" transform="rotate(-18.5 32 32)" stroke="currentColor" stroke-width="1.5" />
+        <circle cx="46.6" cy="28" r="2.6" class="brand-dot" />
+      </svg>
+      <span class="footer-word">kybase</span>
+      <span class="footer-tag">给 Agent 的知识库插件</span>
+    </div>
+    <nav class="footer-links" aria-label="页脚链接">
+      <a href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">部署指南</a>
+      <a href="https://github.com/kkomia/kybase/blob/master/docs/外部接入指南-v0.1.md" target="_blank" rel="noreferrer">外部接入</a>
+      <a href="https://github.com/kkomia/kybase/blob/master/LICENSE" target="_blank" rel="noreferrer">MIT 许可</a>
+    </nav>
+    <p class="footer-fine">
+      页面里的会话、返回与页码为演示数据；字段与判定口径来自当前实现。免费额度以服务商政策为准。
+      <span>© 2026 kkomia</span>
+    </p>
+  </div>
+</footer>
+</body>
 </html>

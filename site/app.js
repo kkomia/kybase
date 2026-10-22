@@ -1,429 +1,48 @@
 /* kybase 展示页 · 交互与动效
-   原则：动效只承担反馈、引导与叙事；一行代码坏掉时，页面内容必须还在。 */
+   —— 终端叙事 + 纸面证据。动效只承担反馈、引导与叙事；
+      一行代码坏掉时，页面内容必须还在（最后有兜底）。 */
 
 (() => {
   const root = document.documentElement;
-  const params = new URLSearchParams(window.location.search);
-  const forceReduced = params.get('motion') === 'off';
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const reduced = forceReduced || prefersReduced;
-  const gsap = window.gsap && !reduced ? window.gsap : null;
-  const ScrollTrigger = window.ScrollTrigger;
-  const canAnimate = Boolean(gsap && ScrollTrigger);
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionOff = /[?&]motion=off/.test(location.search);
+  const hasGsap = typeof window.gsap !== 'undefined' && typeof window.ScrollTrigger !== 'undefined';
+  const canAnimate = hasGsap && !reduceMotion && !motionOff;
 
-  if (canAnimate) {
-    gsap.registerPlugin(ScrollTrigger);
-    root.classList.add('motion-ready');
-  } else {
-    // GSAP 没加载或被禁用：把内联脚本先立起来的初始态撤掉，内容必须可见
-    root.classList.remove('motion-ready');
-    root.classList.add('is-static');
-  }
+  /* ---------------------------------------------------------------- 基础 UI */
 
-  if (params.get('smooth') === 'off') root.classList.add('no-smooth');
-
-  /* ---------------------------------------------------------------- 主题 */
-  const themeButton = document.getElementById('theme-toggle');
-  const themeMeta = document.querySelector('meta[name="theme-color"]');
-  const THEME_KEY = 'kybase-site-theme';
-
-  const storedTheme = (() => {
-    try {
-      return localStorage.getItem(THEME_KEY);
-    } catch (error) {
-      return null;
-    }
-  })();
-
-  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const initialTheme = storedTheme || (systemDark ? 'dark' : 'light');
-
-  const themedShots = Array.from(document.querySelectorAll('[data-img-light][data-img-dark]'));
-
-  function applyTheme(theme) {
-    root.dataset.theme = theme;
-    if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#0d0e10' : '#f2efe9');
-    themedShots.forEach((img) => {
-      const next = theme === 'dark' ? img.dataset.imgDark : img.dataset.imgLight;
-      if (next && img.getAttribute('src') !== next) img.setAttribute('src', next);
-    });
-    if (themeButton) {
-      const next = theme === 'dark' ? '切换为浅色' : '切换为深色';
-      themeButton.setAttribute('aria-label', next);
-      themeButton.setAttribute('title', next);
-    }
-  }
-
-  applyTheme(initialTheme);
-
-  if (themeButton) {
-    themeButton.addEventListener('click', () => {
-      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
-      applyTheme(next);
-      try {
-        localStorage.setItem(THEME_KEY, next);
-      } catch (error) {
-        /* 隐私模式里存不了，主题仍然生效到本次会话 */
-      }
-    });
-  }
-
-  /* ---------------------------------------------------------------- 顶栏 */
   const topbar = document.querySelector('[data-topbar]');
-  const onScroll = () => {
-    if (topbar) topbar.classList.toggle('is-scrolled', window.scrollY > 8);
-  };
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
+  if (topbar) {
+    const onScroll = () => topbar.classList.toggle('is-scrolled', window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
 
-  /* 窄屏目录：没有横向导航时，从这里进五个分区 */
   const menuToggle = document.getElementById('menu-toggle');
   const mobileNav = document.getElementById('mobile-nav');
-
   if (menuToggle && mobileNav) {
-    const closeMenu = () => {
-      mobileNav.hidden = true;
+    const close = () => {
       menuToggle.setAttribute('aria-expanded', 'false');
+      mobileNav.hidden = true;
     };
     menuToggle.addEventListener('click', () => {
-      const open = mobileNav.hidden;
-      mobileNav.hidden = !open;
-      menuToggle.setAttribute('aria-expanded', String(open));
+      const open = menuToggle.getAttribute('aria-expanded') === 'true';
+      menuToggle.setAttribute('aria-expanded', String(!open));
+      mobileNav.hidden = open;
     });
-    mobileNav.addEventListener('click', (event) => {
-      if (event.target.closest('a')) closeMenu();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !mobileNav.hidden) {
-        closeMenu();
-        menuToggle.focus();
-      }
-    });
+    mobileNav.querySelectorAll('a').forEach((link) => link.addEventListener('click', close));
     window.addEventListener('resize', () => {
-      if (window.innerWidth > 860) closeMenu();
+      if (window.innerWidth > 1020) close();
     });
   }
 
-  /* ------------------------------------------------- 首屏判定卡片的演示 */
-  const demo = document.querySelector('[data-demo]');
-  const queryText = demo && demo.querySelector('.query-text');
-  const dist = demo && demo.querySelector('[data-dist]');
-  const verdict = demo && demo.querySelector('.verdict');
-  const hits = demo && demo.querySelector('[data-hits]');
-  const fitStamp = demo && demo.querySelector('[data-fit]');
-  const demoFoot = demo && demo.querySelector('.decision-foot');
-  const replay = demo && demo.querySelector('[data-replay]');
-  const QUERY = '嵌入模型怎么标定？';
-  const DIST = [14, 18, 24, 30, 36, 44, 52, 66, 84, 96, 72, 58, 46, 38, 30, 26, 22, 18, 15, 12, 9];
-
-  let demoTimeline = null;
-  let typingTimer = null;
-
-  if (dist) {
-    const bars = [];
-    DIST.forEach((height) => {
-      const bar = document.createElement('span');
-      bar.style.setProperty('--h', `${height}%`);
-      dist.appendChild(bar);
-      bars.push(bar);
-    });
-    const peak = DIST.indexOf(Math.max(...DIST));
-    if (bars[peak]) bars[peak].classList.add('is-peak');
-  }
-
-  /* 静态直方图也只亮一根峰：有数据含义的蓝，不是装饰 */
-  document.querySelectorAll('.hits-dist').forEach((chart) => {
-    const bars = Array.from(chart.children);
-    if (!bars.length) return;
-    let peak = 0;
-    bars.forEach((bar, index) => {
-      const height = parseFloat(bar.style.getPropertyValue('--h')) || 0;
-      const best = parseFloat(bars[peak].style.getPropertyValue('--h')) || 0;
-      if (height > best) peak = index;
-    });
-    bars[peak].classList.add('is-peak');
-  });
-
-  function stopTyping() {
-    if (typingTimer) {
-      window.clearInterval(typingTimer);
-      typingTimer = null;
-    }
-  }
-
-  function showStaticDemo() {
-    stopTyping();
-    if (queryText) queryText.textContent = QUERY;
-    [verdict, hits, demoFoot].forEach((node) => {
-      if (node) node.style.opacity = '1';
-    });
-    if (fitStamp) fitStamp.style.opacity = '1';
-    if (demo) demo.classList.add('is-done');
-  }
-
-  function playDemo() {
-    if (!demo || !queryText) return;
-    stopTyping();
-    if (demoTimeline) demoTimeline.kill();
-
-    if (!canAnimate) {
-      showStaticDemo();
-      return;
-    }
-
-    demo.classList.remove('is-done');
-    queryText.textContent = '';
-    gsap.set(verdict, { opacity: 0 });
-    gsap.set(hits, { opacity: 0 });
-    gsap.set(demoFoot, { opacity: 0 });
-
-    const chars = Array.from(QUERY);
-    let index = 0;
-    typingTimer = window.setInterval(() => {
-      index += 1;
-      queryText.textContent = chars.slice(0, index).join('');
-      if (index >= chars.length) {
-        stopTyping();
-        startVerdictTimeline();
-      }
-    }, 62);
-
-    function startVerdictTimeline() {
-      demoTimeline = gsap.timeline({ delay: 0.24 });
-      demoTimeline
-        .to(verdict, { opacity: 1, duration: 0.28 }, 0)
-        .fromTo(
-          dist ? dist.children : [],
-          { scaleY: 0 },
-          { scaleY: 1, duration: 0.55, stagger: 0.018, ease: 'power3.out' },
-          0.05
-        )
-        .fromTo(
-          fitStamp,
-          { scale: 1.5, opacity: 0, rotation: 7 },
-          { scale: 1, opacity: 1, rotation: -2.5, duration: 0.42, ease: 'back.out(2.4)' },
-          0.3
-        )
-        .to(hits, { opacity: 1, duration: 0.18 }, 0.42)
-        .fromTo(
-          hits ? hits.children : [],
-          { y: 10, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.42, stagger: 0.07, ease: 'power2.out' },
-          0.44
-        )
-        .to(demoFoot, { opacity: 1, duration: 0.3 }, 0.72)
-        .add(() => demo.classList.add('is-done'));
-    }
-  }
-
-  if (demo) {
-    if (canAnimate) {
-      gsap.set(verdict, { opacity: 0 });
-      gsap.set(hits, { opacity: 0 });
-      gsap.set(demoFoot, { opacity: 0 });
-      window.setTimeout(playDemo, 520);
-    } else {
-      showStaticDemo();
-    }
-    if (replay) replay.addEventListener('click', playDemo);
-  }
-
-  /* ---------------------------------------------------------- 揭幕与叙事 */
-  if (canAnimate) {
-    const mm = gsap.matchMedia();
-
-    /* 首屏：标题分行升起，判定卡片后到。
-       注意 y 与 yPercent 要一起给：样式表里的 translateY(112%) 会被 GSAP
-       读成像素 y，只动 yPercent 的话动画结束会落回 112%。 */
-    const heroIntro = gsap.timeline({ defaults: { ease: 'power3.out' } });
-    heroIntro
-      .set('.display .line > span', { y: 0, yPercent: 112 })
-      .to('.display .line > span', { y: 0, yPercent: 0, duration: 0.95, stagger: 0.1 }, 0.12)
-      .from('.lede', { y: 18, opacity: 0, duration: 0.7 }, 0.4)
-      .from('.actions > *', { y: 12, opacity: 0, duration: 0.5, stagger: 0.08 }, 0.5)
-      .from('.hero-facts > div', { y: 10, opacity: 0, duration: 0.5, stagger: 0.06 }, 0.58)
-      .from('.decision', { y: 28, opacity: 0, duration: 0.85 }, 0.28);
-
-    /* 主张：逐字亮起 */
-    const manifesto = document.querySelector('.manifesto-line');
-    if (manifesto) {
-      const text = manifesto.textContent.trim();
-      manifesto.textContent = '';
-      Array.from(text).forEach((char) => {
-        const span = document.createElement('span');
-        span.className = 'word';
-        span.textContent = char;
-        manifesto.appendChild(span);
-      });
-      gsap.to(manifesto.querySelectorAll('.word'), {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.035,
-        ease: 'power2.out',
-        scrollTrigger: { trigger: manifesto, start: 'top 78%', once: true },
-      });
-      gsap.set(manifesto.querySelectorAll('.word'), { y: 12 });
-    }
-
-    /* 分区标题与行 */
-    gsap.utils.toArray('.section-head').forEach((head) => {
-      gsap.from(head.children, {
-        y: 24,
-        opacity: 0,
-        duration: 0.75,
-        stagger: 0.08,
-        ease: 'power3.out',
-        scrollTrigger: { trigger: head, start: 'top 84%', once: true },
-      });
-    });
-
-    gsap.utils.toArray('[data-reveal]').forEach((node) => {
-      gsap.from(node, {
-        y: 26,
-        opacity: 0,
-        duration: 0.75,
-        ease: 'power2.out',
-        scrollTrigger: { trigger: node, start: 'top 86%', once: true },
-      });
-    });
-
-    gsap.utils.toArray('.plate').forEach((plate) => {
-      gsap.from(plate, {
-        y: 34,
-        opacity: 0,
-        duration: 0.9,
-        ease: 'power2.out',
-        scrollTrigger: { trigger: plate, start: 'top 88%', once: true },
-      });
-    });
-
-    /* 吸附叙述：只有在宽屏且未要求减少动态时启用 */
-    mm.add('(min-width: 1081px)', () => {
-      const narrative = document.querySelector('[data-narrative]');
-      if (!narrative) return;
-
-      const sheet = narrative.querySelector('[data-sheet]');
-      const chunks = narrative.querySelector('[data-chunks]');
-      const hitsStage = narrative.querySelector('[data-hits-stage]');
-      const hitRows = hitsStage ? Array.from(hitsStage.querySelectorAll('.hit-row')) : [];
-      const quote = hitsStage ? hitsStage.querySelector('.hit-quote') : null;
-      const chapters = Array.from(narrative.querySelectorAll('[data-chapter]'));
-      const steps = Array.from(narrative.querySelectorAll('[data-step]'));
-      const progressBar = narrative.querySelector('[data-progress]');
-
-      if (!sheet || !chunks || !hitsStage) return;
-
-      gsap.set(chunks, { autoAlpha: 0, y: 26 });
-      gsap.set(hitsStage, { autoAlpha: 0 });
-      gsap.set(hitRows, { autoAlpha: 0, y: 10 });
-      gsap.set(quote, { autoAlpha: 0, y: 14 });
-      gsap.set(chapters.slice(1), { autoAlpha: 0, y: 14 });
-
-      const timeline = gsap.timeline({
-        defaults: { ease: 'none' },
-        scrollTrigger: {
-          trigger: narrative,
-          start: 'top top',
-          end: 'bottom bottom',
-          scrub: 0.6,
-          onUpdate: (self) => {
-            const progress = self.progress;
-            if (progressBar) gsap.set(progressBar, { scaleY: progress });
-            const thresholds = [0, 0.2, 0.52, 0.82];
-            let current = 0;
-            thresholds.forEach((threshold, i) => {
-              if (progress >= threshold) current = i;
-            });
-            steps.forEach((step, i) => step.classList.toggle('is-active', i === current));
-          },
-        },
-      });
-
-      timeline
-        .to(sheet, { autoAlpha: 0, y: -24, scale: 0.985, duration: 0.06 }, 0.16)
-        .to(chunks, { autoAlpha: 1, duration: 0.03 }, 0.2)
-        .to(chunks.children, { autoAlpha: 1, y: 0, duration: 0.05, stagger: 0.01 }, 0.2)
-        .to(chapters[0], { autoAlpha: 0, y: -12, duration: 0.03 }, 0.14)
-        .to(chapters[1], { autoAlpha: 1, y: 0, duration: 0.03 }, 0.2)
-        .to(chunks, { autoAlpha: 0, y: -16, duration: 0.05 }, 0.5)
-        .to(chunks.children, { autoAlpha: 0, duration: 0.03 }, 0.5)
-        .to(hitsStage, { autoAlpha: 1, duration: 0.03 }, 0.52)
-        .to(hitRows, { autoAlpha: 1, y: 0, duration: 0.05, stagger: 0.012 }, 0.52)
-        .to(chapters[1], { autoAlpha: 0, y: -12, duration: 0.03 }, 0.48)
-        .to(chapters[2], { autoAlpha: 1, y: 0, duration: 0.03 }, 0.52)
-        .to(quote, { autoAlpha: 1, y: 0, duration: 0.06 }, 0.78)
-        .to(chapters[2], { autoAlpha: 0, y: -12, duration: 0.03 }, 0.74)
-        .to(chapters[3], { autoAlpha: 1, y: 0, duration: 0.03 }, 0.8)
-        .to(progressBar, { scaleY: 1, duration: 1 }, 0);
-    });
-
-    mm.add('(max-width: 1080px), (prefers-reduced-motion: reduce)', () => {
-      root.classList.add('is-static');
-    });
-  }
-
-  /* ---------------------------------------------------------------- 接入 */
-  const tabs = Array.from(document.querySelectorAll('[data-tab]'));
-  const panels = Array.from(document.querySelectorAll('[data-panel]'));
-  const indicator = document.querySelector('.tab-indicator');
-  const tabsWrap = document.querySelector('.tabs');
-
-  function positionIndicator() {
-    if (!indicator) return;
-    const active = tabs.find((tab) => tab.classList.contains('is-active'));
-    if (!active) return;
-    indicator.style.width = `${active.offsetWidth}px`;
-    indicator.style.transform = `translateX(${active.offsetLeft}px)`;
-  }
-
-  function activateTab(name) {
-    tabs.forEach((tab) => {
-      const active = tab.dataset.tab === name;
-      tab.classList.toggle('is-active', active);
-      tab.setAttribute('aria-selected', String(active));
-    });
-    panels.forEach((panel) => {
-      const active = panel.dataset.panel === name;
-      panel.classList.toggle('is-active', active);
-      panel.hidden = !active;
-    });
-    positionIndicator();
-  }
-
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => activateTab(tab.dataset.tab));
-    tab.addEventListener('keydown', (event) => {
-      const index = tabs.indexOf(tab);
-      let next = null;
-      if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
-      if (event.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
-      if (event.key === 'Home') next = tabs[0];
-      if (event.key === 'End') next = tabs[tabs.length - 1];
-      if (next) {
-        event.preventDefault();
-        next.focus();
-        activateTab(next.dataset.tab);
-      }
-    });
-  });
-
-  if (tabsWrap) {
-    window.addEventListener('resize', positionIndicator, { passive: true });
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(positionIndicator).catch(() => {});
-    }
-    positionIndicator();
-    window.addEventListener('load', positionIndicator, { once: true });
-  }
-
-  /* ---------------------------------------------------------------- 复制 */
+  /* 复制：按钮上直接说结果 */
   document.querySelectorAll('[data-copy]').forEach((button) => {
     button.addEventListener('click', async () => {
       const card = button.closest('.code-card');
-      const code = card && card.querySelector('code');
-      if (!code) return;
-      const text = code.innerText;
+      const pre = card && card.querySelector('pre');
+      if (!pre) return;
+      const text = pre.innerText;
       try {
         await navigator.clipboard.writeText(text);
       } catch (error) {
@@ -434,43 +53,429 @@
         area.style.opacity = '0';
         document.body.appendChild(area);
         area.select();
-        try {
-          document.execCommand('copy');
-        } catch (fallbackError) {
-          /* 复制失败就算了，按钮会回到原文案 */
-        }
-        document.body.removeChild(area);
+        document.execCommand('copy');
+        area.remove();
       }
+      const old = button.textContent;
       button.textContent = '已复制';
       button.classList.add('is-done');
       window.setTimeout(() => {
-        button.textContent = '复制';
+        button.textContent = old;
         button.classList.remove('is-done');
       }, 1600);
     });
   });
 
-  /* ------------------------------------------------------------ 当前分区 */
-  const navLinks = Array.from(document.querySelectorAll('.nav a'));
-  const sections = navLinks
-    .map((link) => document.querySelector(link.getAttribute('href')))
-    .filter(Boolean);
+  /* ---------------------------------------------------------------- 工具面 */
 
-  if ('IntersectionObserver' in window && sections.length) {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          navLinks.forEach((link) => {
-            link.classList.toggle(
-              'is-current',
-              link.getAttribute('href') === `#${entry.target.id}`
-            );
-          });
-        });
+  const TOOL_GROUPS = {
+    access: [
+      {
+        name: 'list_knowledge_bases',
+        label: '列库',
+        summary: '列出当前 API Key 能看到的库，带文档数与嵌入模型。',
+        args: '无',
+        returns: '[{ id, name, documents, embedding_model }]',
+        example: '{}',
+        note: '顶层是数组；Key 限了库范围时只回范围内的库。',
       },
-      { rootMargin: '-42% 0px -52% 0px', threshold: 0 }
-    );
-    sections.forEach((section) => observer.observe(section));
+      {
+        name: 'create_knowledge_base',
+        label: '建库',
+        summary: '建一座新库，绑定一个已登记的嵌入模型。',
+        args: 'name* · description',
+        returns: '{ id, name }',
+        example: '{"name": "产品库", "description": "产品文档与手册"}',
+        note: '没登记嵌入模型时建库会被拒——服务不替你猜用哪个模型。',
+      },
+      {
+        name: 'add_data_source',
+        label: '挂来源',
+        summary: '登记 RSS 或网页源，让它进入后续的抓取与摄入。',
+        args: 'knowledge_base_id* · kind(rss | html)* · url* · name',
+        returns: '{ id, name, note }',
+        example: '{"knowledge_base_id": "kb_9f3c", "kind": "html", "url": "https://example.com/guide"}',
+        note: '登记不等于立刻抓取；内容出现时再查文档状态。',
+      },
+    ],
+    ingest: [
+      {
+        name: 'upload_document',
+        label: '上传',
+        summary: '传文件进库，异步摄入；重复文件直接告诉你。',
+        args: 'knowledge_base_id* · filename* · content_base64*',
+        returns: '{ document_id, name, is_duplicate, note }',
+        example: '{"knowledge_base_id": "kb_9f3c", "filename": "部署手册-NAS.pdf", "content_base64": "<base64>"}',
+        note: 'MCP 单次 32 MB，REST 上传上限 200 MB；is_duplicate 为 true 时不会入第二份。',
+      },
+      {
+        name: 'get_document_status',
+        label: '看进度',
+        summary: '查一份文档走到哪一步，能不能搜。',
+        args: 'document_id*',
+        returns: '{ document_id, name, stage, chunks, error, searchable, note }',
+        example: '{"document_id": "doc_1c7e"}',
+        note: 'searchable 按已落库切块算，不看阶段名；失败态能回到可重试的步骤。',
+      },
+      {
+        name: 'reparse_document',
+        label: '重解析',
+        summary: '清掉旧产物，从解析器重跑。换解析器或修页码时用它。',
+        args: 'document_id*',
+        returns: '{ document_id, name, stage, task_id, note }',
+        example: '{"document_id": "doc_1c7e"}',
+        note: '写操作，权限同删除；会重新消耗云端解析额度。',
+      },
+    ],
+    manage: [
+      {
+        name: 'list_documents',
+        label: '列文档',
+        summary: '按库列文档与状态，可按名称过滤。',
+        args: 'knowledge_base_id* · query · limit',
+        returns: '{ knowledge_base_id, total, documents[...], note }',
+        example: '{"knowledge_base_id": "kb_9f3c", "limit": 20}',
+        note: '每项带 stage、searchable、disabled——管理动作在会话里就能做。',
+      },
+      {
+        name: 'get_document_content',
+        label: '取全文',
+        summary: '取解析产物或原件，两种格式随时切换。',
+        args: 'document_id* · format(markdown | original)',
+        returns: '{ document_id, name, format, media_type, text | base64, download_url? }',
+        example: '{"document_id": "doc_1c7e", "format": "markdown"}',
+        note: 'download_url 需要部署同时配好对外基址与签名密钥，缺一个就不给这一项。',
+      },
+      {
+        name: 'delete_document',
+        label: '删除',
+        summary: '把文档移进回收站，7 天内可恢复。',
+        args: 'document_id*',
+        returns: '{ document_id, trash_id, restorable_until, note }',
+        example: '{"document_id": "doc_1c7e"}',
+        note: '切块与向量立即清除，删完立刻搜不到。',
+      },
+    ],
+    retrieve: [
+      {
+        name: 'search',
+        label: '检索',
+        summary: '混合检索返回带出处的原文片段，不是生成好的回答。',
+        args: 'query* · knowledge_base_ids · top_k · keep · min_score · per_doc · offset · filters',
+        returns: '{ summary, distribution, decision, returned, offset, next_offset, hits[] }',
+        example: '{"query": "嵌入模型怎么标定？", "knowledge_base_ids": ["kb_9f3c"], "keep": 4, "min_score": 0.531}',
+        note: '先读 summary / fit；命中太多就调 keep / min_score / per_doc 再查一次。',
+      },
+      {
+        name: 'get_document_pages',
+        label: '按页取',
+        summary: '取一份文档某几页的原文；PDF 与图片类还给页图链接。',
+        args: 'document_id* · from_page · to_page*',
+        returns: '{ total_pages, pages_reliable, pages[{ page, text, image_url? }] }',
+        example: '{"document_id": "doc_1c7e", "from_page": 7, "to_page": 7}',
+        note: '一次最多 50 页；pages_reliable 为 false 时，别拿它当「第 N 页」引用。',
+      },
+    ],
+  };
+
+  const toolExplorer = document.querySelector('[data-tools]');
+  if (toolExplorer) {
+    const tabs = toolExplorer.querySelectorAll('.tool-tab');
+    const indicator = toolExplorer.querySelector('.tool-indicator');
+    const list = toolExplorer.querySelector('[data-tool-list]');
+    const detail = toolExplorer.querySelector('[data-tool-detail]');
+    let currentGroup = 'access';
+    let currentTool = 0;
+
+    const moveIndicator = () => {
+      const active = toolExplorer.querySelector('.tool-tab.is-active');
+      if (!active || !indicator) return;
+      indicator.style.width = active.offsetWidth + 'px';
+      indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+    };
+
+    const renderDetail = () => {
+      const tools = TOOL_GROUPS[currentGroup];
+      const tool = tools[currentTool] || tools[0];
+      if (!tool || !detail) return;
+      detail.innerHTML =
+        '<div class="td-top"><span class="td-name">' + tool.name + '</span><span class="td-kind">' +
+        tool.label + '</span></div>' +
+        '<p class="td-summary">' + tool.summary + '</p>' +
+        '<div class="td-cols"><div class="td-col"><span class="td-col-label">入参</span><p>' + tool.args +
+        '</p></div><div class="td-col"><span class="td-col-label">返回</span><p>' + tool.returns + '</p></div></div>' +
+        '<pre class="td-code"><code>{ "name": "' + tool.name + '", "arguments": ' + tool.example + ' }</code></pre>' +
+        '<p class="td-note">' + tool.note + '</p>';
+    };
+
+    const renderList = () => {
+      if (!list) return;
+      const tools = TOOL_GROUPS[currentGroup];
+      list.innerHTML = tools
+        .map(
+          (tool, index) =>
+            '<li class="' + (index === currentTool ? 'is-active' : '') + '"><button type="button" data-tool="' +
+            index + '"><span class="tname">' + tool.name + '</span><span class="tarrow">→</span><span class="tlabel">' +
+            tool.label + '</span></button></li>'
+        )
+        .join('');
+      list.querySelectorAll('button').forEach((button) => {
+        button.addEventListener('click', () => {
+          currentTool = Number(button.dataset.tool);
+          list.querySelectorAll('li').forEach((li, index) => li.classList.toggle('is-active', index === currentTool));
+          renderDetail();
+        });
+      });
+    };
+
+    const selectGroup = (group) => {
+      currentGroup = group;
+      currentTool = 0;
+      tabs.forEach((tab) => {
+        const active = tab.dataset.group === group;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-selected', String(active));
+      });
+      moveIndicator();
+      renderList();
+      renderDetail();
+    };
+
+    tabs.forEach((tab) => tab.addEventListener('click', () => selectGroup(tab.dataset.group)));
+    window.addEventListener('resize', moveIndicator);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(moveIndicator).catch(() => {});
+    }
+    renderList();
+    renderDetail();
+    window.requestAnimationFrame(moveIndicator);
+  }
+
+  /* ---------------------------------------------------------------- 返回说明 */
+
+  const NOTE_CONTENT = {
+    summary:
+      '<h3>先给判定，再给原文</h3><p>一句话说清候选多少、高于基线几条、收敛后留几条，以及收敛参数是谁建议的。' +
+      '<code>fit=none</code> 时它会明确说「资料大概答不了这个问题」，MCP 载荷另带一句 <code>note</code>。</p>',
+    distribution:
+      '<h3>分布和 fit 在同一次返回里</h3><p><code>fit</code> 是规则算出来的：<code>max</code> 低于基线是 <code>none</code>；' +
+      '<code>max</code> ≥ 基线 + 0.095 且 <code>median</code> ≥ 基线是 <code>strong</code>；其余 <code>weak</code>。' +
+      '没标定过的模型给 <code>unknown</code>，不自动收敛。基线按嵌入模型标定（bge-m3 为 0.531）。</p>',
+    decision:
+      '<h3>「为什么只回了 3 条」要有答案</h3><p>记录本次实际生效的 <code>keep</code> / <code>min_score</code> / <code>per_doc</code>、' +
+      '谁给的 <code>decided_by</code>、丢掉多少 <code>dropped</code>，以及绕过阈值的词面命中 <code>unscored_kept</code>。</p>',
+    hits:
+      '<h3>原文切片，不是摘要</h3><p>每条带 <code>text</code>、<code>page</code>、<code>heading_path</code>、<code>chunk_id</code>、' +
+      '<code>basis</code>、<code>similarity</code> 与 <code>lexical_score</code>。<code>page</code> 为 null 是如实的「没有可信页码」，不是缺字段。</p>',
+    next_offset:
+      '<h3>翻页不改判定</h3><p><code>offset</code> 只切「幸存者」名单；<code>summary</code> / <code>distribution</code> / <code>decision</code> 在每一页逐字相同。' +
+      '把 <code>next_offset</code> 填回 <code>offset</code> 继续，直到它变成 <code>null</code>。</p>',
+  };
+
+  const answer = document.querySelector('[data-answer]');
+  if (answer) {
+    const noteTabs = answer.querySelectorAll('.note-tab');
+    const noteBody = answer.querySelector('[data-note-body]');
+    const blocks = answer.querySelectorAll('.pblock');
+    const setNote = (key) => {
+      noteTabs.forEach((tab) => {
+        const active = tab.dataset.note === key;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-selected', String(active));
+      });
+      blocks.forEach((block) => block.classList.toggle('is-active', block.dataset.block === key));
+      if (noteBody) noteBody.innerHTML = NOTE_CONTENT[key] || '';
+    };
+    noteTabs.forEach((tab) => tab.addEventListener('click', () => setNote(tab.dataset.note)));
+    blocks.forEach((block) => {
+      block.addEventListener('click', () => {
+        if (NOTE_CONTENT[block.dataset.block]) setNote(block.dataset.block);
+      });
+    });
+    setNote('distribution');
+  }
+
+  /* ---------------------------------------------------------------- 双格式 */
+
+  const formats = document.querySelector('[data-formats]');
+  if (formats) {
+    const buttons = formats.querySelectorAll('[data-format]');
+    const panes = formats.querySelectorAll('[data-pane]');
+    const select = (key) => {
+      buttons.forEach((button) => {
+        const active = button.dataset.format === key;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      panes.forEach((pane) => {
+        const active = pane.dataset.pane === key;
+        pane.hidden = !active;
+        pane.classList.toggle('is-active', active);
+      });
+    };
+    buttons.forEach((button) => button.addEventListener('click', () => select(button.dataset.format)));
+  }
+
+  /* ---------------------------------------------------------------- 调参 */
+
+  const tuning = document.querySelector('[data-tuning]');
+  if (tuning) {
+    const toggle = tuning.querySelector('[data-tune-toggle]');
+    const keep = tuning.querySelector('[data-keep]');
+    const min = tuning.querySelector('[data-min]');
+    const perDoc = tuning.querySelector('[data-perdoc]');
+    const decided = tuning.querySelector('[data-decided]');
+    const code = tuning.querySelector('[data-code]');
+    const text = tuning.querySelector('[data-text]');
+    const count = tuning.querySelector('[data-count]');
+    const verdict = tuning.querySelector('[data-verdict]');
+    const bars = tuning.querySelector('[data-bars]');
+    const modes = tuning.querySelectorAll('[data-mode]');
+    const modeNote = tuning.querySelector('.tune-row .tr-note');
+
+    const STATE = {
+      suggested: {
+        keep: '4',
+        min: '0.531',
+        perDoc: 'null',
+        decided: 'suggested',
+        code: '{"keep": 4, "min_score": 0.531, "per_doc": null}',
+        text: '按分布建议收。三个旋钮原样带回，翻页时判定不变。',
+        count: '38 candidates · 4 survived',
+        verdict: '资料很对得上，按每篇最相关的收敛。',
+      },
+      custom: {
+        keep: '6',
+        min: '0.531',
+        perDoc: '1',
+        decided: 'model',
+        code: '{"keep": 6, "min_score": 0.531, "per_doc": 1}',
+        text: 'Agent 把 per_doc 调成 1：跨文档各留一条，避免同一本书刷屏；keep 同步抬到 6。',
+        count: '38 candidates · 6 survived',
+        verdict: '分布没变；变的是这次怎么收——同一批候选，换一个读法。',
+      },
+    };
+
+    const renderTune = (key) => {
+      const state = STATE[key];
+      if (keep) keep.textContent = state.keep;
+      if (min) min.textContent = state.min;
+      if (perDoc) perDoc.textContent = state.perDoc;
+      if (decided) decided.textContent = state.decided;
+      if (code) code.textContent = state.code;
+      if (text) text.textContent = state.text;
+      if (count) count.textContent = state.count;
+      if (verdict) verdict.textContent = state.verdict;
+      if (toggle) toggle.setAttribute('aria-pressed', String(key === 'custom'));
+      if (bars) {
+        const spans = bars.querySelectorAll('span');
+        spans.forEach((span, index) => span.classList.toggle('hot', index < (key === 'custom' ? 7 : 6) && index >= 4));
+      }
+    };
+
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        const next = toggle.getAttribute('aria-pressed') === 'true' ? 'suggested' : 'custom';
+        renderTune(next);
+      });
+    }
+
+    modes.forEach((mode) => {
+      mode.addEventListener('click', () => {
+        modes.forEach((item) => item.classList.toggle('is-active', item === mode));
+        if (!modeNote) return;
+        const labels = {
+          hybrid: '向量 + 词面，RRF 融合',
+          vector: '只走向量通道；min_score 切这一路',
+          fulltext: '只走词面通道；min_score 不切它',
+        };
+        modeNote.textContent = labels[mode.dataset.mode] || labels.hybrid;
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------------- 动效 */
+
+  if (!canAnimate) {
+    root.classList.remove('motion-ready');
+    return;
+  }
+
+  gsap.registerPlugin(ScrollTrigger);
+  window.addEventListener('error', () => root.classList.remove('motion-ready'), { once: true });
+  gsap.set('.display .line span', { yPercent: 112 });
+
+  const intro = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.05 });
+  intro
+    .to('.display .line span', { yPercent: 0, duration: 0.95, stagger: 0.09 }, 0.05)
+    .to('.hero-side', { opacity: 1, y: 0, duration: 0.7 }, 0.34)
+    .to('.session', { opacity: 1, y: 0, duration: 0.8 }, 0.44)
+    .from('.msg', { opacity: 0, y: 8, duration: 0.32, stagger: 0.055 }, 0.7)
+    .from('.hit', { opacity: 0, y: 12, duration: 0.5 }, 1.16)
+    .add(() => root.classList.add('is-ready'), 1.7);
+
+  gsap.set('.hero-side', { y: 18 });
+  gsap.set('.session', { y: 28 });
+
+  /* 区块出场：一次滚动触发，不重播 */
+  const revealTargets = gsap.utils.toArray(
+    [
+      '.section:not(.hero) .section-head > *',
+      '.tool-explorer',
+      '.tool-foot',
+      '.answer-layout .payload',
+      '.answer-notes',
+      '.format-switch',
+      '.format-viewer',
+      '.tune-chart',
+      '.tune-panel',
+      '.tune-foot',
+      '.stack-route',
+      '.provider',
+      '.code-card',
+      '.deploy-steps li',
+      '.deploy-foot',
+      '.section-note',
+      '.cta-inner > *',
+    ].join(',')
+  );
+  if (revealTargets.length) {
+    gsap.set(revealTargets, { opacity: 0, y: 22 });
+    ScrollTrigger.batch(revealTargets, {
+      start: 'top 88%',
+      once: true,
+      onEnter: (batch) => gsap.to(batch, { opacity: 1, y: 0, duration: 0.65, stagger: 0.06, ease: 'power3.out' }),
+    });
+  }
+
+  /* 页码叙事：滚动位置 1:1 驱动三段 */
+  const narrative = document.querySelector('[data-narrative]');
+  if (narrative && window.innerWidth > 1020) {
+    const stageItems = narrative.querySelectorAll('[data-stage-item]');
+    const chapters = narrative.querySelectorAll('[data-chapter]');
+    const dots = narrative.querySelectorAll('.narrative-dots i');
+    let step = -1;
+    const setStep = (index) => {
+      if (index === step) return;
+      step = index;
+      stageItems.forEach((item, i) => item.classList.toggle('is-active', i === index));
+      chapters.forEach((item, i) => item.classList.toggle('is-active', i === index));
+      dots.forEach((dot, i) => dot.classList.toggle('on', i === index));
+    };
+    setStep(0);
+    ScrollTrigger.create({
+      trigger: narrative,
+      start: 'top top+=62',
+      end: 'bottom bottom',
+      onUpdate: (self) => {
+        const progress = self.progress;
+        setStep(progress < 0.3 ? 0 : progress < 0.56 ? 1 : 2);
+      },
+    });
+  }
+
+  /* 调参时数字和柱子一起变；失败也不挡住内容 */
+  if (typeof ScrollTrigger !== 'undefined') {
+    ScrollTrigger.refresh();
   }
 })();
