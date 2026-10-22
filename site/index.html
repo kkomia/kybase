@@ -608,20 +608,21 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
         <p class="sec-no">07 / 部署</p>
         <h2 id="deploy-title">一条命令，<br />启动服务。</h2>
         <p class="sec-lede">
-          Docker 启动 PostgreSQL、MinIO、后端和前端。登记嵌入模型后，用 API Key 接入 Agent。
+          Docker 启动 PostgreSQL、MinIO、后端、MCP 与前端。登记嵌入模型后，用 API Key 接入 Agent。
         </p>
       </div>
 
       <div class="deploy-grid">
         <div class="deploy-code">
           <div class="code-card">
-            <div class="code-head"><span>干净机器 · 四件套</span><button class="copy" type="button" data-copy>复制</button></div>
+            <div class="code-head"><span>干净机器 · Docker Compose</span><button class="copy" type="button" data-copy>复制</button></div>
 <pre><code>git clone https://github.com/kkomia/kybase.git
 cd kybase
 
 docker compose -f deploy/docker-compose.yml up -d --build
 
 # 界面   http://localhost:8080
+# MCP    http://localhost:8765/mcp
 # 健康   http://localhost:8080/api/v1/health</code></pre>
           </div>
           <div class="code-card">
@@ -639,7 +640,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
         </div>
 
         <ol class="deploy-steps">
-          <li><span class="step-no">01</span><div><h3>启动容器</h3><p>PostgreSQL（pgvector）、MinIO、后端与前端。</p></div></li>
+          <li><span class="step-no">01</span><div><h3>启动容器</h3><p>PostgreSQL（pgvector）、MinIO、后端、MCP 与前端。</p></div></li>
           <li><span class="step-no">02</span><div><h3>登记嵌入模型</h3><p>在「模型」页登记嵌入模型。</p></div></li>
           <li><span class="step-no">03</span><div><h3>创建知识库</h3><p>上传文件，摄入流程自动执行。</p></div></li>
           <li><span class="step-no">04</span><div><h3>接入 Agent</h3><p>创建 API Key，配置 MCP 或 Skill。</p></div></li>
@@ -665,7 +666,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
       </svg>
       <div class="cta-actions">
         <a class="btn btn-primary" href="https://github.com/kkomia/kybase" target="_blank" rel="noreferrer">查看 GitHub</a>
-        <a class="btn btn-ghost" href="#deploy">阅读部署指南</a>
+        <a class="btn btn-ghost" href="https://github.com/kkomia/kybase/blob/master/docs/部署指南-v0.1.md" target="_blank" rel="noreferrer">阅读部署指南</a>
       </div>
       <p class="cta-note">MIT · 自托管 · MCP / REST / Skill</p>
       <div class="cta-evidence" aria-hidden="true">
