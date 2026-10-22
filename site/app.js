@@ -262,7 +262,7 @@
       '<code>max</code> ≥ 基线 + 0.095 且 <code>median</code> ≥ 基线是 <code>strong</code>；其余 <code>weak</code>。' +
       '没标定过的模型给 <code>unknown</code>，不自动收敛。基线按嵌入模型标定（bge-m3 为 0.531）。</p>',
     decision:
-      '<h3>「为什么只回了 3 条」要有答案</h3><p>记录本次实际生效的 <code>keep</code> / <code>min_score</code> / <code>per_doc</code>、' +
+      '<h3>「为什么只回了 4 条」要有答案</h3><p>记录本次实际生效的 <code>keep</code> / <code>min_score</code> / <code>per_doc</code>、' +
       '谁给的 <code>decided_by</code>、丢掉多少 <code>dropped</code>，以及绕过阈值的词面命中 <code>unscored_kept</code>。</p>',
     hits:
       '<h3>原文切片，不是摘要</h3><p>每条带 <code>text</code>、<code>page</code>、<code>heading_path</code>、<code>chunk_id</code>、' +
@@ -320,7 +320,7 @@
 
   const tuning = document.querySelector('[data-tuning]');
   if (tuning) {
-    const toggle = tuning.querySelector('[data-tune-toggle]');
+    const switchButtons = tuning.querySelectorAll('[data-tune-mode]');
     const keep = tuning.querySelector('[data-keep]');
     const min = tuning.querySelector('[data-min]');
     const perDoc = tuning.querySelector('[data-perdoc]');
@@ -366,19 +366,20 @@
       if (text) text.textContent = state.text;
       if (count) count.textContent = state.count;
       if (verdict) verdict.textContent = state.verdict;
-      if (toggle) toggle.setAttribute('aria-pressed', String(key === 'custom'));
+      switchButtons.forEach((button) => {
+        const active = button.dataset.tuneMode === key;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
       if (bars) {
         const spans = bars.querySelectorAll('span');
         spans.forEach((span, index) => span.classList.toggle('hot', index < (key === 'custom' ? 7 : 6) && index >= 4));
       }
     };
 
-    if (toggle) {
-      toggle.addEventListener('click', () => {
-        const next = toggle.getAttribute('aria-pressed') === 'true' ? 'suggested' : 'custom';
-        renderTune(next);
-      });
-    }
+    switchButtons.forEach((button) => {
+      button.addEventListener('click', () => renderTune(button.dataset.tuneMode === 'custom' ? 'custom' : 'suggested'));
+    });
 
     modes.forEach((mode) => {
       mode.addEventListener('click', () => {

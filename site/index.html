@@ -55,7 +55,7 @@
 
     <nav class="nav" aria-label="页面导航">
       <a href="#tools">工具面</a>
-      <a href="#answer">返回</a>
+      <a href="#answer">检索返回</a>
       <a href="#pages">页码</a>
       <a href="#formats">双格式</a>
       <a href="#tuning">调参</a>
@@ -72,7 +72,7 @@
   </div>
   <nav class="mobile-nav" id="mobile-nav" aria-label="页面导航" hidden>
     <a href="#tools">工具面</a>
-    <a href="#answer">返回</a>
+    <a href="#answer">检索返回</a>
     <a href="#pages">页码</a>
     <a href="#formats">双格式</a>
     <a href="#tuning">调参</a>
@@ -94,8 +94,9 @@
         </div>
         <div class="hero-side">
           <p class="lede">
-            kybase 是一个 <b>MCP / Skill 插件</b>：Agent 在会话里就能上传、解析、管理、检索 PDF 与 Word；
-            每条命中带着<b>原文切片、页码与标题路径</b>回来。检索参数不写死，分布和 <code>suggested</code> 一起交还给 Agent。
+            给跑 <b>Claude Desktop / Cursor</b> 的开发者：kybase 是一个 MCP / Skill 插件，
+            Agent 在会话里就能上传、解析、管理、检索 PDF 与 Word；每条命中带着<b>原文切片、页码与标题路径</b>回来。
+            检索参数不写死：分布和 <code>suggested</code> 一起给出。
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="#deploy">接入插件</a>
@@ -103,8 +104,8 @@
           </div>
           <ul class="hero-facts" aria-label="关键事实">
             <li><span>11</span><small>个 MCP 工具</small></li>
-            <li><span>2</span><small>种传输：stdio / HTTP</small></li>
-            <li><span>0</span><small>订阅费用，MIT 自托管</small></li>
+            <li><span>2</span><small>种传输 stdio / HTTP</small></li>
+            <li><span>MIT</span><small>自托管</small></li>
           </ul>
         </div>
       </div>
@@ -123,15 +124,7 @@
               <span class="who">你</span>
               <p class="bubble">把「产品手册.docx」和「部署手册-NAS.pdf」收进产品库，然后回答：嵌入模型怎么标定？</p>
             </div>
-            <div class="msg msg-agent">
-              <span class="who">Agent</span>
-              <p class="bubble">先建库、上传，等索引完成，再检索。</p>
-            </div>
 
-            <div class="msg msg-tool" data-call>
-              <span class="who">调用</span>
-              <div class="call"><span class="fn">list_knowledge_bases</span><span class="res">产品库 <em>kb_9f3c</em></span></div>
-            </div>
             <div class="msg msg-tool" data-call>
               <span class="who">调用</span>
               <div class="call"><span class="fn">upload_document</span><span class="res">产品手册.docx → <em>doc_8f2a</em> · is_duplicate <b>false</b></span></div>
@@ -155,7 +148,7 @@
                 <span class="hit-page">p.7 · similarity 0.712</span>
               </div>
               <p class="hit-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
-              <div class="hit-meta"><span>basis <b>vector</b></span><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
+              <div class="hit-meta"><span>fit <b>strong</b></span><span>basis <b>vector</b></span><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
             </div>
 
             <div class="msg msg-agent">
@@ -446,11 +439,10 @@
             </div>
             <div class="orig-page" aria-hidden="true">
               <div class="op-head">五、嵌入模型与维度</div>
-              <div class="op-line" style="--w: 96%"></div>
-              <div class="op-line" style="--w: 88%"></div>
-              <div class="op-line" style="--w: 92%"></div>
+              <p class="op-p">模型身份由模型注册表承担，不写进环境变量。建库之前先登记，服务不替你猜用哪个模型。</p>
+              <p class="op-p op-hl">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
               <div class="op-fig"><span></span><span></span><span></span><span></span><span></span></div>
-              <div class="op-line" style="--w: 70%"></div>
+              <p class="op-cap">图 5-2　近 30 天入库节奏</p>
               <div class="op-no">— 7 —</div>
             </div>
             <div class="fmt-side">
@@ -549,11 +541,10 @@ pgvector 建不了 HNSW，检索会退化成精确扫描。
             <span class="tr-note">谁给的这三个数</span>
           </div>
 
-          <button class="tune-toggle" type="button" data-tune-toggle aria-pressed="false">
-            <span class="tt-label">照 suggested 收</span>
-            <span class="tt-track" aria-hidden="true"><i></i></span>
-            <span class="tt-label-off">Agent 自己调</span>
-          </button>
+          <div class="tune-switch" role="group" aria-label="收敛参数来源">
+            <button class="ts-opt is-active" type="button" data-tune-mode="suggested" aria-pressed="true">照 suggested 收</button>
+            <button class="ts-opt" type="button" data-tune-mode="custom" aria-pressed="false">Agent 自己调</button>
+          </div>
 
           <div class="tune-result" data-tune-result>
             <p class="tr-title">下一次调用</p>
@@ -698,6 +689,11 @@ docker compose -f deploy/docker-compose.yml up -d --build
         <a class="btn btn-ghost" href="#deploy">看部署步骤</a>
       </div>
       <p class="cta-note">MIT · 自托管 · 11 个工具 · MCP / REST / Skill 同一套语义</p>
+      <div class="cta-evidence" aria-hidden="true">
+        <span class="ce-stamp">已核 P.7</span>
+        <p class="ce-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW。</p>
+        <p class="ce-meta">部署手册-NAS.pdf · p.7 · similarity 0.712</p>
+      </div>
     </div>
   </section>
 </main>
