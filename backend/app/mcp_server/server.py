@@ -12,7 +12,7 @@
 而 ``services/tools.py`` 那张表是 kylab 合体期的产物——里面有 ``create_note`` 这类
 会真写笔记、``remember`` / ``forget`` 这类会真动用户档案的工具。把它们留在对外 MCP 面上，
 等于让外部客户端从这个服务里拿到 agent 的权限面。**瘦身之后 Agent 侧的实现已整体拆除**
-（剥离方案 §6 阶段 1 第 5 步），``services.tools.TOOL_NAMES`` 剩下的正好就是纯知识库
+（架构设计 §6 阶段 1 第 5 步），``services.tools.TOOL_NAMES`` 剩下的正好就是纯知识库
 那一批工具，所以 :data:`MCP_TOOL_NAMES` 直接取它——**名单只有一处定义**，
 不在这里另抄一遍。
 

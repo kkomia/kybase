@@ -134,7 +134,7 @@ function makeDoc(overrides: Partial<DocumentSummary> = {}): DocumentSummary {
     error: null,
     chunk_count: 42,
     uploaded_by: null,
-    uploaded_by_name: '小又',
+    uploaded_by_name: '测试用户',
     folder_id: null,
     disabled: false,
     original_kind: 'pdf',
@@ -180,7 +180,7 @@ const FOLDER: Folder = {
 /** 名册里的一条：上传者那一列只在名册拉到之后才出现（行与列头同一条条件）。 */
 const ROSTER_USER = {
   id: 'u-1',
-  name: '小又',
+  name: '测试用户',
   note: '',
   created_at: null,
   document_count: 2,
@@ -243,7 +243,7 @@ describe('文档列表', () => {
 
     // 列头与数据列一一对应，顺序就是列顺序（原先只有五个，状态与上传者有内容没列头）
     expect((head.textContent ?? '').replace(/\s+/g, '')).toBe('文件状态上传者切块问题大小更新时间')
-    expect(within(row).getByText('小又')).toBeInTheDocument()
+    expect(within(row).getByText('测试用户')).toBeInTheDocument()
 
     // jsdom 不做布局，"对齐"只能守到这一层：列头与行内那两格用的是同一组宽度，
     // 左边缘才有可能落在同一条竖线上（宽度随文案走的话，列头只能对上其中一行）

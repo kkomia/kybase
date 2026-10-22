@@ -63,8 +63,7 @@ if [ -f "$ROOT/frontend/package.json" ]; then
 fi
 
 # Shell 脚本语法自检（与 CI 的「门禁脚本自检」job 同一件事）：
-# **按 git 跟踪的文件扫，不手写清单**——手写清单会漏，`deploy/nas/` 那两个脚本
-# （其中 `deploy-from-windows.sh` 是用户照着跑的那条路）就这么漏过一轮。
+# **按 git 跟踪的文件扫，不手写清单**——手写清单会漏。
 # 只在 git 检出里做；不在检出里（比如解开的源码包）就跳过，别让门禁凭空变脆。
 if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     echo "==> Shell 脚本语法（sh -n，git 跟踪的全部 .sh）"

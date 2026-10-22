@@ -414,7 +414,7 @@ const MODAL_SIZES = {
 } as const
 
 /**
- * 弹窗：`@/ui/dialog` 的组合（`src/ui/README.md` §3 的那套三段式）。
+ * 弹窗：`@/ui/dialog` 的组合（`src/styles/tokens.css` §3 的那套三段式）。
  *
  * **行为一件都不在这里**：Esc 关闭、点遮罩关闭、打开时锁滚动、关闭后把焦点还给打开它的
  * 那个元素、`aria-modal` 与标题关联——全部由 Radix 的 Dialog 给（旧实现自己补了其中几件，

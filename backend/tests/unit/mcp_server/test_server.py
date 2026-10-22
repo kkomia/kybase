@@ -65,7 +65,7 @@ def test_server_registers_exactly_the_kb_face() -> None:
 
 
 def test_an_agent_tool_is_nowhere_in_the_face() -> None:
-    """**Agent 侧的工具一个都不在**（剥离方案 §6 阶段 1 第 5 步）：
+    """**Agent 侧的工具一个都不在**（架构设计 §6 阶段 1 第 5 步）：
     ``create_note`` 会真写笔记、``remember`` / ``forget`` 会真动用户档案、
     ``export_*`` 会把文件落进别人的会话产物区——它们的实现都已拆除，
     名字也不该出现在这个服务里。

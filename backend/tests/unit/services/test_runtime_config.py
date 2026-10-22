@@ -1,6 +1,6 @@
 """运行期配置：三层优先级、快照与掩码（`services/runtime_config.py`）。
 
-交接文档把"配置层 721 行没有直接单测"列为**最大的质量缺口**——设置页改错一个字段
+设计文档把"配置层 721 行没有直接单测"列为**最大的质量缺口**——设置页改错一个字段
 可能悄悄影响所有调用，而没有测试会红。本文件补上最要紧的几条：
 
 1. 优先级 **数据库 > `.env` 引导 > 代码默认**（顺序错了会让"部署时预设"永远压住网页设置）；
@@ -167,7 +167,7 @@ def test_media_capability_is_declared_per_registered_model(
 
     # 另一个模型声明了 wemm（按模型设的那一栏）——门控必须开
     provider = registry.create_provider(
-        kind="embedding", name="局域网 WeMM", base_url="http://192.168.31.18:8234"
+        kind="embedding", name="局域网 WeMM", base_url="http://127.0.0.1:8234"
     )
     registry.register_model(
         provider_id=provider.id,

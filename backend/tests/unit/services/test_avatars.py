@@ -34,7 +34,7 @@ def service(bundle) -> AvatarService:  # type: ignore[no-untyped-def]
     return AvatarService(bundle)
 
 
-def _user(store, name: str = "小又") -> UserRecord:  # type: ignore[no-untyped-def]
+def _user(store, name: str = "测试用户") -> UserRecord:  # type: ignore[no-untyped-def]
     return store.create_user(UserRecord(id=f"user_{name}", name=name))
 
 

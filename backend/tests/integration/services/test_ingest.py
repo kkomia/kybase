@@ -922,7 +922,7 @@ def test_generate_questions_without_the_service_is_rejected(
 
 
 #: 真机 WeMM 服务的地址。**不设就跳过**：这一条要一台局域网 GPU 服务，CI 上没有。
-#: 例：``KYLAB_WEMM_E2E_URL=http://192.168.31.18:8234``（地址只在环境里，不进源码）。
+#: 例：``KYLAB_WEMM_E2E_URL=http://127.0.0.1:8234``（地址只在环境里，不进源码）。
 WEMM_E2E_URL_ENV = "KYLAB_WEMM_E2E_URL"
 #: 想换成一段真视频时给它的路径（不给就用下面生成的那张 8x8 PNG）。
 #: 媒体这条路对图片与视频是**同一套三步协议**，所以两种都能验；视频那条真机数字

@@ -25,7 +25,7 @@ from app.services.embedding.wemm import WeMMEmbedder
 from app.services.runtime_config import EmbeddingSettings
 
 _BASE = {
-    "base_url": "http://192.168.31.18:8234",
+    "base_url": "http://127.0.0.1:8234",
     "api_key": "",
     "model_id": "WeMM-Embedding-2B-Q4_K_M.gguf",
     "dim": 2048,
@@ -129,11 +129,10 @@ def test_matryoshka_target_dimension_flows_into_the_client() -> None:
 
 
 def test_lan_address_is_not_hardcoded_in_the_source() -> None:
-    """那台机器的地址走配置（模型注册里的供应商 base_url），**不进源码**。
+    """嵌入服务地址走配置（模型注册里的供应商 base_url），**不进源码**。
 
-    文档与 `.env.example` 里写着 `192.168.31.18:8234` 当示例；这几个文件里出现它就说明
-    有人把一处部署事实焊死了——换个网段就得改代码。**只查这条 lane 碰的文件**：
-    仓库别处早有文档性质的示例地址（那是另一件事，不该被这条用例拦）。
+    这几个文件里出现内网地址示例，就说明有人把一处部署事实焊死了——
+    换个网段就得改代码。**只查这条 lane 碰的文件**。
     """
     app = pathlib.Path(__file__).resolve().parents[4] / "app"
     watched = [

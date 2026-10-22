@@ -1,5 +1,5 @@
 ---
-name: kylab-knowledge-base
+name: kybase-knowledge-base
 description: Query a kybase knowledge base to answer questions from the user's own documents with traceable citations. Use this Skill whenever the user asks something that their local knowledge base might cover — product manuals, research papers, internal guidelines, subscribed feeds — or explicitly says "查知识库", "在我的文档里找", "知识库里有没有", "ask my knowledge base", "search my docs". Also use it before answering from general knowledge when the answer should be grounded in the user's own material, because kybase returns the actual source passages rather than a generated summary.
 summary: 在你的知识库里检索原文段落，给出可追溯出处的回答
 ---
@@ -150,7 +150,7 @@ processing before reporting the material as missing.
 ## Local setup
 
 This Skill drives the kybase MCP server, which runs beside the kybase backend. The Skill
-ships inside the kybase repository (`skills/kylab-knowledge-base/`), so that backend is the
+ships inside the kybase repository (`skills/kybase-knowledge-base/`), so that backend is the
 `backend/` directory next to it.
 
 ```bash
@@ -191,8 +191,8 @@ python -m app.mcp_server.server --transport http --host 0.0.0.0 --port 8765
 curl -H "Authorization: Bearer <your API key>" ...
 ```
 
-The instance deployed on the LAN answers at `http://192.168.31.18:8765/mcp`; **another
-deployment gives you its own address, so take that from whoever deployed it.**
+Take the MCP endpoint from whoever deployed the service (the default port is 8765,
+path `/mcp`).
 
 Both transports accept either an API key or a **login session token**
 (`kylab_st_…`). Prefer the session token when the agent should act *as the user*: a library
@@ -204,12 +204,11 @@ reach, but the tool set still includes deletion — only expose it on a network 
 
 ## Proxying a plain REST client
 
-If the agent runtime cannot speak MCP, `scripts/kylab_query.py` in this Skill calls the
+If the agent runtime cannot speak MCP, `scripts/kybase_query.py` in this Skill calls the
 REST API directly and prints the verdict line first, then the passages. Same retrieval,
 no MCP client needed (with `--json` the backend response, verdict included, passes
 through unchanged):
 
 ```bash
-python scripts/kylab_query.py --base-url http://127.0.0.1:8000 --query "眼轴怎么监测"
-# the LAN instance answers at http://192.168.31.18:8081/api/v1 (the deployer's value wins)
+python scripts/kybase_query.py --base-url http://127.0.0.1:8080 --query "眼轴怎么监测"
 ```

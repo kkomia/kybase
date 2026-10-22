@@ -241,7 +241,7 @@ def _lan_registry() -> _FakeRegistry:
         id="p1",
         kind="embedding",
         name="局域网 WeMM",
-        base_url="http://192.168.31.18:8234",
+        base_url="http://127.0.0.1:8234",
         api_key="",  # 那台没有鉴权
     )
     model = RegisteredModelRecord(
@@ -310,7 +310,7 @@ def test_default_protocol_keeps_building_the_openai_client() -> None:
 def _registry_with_options(options: dict[str, object]) -> _FakeRegistry:
     """同一个局域网供应商，但模型登记里带了 ``options``（按模型声明协议那一栏）。"""
     provider = ModelProviderRecord(
-        id="p1", kind="embedding", name="局域网 WeMM", base_url="http://192.168.31.18:8234"
+        id="p1", kind="embedding", name="局域网 WeMM", base_url="http://127.0.0.1:8234"
     )
     model = RegisteredModelRecord(
         id="m1",

@@ -53,7 +53,7 @@ export function writeStoredEndpoint(value: string): void {
  * 这一格的值能不能用来拼片段：得是一条 `http` / `https` 的地址。
  *
  * 判据交给 `URL` 自己（比手写正则准）：协议必须是这两者之一，且要能解析出主机名——
- * `http://`、`192.168.1.5:8765/mcp`（没写协议）、`ftp://x/mcp` 这些半截值/别的协议
+ * `http://`、`mcp.example.com/mcp`（没写协议）、`ftp://x/mcp` 这些半截值/别的协议
  * 都会在这里被挡掉。
  */
 export function isValidEndpoint(value: string): boolean {

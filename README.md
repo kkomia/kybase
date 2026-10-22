@@ -1,181 +1,189 @@
 # kybase
 
-**自托管的知识库服务：把资料变成 Agent 能引用、能溯源的证据。**
+**面向 AI Agent 的知识库服务。** 上传文档，解析成可检索的索引；检索返回带页码与
+标题路径的原文片段，而不是生成好的回答。
 
-摄入 → 解析 → 切块 → 向量化 → 混合检索（向量 + BM25，RRF 融合）→ **返回带出处的原文片段**，
-而不是一段生成好的回答。
-
-MIT · 自托管 · 三容器 · **MCP / REST / Skill 三条等价接入路径**
+MIT · 自托管 · MCP / REST / Skill 三种接入方式 · PostgreSQL + pgvector · Docker
 
 ---
 
 ## 它是什么
 
-kybase 是一个**知识库服务**：负责把文件变成可检索的索引，再把「哪一段原文能回答这个问题」
-交给调用它的 Agent。它不生成回答，不做对话、记忆、笔记、技能、沙箱——那些属于 Agent 侧。
+kybase 负责三件事：
 
-三个界面之外的事实：
+1. 把 PDF、Word、图片与文本解析成 Markdown，按页切块并建立索引；
+2. 建库、管理文档、维护账号与 API Key；
+3. 对外提供带出处的检索：命中带原文片段、页码、标题路径、相似度与命中的检索通道。
 
-- **检索先给判定**：`summary` 一句话说明候选多少、收敛后留了几条；`distribution` 给出完整分布
-  与 `fit`（`strong` / `weak` / `none` / `unknown`，这份资料到底对不对得上）；`decision` 记录
-  这次按什么收敛的；原文排在它们之后。
-- **出处诚实**：页码只在文档自己的分页标记与页数自洽时才给，否则 `page` 为 `null`——
-  报一个翻不到原文的页码比不报更糟。每条命中还标出它是哪条通道捞上来的（`basis` /
-  `lexical_score`）。
-- **能翻页看全**：命中太多时用 `keep` / `min_score` / `per_doc` 收敛；要「把某个主题看全」
-  就按 `offset` / `next_offset` 一路翻到 `null`——判定在每一页上逐字相同。
-- **异步摄入**：上传 → 逐文件探测 → 解析 → 切块 → 向量化 → 索引，租约 / 退避 / 断点续跑；
-  云端与本地解析按文件动态路由，所有格式统一转成 Markdown，向量化只针对 Markdown。
-- **账号与准入**：用户、会话、API 密钥；库分享、库范围钥匙、管理员都是知识库语义的资产。
+它不生成回答，也不做对话、记忆、笔记或沙箱。这些属于 Agent 侧。
 
-## 一次检索长什么样
+## 特性
+
+- **检索先给判定**：`summary` 说明候选与收敛结果，`distribution` 给出分布与
+  `fit`（`strong` / `weak` / `none` / `unknown`），`decision` 记录这次使用的参数。
+- **原文可核对**：命中包含原文片段、页码、标题路径与 `chunk_id`；PDF 与图片类文档
+  可按页取回原图。
+- **参数可调整**：支持 `keep` / `min_score` / `per_doc` 收敛，`offset` / `next_offset`
+  翻页，`filters` 先筛后排。
+- **异步摄入**：上传、探测、解析、切块、向量化、索引在后台完成；支持续跑与重新解析。
+- **双格式存储**：原件与 Markdown 解析产物都保留，可分别读取。
+- **解析引擎可选**：本地直提、MinerU、PaddleOCR 按文件动态选择；
+  嵌入服务可接 OpenAI 兼容接口（例如硅基流动的 BGE-M3）。
+
+## 快速开始
+
+需要 Docker 24+ 与 Docker Compose v2。
+
+```bash
+git clone https://github.com/kkomia/kybase.git
+cd kybase
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+启动后：
+
+| 入口 | 地址 |
+|---|---|
+| 管理台 | http://localhost:8080 |
+| REST | http://localhost:8080/api/v1 |
+| MCP | http://localhost:8765/mcp |
+| 健康检查 | http://localhost:8080/api/v1/health |
+
+首次打开管理台会进入管理员创建向导。之后需要：
+
+1. 在「模型」页登记嵌入模型；
+2. 在「API 密钥」页创建 Key；
+3. 把 MCP 地址与 Key 填入 Agent 客户端。
+
+完整步骤见 [部署指南](docs/部署指南-v0.1.md)。
+
+## 一次检索
 
 ```http
 POST /api/v1/search
 Authorization: Bearer <API Key>
+Content-Type: application/json
 
 {
-  "query": "城市绿地对儿童近视的影响",
+  "query": "嵌入模型怎么标定？",
   "kb_ids": ["kb_xxx"],
   "keep": 5,
-  "min_score": 0.42
+  "min_score": 0.531
 }
 ```
 
 ```json
 {
-  "summary": "候选 38 条，收敛后保留 5 条（强相关 3 / 部分相关 2）。",
+  "summary": "候选 38 条、其中 5 条高于基线 0.531，收敛后留 4 条。",
   "distribution": {
     "fit": "strong",
     "count": 38,
     "above_baseline": 5,
-    "suggested": { "keep": 5, "min_score": 0.42, "per_doc": 2 }
+    "suggested": { "keep": 4, "min_score": 0.531, "per_doc": null }
   },
   "decision": {
-    "keep": 5,
-    "min_score": 0.42,
-    "per_doc": 2,
-    "decided_by": "model",
+    "keep": 4,
+    "min_score": 0.531,
+    "per_doc": null,
+    "decided_by": "suggested",
     "fit": "strong",
     "dropped": 33,
     "unscored_kept": 0
   },
   "hits": [
     {
-      "document_name": "城市绿地暴露与儿童视力的关联.pdf",
-      "page": 4,
+      "document_id": "doc_xxx",
+      "document_name": "部署手册.pdf",
       "text": "……原文片段……",
-      "score": 0.71,
-      "similarity": 0.62,
-      "basis": "vector",
-      "lexical_score": 12.4
+      "page": 7,
+      "heading_path": "五、嵌入模型与维度",
+      "score": 0.0328,
+      "similarity": 0.712,
+      "basis": "vector"
     }
   ],
-  "next_offset": null
+  "next_offset": 4
 }
 ```
 
-> 上面是响应结构示意（节选），不是某次真实请求的统计结果。`score` 是融合分，
-> `similarity` 才是余弦；`basis` 是 `vector` / `fulltext` 时分别表示这条来自哪条通道。
+> 示例数据。`score` 是融合分，只反映名次；`similarity` 是余弦相似度。
+> 字段与行为以 [外部接入指南](docs/外部接入指南-v0.1.md) 和 OpenAPI 为准。
 
-## 界面
+## 接入方式
 
-真实运行中的管理台（1440 × 1000，数据来自作者自托管实例做演示用的一次性副本）：
-
-![概览](site/assets/console-dashboard.png)
-
-带滚动叙事和可交互检索演示的展示页：**https://kkomia.github.io/kybase/**（源码在 `site/`）。
-
-## 三条接入路径
-
-| 路径 | 谁在用 | 入口 |
+| 方式 | 入口 | 适合 |
 |---|---|---|
-| **MCP**（stdio + Streamable HTTP） | Claude Desktop、Cursor、Codex 等会说 MCP 的客户端 | `python -m app.mcp_server.server --transport http --port 8765` |
-| **REST**（`/api/v1/*`） | 任何能发 HTTP 的系统 | `http://<host>:8080/api/v1`，OpenAPI 在 `/api/v1/openapi.json` |
-| **官方 Skill**（`skills/`） | 只会 shell 与 HTTP 的运行环境 | `skills/` 下的 Skill 包（`SKILL.md` + 纯 REST 查询脚本） |
+| MCP | `http://<host>:8765/mcp` | 支持 MCP 的 Agent 客户端 |
+| REST | `http://<host>:8080/api/v1` | 任何能发 HTTP 的程序 |
+| Skill | `skills/` | 只有 shell 与 HTTP 的环境 |
 
-三条路径语义等价：工具面指纹（`--list-tools` 末行 / `serverInfo.version` 的 `+mcp.<指纹>` /
-`GET /api/v1/tools`）用来判断契约有没有变过。MCP 每个请求都要 `Authorization: Bearer <API Key>`，
-**没有匿名放行**。
-
-## 快速开始
-
-**干净机器（带 docker）：四件套一键起**
-
-```bash
-git clone https://github.com/kkomia/kybase.git
-cd kybase
-docker compose -f deploy/docker-compose.yml up -d --build
-# 界面   http://localhost:8080
-# 健康   http://localhost:8080/api/v1/health
-```
-
-> 这份 compose 会连同 PostgreSQL（pgvector）与 MinIO 一起建起来。
-> 其中的 postgres 服务已按同一份定义在真实服务器上跑通，**整体「一键起」尚未在干净机器上实测**；
-> 如果你跑的时候踩到坑，欢迎开 issue。
-
-**已有 PG + MinIO 的机器：应用层三件套**
-
-```bash
-cd deploy/nas
-cp -i /dev/null .env   # 按 README 填 KYLAB_PG_PASSWORD / KYLAB_S3_ACCESS_KEY / KYLAB_S3_SECRET_KEY
-docker compose up -d --build
-```
-
-**起来之后还差一步**：去「模型」页登记一个嵌入模型，否则建库会被拒——服务不替你猜用哪个模型。
+MCP 工具清单以运行时 `tools/list` 为准；`GET /api/v1/tools` 提供同一份目录与
+`surface_fingerprint`。所有业务请求都需要 API Key，没有匿名访问。
 
 ## 仓库结构
 
 ```
 backend/app/
-  api/          REST 面（knowledge-bases / documents / folders / search / chunks /
-                wiki / tabular / data-sources / shares / tasks / lifecycle / webhooks /
-                maintenance / stats / provider / tools / api-keys）
-  services/     摄入、切块、检索、嵌入、Wiki、表格、连接器、分享
-  storage/      postgres_impl（向量 + 全文 + 元数据）、duckdb_impl（表格副本）
-  parsers/      插件式解析器层
+  api/          REST 接口
+  services/     摄入、切块、检索、嵌入、解析路由、模型注册
+  storage/      PostgreSQL（向量 + 全文 + 元数据）、DuckDB 表格副本、对象存储
+  parsers/      本地与云端解析器
   pipeline/     摄入状态机
   workers/      队列消费者
-  mcp_server/   对外 MCP（stdio + Streamable HTTP）
-  core/         配置、异常、安全、HTTP、日志等纯契约
-backend/tests/  单元 / 集成 / 基准测试
-frontend/       管理台（Vite 8 + React 19 + TS + Tailwind 4 + pnpm）
-skills/         官方 Skill（独立交付物，不 import app/）
-scripts/        门禁脚本族（check-backend / check-frontend / check_layering / ci …）
-deploy/         compose：干净机器四件套 / NAS 应用层三件套
-docs/           部署指南、外部接入指南、界面设计、交接文档
-site/           展示页（纯静态 HTML / CSS / JS，发布到 GitHub Pages，无构建步骤）
+  mcp_server/   MCP 服务（stdio + Streamable HTTP）
+frontend/       管理台（Vite + React + TypeScript + Tailwind）
+skills/         官方 Skill 包
+deploy/         完整栈 compose
+docs/           部署与接入文档
+site/           GitHub Pages 展示页（纯静态）
 ```
+
+## 本地开发
+
+后端：
+
+```bash
+cd backend
+uv sync --all-extras
+export KYLAB_DATABASE_URL=postgresql://user:password@localhost:5432/kybase
+uv run uvicorn app.main:app --reload
+```
+
+前端：
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+测试与门禁：
+
+```bash
+sh scripts/check-backend.sh
+sh scripts/check-frontend.sh
+```
+
+Windows 使用同名 `.ps1` 脚本。后端测试需要 `KYLAB_TEST_DATABASE_URL`；
+没有数据库时，相关用例会被跳过。
 
 ## 文档
 
-| 文档 | 给谁 |
-|---|---|
-| [部署指南](docs/部署指南-v0.1.md) | 想自己部署一套的运维 / 工程师（两种形态、变量表、升级与回滚） |
-| [外部接入指南](docs/外部接入指南-v0.1.md) | 接入方：MCP / REST / Skill / 窄 API 四条路径的完整契约 |
-| [界面设计](docs/界面设计-v0.2.md) | 想理解管理台视觉与交互约定的人 |
-| [展示页设计](docs/展示页设计-v0.2.md) | 想改 GitHub Pages 展示页的人（方向、动效、内容口径） |
-| [交接文档](docs/交接文档-v0.1.md) | 接手开发的人（进度、坑、遗留） |
-
-> 部署与交接两份文档里保留了作者自托管环境的具体信息（内网地址、NAS 路径、历史回滚形态），
-> 是运行记录，不是通用要求。对外宣传页见 **https://kkomia.github.io/kybase/**。
+- [部署指南](docs/部署指南-v0.1.md)：Docker 部署、配置、初始化、升级、备份与排障
+- [外部接入指南](docs/外部接入指南-v0.1.md)：MCP、REST、Skill、检索字段与错误
+- [界面设计](docs/界面设计-v0.2.md)：管理台的视觉与交互约定
 
 ## 状态
 
-- 自托管实例已经在跑：三个容器（backend / mcp / frontend）healthy，管理台、REST、MCP 三个入口。
-- 版本线 `0.1.0`；镜像 `kybase-backend:0.1.0` / `kybase-frontend:0.1.0`。
-- 已知待办：
-  - **配置分家**：环境变量前缀仍是 `KYLAB_`，API Key 前缀仍是 `kylab_sk_` / `kylab_st_`，
-    `X-Kylab-*` 头与默认桶名也是旧名。改字面会断现有部署与已发出的密钥，要按
-    「保留 / 双读 / 迁移」逐项决定——见交接文档。
-  - 表格副本（DuckDB）是单文件单写者，多副本部署前必须先改造。
-  - 干净机器那份 compose 尚未整体实测。
+- 版本 `0.1.0`，镜像 `kybase-backend:0.1.0` / `kybase-frontend:0.1.0`。
+- 表格副本（DuckDB）为单文件单写者，多副本部署前需要改造。
+- 环境变量前缀与 API Key 前缀暂时保留 `KYLAB_` / `kylab_`，用于兼容早期版本。
+- 完整栈 compose 建议先在测试环境做一次端到端验证，再用于生产。
 
 ## 参与
 
-- 提 issue / PR 都可以；提交信息用 `<类型>: <简述>`，类型限 `feat/fix/docs/test/refactor/chore`。
-- 门禁：`sh scripts/check-backend.sh` 与 `sh scripts/check-frontend.sh`（Windows 用同名 `.ps1`）。
-- 这个仓库的前身是作者另一个项目里的知识库模块，2026-10 拆成独立服务，现在的名字是 **kybase**。
+欢迎提 issue 与 PR。提交信息使用 `<类型>: <简述>`，类型限
+`feat` / `fix` / `docs` / `test` / `refactor` / `chore`。
 
 ## 许可
 

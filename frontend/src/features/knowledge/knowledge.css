@@ -267,7 +267,7 @@
 
   /*
  * 弹窗壳（遮罩 / 表面 / 标题栏 / 底部）**不在本文件里**：它已经是 `@/ui/dialog`
- * 与 `@/ui/alert-dialog`（组合方式见各页面，取值见 `src/ui/README.md` §2/§3）。
+ * 与 `@/ui/alert-dialog`（组合方式见各页面，取值见 `src/styles/tokens.css` §2/§3）。
  * 这里只留弹窗里那句导语与后果说明的排版。
  */
 
@@ -314,7 +314,7 @@
 
   /*
  * 行菜单（浮层表面 / 项高 / 悬停底色）**不在本文件里**：它已经是
- * `@/ui/dropdown-menu`，取值见 `src/ui/README.md` §2（`--bg-menu` / `--menu-pad` /
+ * `@/ui/dropdown-menu`，取值见 `src/styles/tokens.css` §2（`--bg-menu` / `--menu-pad` /
  * `--menu-item-height`）。这里只剩"菜单触发器在行里怎么摆"。
  */
 

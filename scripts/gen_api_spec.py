@@ -401,7 +401,7 @@ FOOTER = """
 
 - **字段类型 / 必填 / 枚举取值**：`/api/v1/openapi.json`（或 `/docs`）；
 - **领域概念与设计取舍**：《架构设计 v0.2》；
-- **MCP 工具**（与 REST 一一对应、共用服务层）：`skills/kylab-knowledge-base/SKILL.md`。
+- **MCP 工具**（与 REST 一一对应、共用服务层）：`skills/kybase-knowledge-base/SKILL.md`。
 
 ## 4. 变更纪律
 

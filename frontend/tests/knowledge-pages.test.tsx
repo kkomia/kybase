@@ -59,7 +59,7 @@ function makeDoc(overrides: Partial<DocumentSummary> = {}): DocumentSummary {
     error: null,
     chunk_count: 137,
     uploaded_by: null,
-    uploaded_by_name: '小又',
+    uploaded_by_name: '测试用户',
     folder_id: null,
     disabled: false,
     original_kind: 'pdf',

@@ -312,11 +312,11 @@ def test_status_reports_needs_setup(app_client: TestClient) -> None:
 
 
 def test_setup_then_login_then_me(app_client: TestClient) -> None:
-    setup = _setup_admin(app_client, username="Admin", name="小又")
+    setup = _setup_admin(app_client, username="Admin", name="测试用户")
     assert setup["token"].startswith("kylab_st_")
     assert setup["user"]["role"] == "admin"
     # 用户名归一化为小写；显示名保留原样
-    assert (setup["user"]["username"], setup["user"]["name"]) == ("admin", "小又")
+    assert (setup["user"]["username"], setup["user"]["name"]) == ("admin", "测试用户")
 
     # 会话令牌立即可用，且管理员会话能进**管理员专属**的那些端点
     # （原来是 `/api/v1/settings`——它随 NAS 网页端退役只在本机档了，换 `/api/v1/users`：

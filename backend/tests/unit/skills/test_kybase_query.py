@@ -1,6 +1,6 @@
 """官方 Skill 的查询脚本（T4.8 后半）。
 
-镜像同构：``skills/kylab-knowledge-base/scripts/kylab_query.py`` → 本文件。
+镜像同构：``skills/kybase-knowledge-base/scripts/kybase_query.py`` → 本文件。
 
 **为什么脚本也要测**：它是这个 Skill 面向"不会说 MCP 的 Agent"的那条路径，
 而脚本的错误**全部表现为一段奇怪的终端输出**——没有 HTTP 状态码可看、
@@ -9,7 +9,7 @@
 1. **空结果不是错误**（退出码 0），但要说清意味着什么、下一步看哪里；
 2. **401 有独立的退出码**——它是调用方唯一能自己修的那类失败，
    混进"没结果"里就白费了；
-3. **输出的是原文片段而不是回答**——那是 kylab 的价值所在，
+3. **输出的是原文片段而不是回答**——那是知识库服务的价值所在，
    一个把片段总结掉的脚本等于把这个 Skill 做没了。
 """
 
@@ -21,12 +21,14 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.local
+
 SCRIPT = (
     Path(__file__).resolve().parents[4]
     / "skills"
-    / "kylab-knowledge-base"
+    / "kybase-knowledge-base"
     / "scripts"
-    / "kylab_query.py"
+    / "kybase_query.py"
 )
 
 
@@ -36,7 +38,7 @@ def _load():  # type: ignore[no-untyped-def]
     它不是 backend 包的一部分（是交付给别人装的 Skill），所以不能被 import，
     只能用 spec 加载。
     """
-    spec = importlib.util.spec_from_file_location("kylab_query", SCRIPT)
+    spec = importlib.util.spec_from_file_location("kybase_query", SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -288,7 +290,7 @@ def test_skill_frontmatter_is_parseable() -> None:
             key, _, value = line.partition(":")
             fields[key.strip()] = value.strip()
 
-    assert fields.get("name") == "kylab-knowledge-base"
+    assert fields.get("name") == "kybase-knowledge-base"
     description = fields.get("description", "")
     # 描述是**给模型看的触发条件**：说清"什么时候该用"比说清"是什么"更重要，
     # 否则模型不知道该在什么场合唤起它
@@ -299,8 +301,8 @@ def test_skill_frontmatter_is_parseable() -> None:
 def test_every_mcp_tool_is_mentioned_by_some_skill() -> None:
     """**对外 MCP 面上的每个工具都要被某一份说明书点到**，漏掉的那个等于不存在。
 
-    为什么不是"这一份要点到全部"：技能可能不止一份（kylab 那边 Office 产出那一组
-    另有 `kylab-office-export`）。把导出工具塞进"查知识库"那份说明书里，
+    为什么不是"这一份要点到全部"：技能可能不止一份（其他技能包另有导出工具）。
+    把导出工具塞进"查知识库"那份说明书里，
     两边都会变糊；而"没有任何一份说明书提到它"仍然是真问题——
     模型在工具表里能看到名字，却不知道什么时候该用、有什么边界。
 

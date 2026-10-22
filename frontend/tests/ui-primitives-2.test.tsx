@@ -1,5 +1,5 @@
 /**
- * 第二批 shadcn 原语的冒烟用例（`src/ui/README.md` §5 的 19 个之外的那 10 个）。
+ * 第二批 shadcn 原语的冒烟用例（`src/styles/tokens.css` §5 的 19 个之外的那 10 个）。
  *
  * 与 `tests/ui-primitives.test.tsx` 同一条口径：只测"装得起来、开得开、点得动"，
  * 外加**一条令牌守卫**（字号不许写具名的 `text-meta` / `text-micro`，
@@ -202,7 +202,7 @@ describe('ui 原语（第二批）', () => {
     render(
       <>
         <Avatar>
-          <AvatarImage src="/avatar/xiaoyou.png" alt="小又" />
+          <AvatarImage src="/avatar/xiaoyou.png" alt="测试用户" />
           <AvatarFallback>小</AvatarFallback>
         </Avatar>
         <Avatar size="sm">
@@ -214,7 +214,7 @@ describe('ui 原语（第二批）', () => {
     )
 
     // 加载成功的那一侧：<img> 出现，兜底让位
-    const image = await screen.findByRole('img', { name: '小又' })
+    const image = await screen.findByRole('img', { name: '测试用户' })
     expect(image).toHaveAttribute('data-slot', 'avatar-image')
     expect(screen.queryByText('小')).not.toBeInTheDocument()
 

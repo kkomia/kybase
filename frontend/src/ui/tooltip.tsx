@@ -1,4 +1,4 @@
-// 来源：shadcn/ui（new-york）@98a1fe6 —— 类名已换成 src/styles/tokens.css 的令牌（映射表见 src/ui/README.md）
+// 来源：shadcn/ui（new-york）@98a1fe6 —— 类名已换成 src/styles/tokens.css 的令牌（映射表见 src/styles/tokens.css）
 import * as React from 'react'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 
@@ -27,7 +27,7 @@ function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimiti
 }
 
 /**
- * 气泡本体。**两处与上游不同**（都记在 src/ui/README.md）：
+ * 气泡本体。**两处与上游不同**（都记在 src/styles/tokens.css）：
  * 1. 上游是"反色气泡"（`bg-foreground` + `text-background`），我们是**浅底 + 描边**，
  *    与旧前端 `InfoTip` 一致（浅色下反色气泡在暖白界面上过于抢眼）；
  * 2. **移除了小三角**（`TooltipPrimitive.Arrow`）：带 1px 描边的气泡上再接一个实心三角

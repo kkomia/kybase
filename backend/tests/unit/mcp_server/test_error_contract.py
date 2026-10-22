@@ -38,7 +38,7 @@ pytestmark = pytest.mark.local
 #: 一句**中文**原因：它必须原样出现在客户端拿到的载荷里。
 #: 这也正是真实故障里最该说出口的那半句（哪个库的嵌入服务不可用）。
 EMBEDDING_REASON = (
-    "WeMM 嵌入服务不可用（3 次尝试都失败，http://100.66.1.12:8234/v1/embeddings）："
+    "WeMM 嵌入服务不可用（3 次尝试都失败，http://embed.example.test:8234/v1/embeddings）："
     "ConnectTimeout: timed out"
 )
 

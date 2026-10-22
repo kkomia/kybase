@@ -7,25 +7,20 @@ import { defineConfig } from 'vitest/config'
 /**
  * 知识库管理台（kybase/frontend）的构建与开发配置。
  *
- * **端口 5175**：这一份额外的前端与 kylab 的前端（5173）**同时在一台机器上跑**，
- * 所以不能共用一个端口；`strictPort` 照旧为真——端口被占就**直接失败**，
- * 静默换到别的端口会留下"我改了界面却没变"的错觉（上游同款理由）。
+ * 开发端口 5175，`strictPort` 为真：端口被占直接失败，避免静默换端口后
+ * “改了界面却没变”。
  *
- * `@` 别名、`/api` 反代到后端、`host: '0.0.0.0'` 三条与上游逐字一致，
- * 所以两套前端的开发形态一样，只有"反代打到哪台后端"由环境变量区分。
+ * `@` 别名、`/api` 反代与 `host: '0.0.0.0'` 是本地开发的固定约定；
+ * 后端地址由 `KYBASE_API_TARGET` 指定。
  */
 
 /**
- * `/api` 反代的目标（`KYBASE_API_TARGET`，**默认是 NAS 上那台知识库服务**）。
+ * `/api` 反代目标（`KYBASE_API_TARGET`，默认本机后端）。
  *
- * 1. 默认 `http://192.168.31.18:8081` = NAS 上正在跑的知识库服务端
- *    （`/api/v1/health` 可探活）。开发形态就是"本机起界面、后端在那台"：
- *    浏览器里没有壳，等价的做法就是这个反代，再在登录页对那台服务登一次，
- *    于是知识库 / 概览 / 任务中心那几页都有真后端可打。
- * 2. 将来本仓库的后端（`backend/app/**`）独立跑起来之后，把它指向本机，例如
- *    `KYBASE_API_TARGET=http://127.0.0.1:8000 pnpm dev`。
+ * 本机起后端时无需设置；连到其他机器时：
+ *   `KYBASE_API_TARGET=http://<host>:8080 pnpm dev`
  */
-const apiTarget = process.env.KYBASE_API_TARGET || 'http://192.168.31.18:8081'
+const apiTarget = process.env.KYBASE_API_TARGET || 'http://127.0.0.1:8000'
 
 //: 反代的匹配串**带尾斜杠**，与线上那份 nginx 的 `location /api/` 同一口径。
 //:
@@ -46,9 +41,7 @@ export default defineConfig({
     proxy: apiProxy,
   },
   build: { outDir: 'dist', sourcemap: false },
-  // `vite preview` 是**生产构建的验收入口**：这一份最终要由知识库服务端（或 nginx）
-  // 发出去，这里给它同一套 `/api/` 反代，就能在本机用真实后端验一遍"构建产物 + 反代"
-  // 这条链（`pnpm build && pnpm preview`，端口 4175 避开 dev 的 5175，也避开 kylab 的 4174）。
+  // `vite preview` 用于验收生产构建：`pnpm build && pnpm preview`。
   preview: {
     port: 4175,
     strictPort: true,
@@ -59,10 +52,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     setupFiles: ['tests/setup.ts'],
     css: false,
-    // 并发上限：默认（≈ CPU 数）在 16 线程的开发机上会**同时起三十多个 jsdom 环境**，
-    // 互相抢 CPU，重用例随机撞上 5s 默认超时——同一批文件上一轮 8 红、下一轮全绿，
-    // 门禁因此不可信（2026-10-20 接手体检实测）。压到 8 之后反而**更快**：
-    // 整份 34 文件从 43s 降到 23s，连续两轮全绿。低核机器跟着核数降，不写死绝对值。
+    // 限制并发，避免 jsdom 环境过多互相抢 CPU，导致用例随机超时。
     maxWorkers: Math.max(2, Math.min(8, availableParallelism() - 1)),
   },
 })

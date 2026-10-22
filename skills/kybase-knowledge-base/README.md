@@ -2,9 +2,6 @@
 
 让 Agent 能查你自己的知识库（kybase），并**拿到可追溯的原文出处**。
 
-> 目录名仍是 `kylab-knowledge-base`，脚本仍叫 `kylab_query.py`——技能包名与它被安装
-> 到别处时的路径沿用原名；环境变量与凭据前缀同理保留 `KYLAB_` / `kylab_sk_`。
-
 ## 它做什么
 
 kybase 的核心能力是**带出处的检索**：返回的是你文档里的原文片段
@@ -33,28 +30,28 @@ kybase 的核心能力是**带出处的检索**：返回的是你文档里的原
 
 | 路径 | 适合 | 怎么用 |
 |------|------|--------|
-| **MCP** | 支持 MCP 的客户端（Claude Desktop、Cursor 等） | 见 `SKILL.md` 里的配置片段 |
-| **脚本** | 只会 shell 与 HTTP 的运行环境 | `python scripts/kylab_query.py --query "…"` |
+| **MCP** | 支持 MCP 的客户端 | 见 `SKILL.md` 里的配置片段 |
+| **脚本** | 只会 shell 与 HTTP 的运行环境 | `python scripts/kybase_query.py --query "…"` |
 
 两条路走的是**同一套检索**，只是传输不同。不是所有运行环境都能说 MCP，
-而 shell 与 HTTP 几乎哪里都有——所以两条都提供。
+而 shell 与 HTTP 几乎哪里都有，所以两条都提供。
 
 ## 快速自检
 
-> 下面的地址是**本机默认值**；线上那套跑在 NAS 上：REST `http://192.168.31.18:8081/api/v1`、
-> MCP `http://192.168.31.18:8765/mcp`（**别的部署以部署方给的为准**）。
+> 下面的地址是本地默认值；部署在其他机器时，换成部署方提供的地址。
 
 ```bash
 # 1) 后端在跑吗
-curl -s http://127.0.0.1:8000/api/v1/health
+curl -s http://127.0.0.1:8080/api/v1/health
 
 # 2) MCP 工具认得出来吗（在 kybase 仓的 backend 目录下跑；需要先装 mcp extra）
 #    最后一行是工具面指纹：它变了就说明对外契约变了（发版号不一定动）
 cd backend && python -m app.mcp_server.server --list-tools
 
-# 3) 脚本能查到东西吗（v0.11 起接口一律要凭据）
-KYLAB_API_KEY=... python scripts/kylab_query.py --list
-KYLAB_API_KEY=... python scripts/kylab_query.py --query "眼轴怎么监测"
+# 3) 脚本能查到东西吗（接口需要凭据；完整栈的 REST 在 8080）
+export KYLAB_BASE_URL=http://127.0.0.1:8080/api/v1
+KYLAB_API_KEY=... python scripts/kybase_query.py --list
+KYLAB_API_KEY=... python scripts/kybase_query.py --query "眼轴怎么监测"
 ```
 
 > 凭据怎么来：在控制台侧栏的「API 密钥」页建一把**只读**密钥即可

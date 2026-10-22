@@ -294,7 +294,7 @@ CSS_UNLAYERED_MARKER = "@unlayered:"
 CSS_UNLAYERED_FILES: dict[str, str] = {
     "frontend/src/styles/tokens.css": (
         "基座：层序的唯一声明者本身；`:root` 令牌与全局 `:focus-visible`、遗留辅助类"
-        "（`.text-meta` / `.panel` …）按既有记载有意留在层外（`src/ui/README.md` §1.1 写着"
+        "（`.text-meta` / `.panel` …）按既有记载有意留在层外（`src/styles/tokens.css` §1.1 写着"
         "它们就是靠层外身份压过 utilities），收它们属于另一批工作"
     ),
     "frontend/src/index.css": (

@@ -1,4 +1,4 @@
-// 来源：shadcn/ui（new-york）@98a1fe6 —— 类名已换成 src/styles/tokens.css 的令牌（映射表见 src/ui/README.md）
+// 来源：shadcn/ui（new-york）@98a1fe6 —— 类名已换成 src/styles/tokens.css 的令牌（映射表见 src/styles/tokens.css）
 import * as React from 'react'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 

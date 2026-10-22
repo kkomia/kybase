@@ -1,4 +1,4 @@
-"""一次性运维动作：把库从 kylab 合体期的**交错迁移序列**重写成 KB 独立序列。
+"""一次性运维动作：把库从早期合体部署的**交错迁移序列**重写成 KB 独立序列。
 
 ## 这是什么、什么时候跑
 
@@ -24,11 +24,10 @@ python -m app.storage.postgres_impl.remap --apply --purge-legacy-tasks --yes
 
 DSN 取 ``--dsn`` 或环境变量 ``KYLAB_DATABASE_URL``（与应用的引导级配置同一个）。
 
-NAS 上升级的标准姿势（应用还起不来时 ``exec`` 没有容器可用，用 ``run``）：
+应用还起不来、容器里没有可用 shell 时，用 compose 的 ``run``：
 
 ```sh
-cd /vol1/1000/docker/kybase/app
-docker compose run --rm --no-deps backend \\
+docker compose -f deploy/docker-compose.yml run --rm --no-deps backend \\
     python -m app.storage.postgres_impl.remap --apply
 ```
 

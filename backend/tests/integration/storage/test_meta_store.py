@@ -690,7 +690,7 @@ def test_account_fields_round_trip(store: MetaStore) -> None:
     store.create_user(
         UserRecord(
             id="user_a",
-            name="小又",
+            name="测试用户",
             username="you",
             password_hash="argon2$fake",
             role=UserRole.ADMIN,
@@ -701,7 +701,7 @@ def test_account_fields_round_trip(store: MetaStore) -> None:
     assert loaded is not None
     assert (loaded.role, loaded.disabled) == (UserRole.ADMIN, False)
     # 名册语义不丢：按名字找依然有效（operator header 还在用它）
-    assert store.find_user_by_name("小又").id == "user_a"  # type: ignore[union-attr]
+    assert store.find_user_by_name("测试用户").id == "user_a"  # type: ignore[union-attr]
 
 
 def test_roster_entry_without_username_cannot_be_looked_up_as_account(

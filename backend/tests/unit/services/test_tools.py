@@ -1011,8 +1011,8 @@ def test_get_document_content_is_denied_for_a_key_scoped_away(
 @pytest.mark.parametrize(
     ("base_url", "secret", "expected"),
     [
-        ("http://192.168.31.18:8081", "sign-me", True),
-        ("http://192.168.31.18:8081", "", False),
+        ("http://127.0.0.1:8081", "sign-me", True),
+        ("http://127.0.0.1:8081", "", False),
         ("", "sign-me", False),
     ],
 )
@@ -1379,8 +1379,8 @@ def test_get_document_pages_respects_kb_scope(services: Services, kb: str, key_f
 @pytest.mark.parametrize(
     ("base_url", "secret", "expected"),
     [
-        ("http://192.168.31.18:8081", "sign-me", True),
-        ("http://192.168.31.18:8081", "", False),
+        ("http://127.0.0.1:8081", "sign-me", True),
+        ("http://127.0.0.1:8081", "", False),
         ("", "sign-me", False),
     ],
 )
@@ -1444,7 +1444,7 @@ def test_a_document_without_real_pages_gets_no_image_url(
     from app.core.config import get_settings
 
     document_id = _upload_markdown(services, kb, filename="说明.md")
-    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", "http://192.168.31.18:8081")
+    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", "http://127.0.0.1:8081")
     monkeypatch.setenv("KYLAB_URL_SIGNING_SECRET", "sign-me")
     get_settings.cache_clear()
 

@@ -66,7 +66,7 @@ function makeDoc(overrides: Partial<DocumentSummary> = {}): DocumentSummary {
     error: null,
     chunk_count: 137,
     uploaded_by: null,
-    uploaded_by_name: '小又',
+    uploaded_by_name: '测试用户',
     folder_id: null,
     disabled: false,
     original_kind: 'pdf',
@@ -167,7 +167,7 @@ describe('抽屉的基本信息与预览', () => {
     expect(await screen.findByText('本地上传')).toBeInTheDocument()
     expect(screen.queryByText('upload')).toBeNull()
     // 上传者与来源是两个字段：`uploaded_by_name`（谁传的）vs `source_kind`（怎么进来的）
-    expect(screen.getByText('小又')).toBeInTheDocument()
+    expect(screen.getByText('测试用户')).toBeInTheDocument()
   })
 
   it('两个下载按钮的文字不一样，且都走"先签发链接再下载"那条路', async () => {

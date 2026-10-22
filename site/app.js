@@ -105,7 +105,7 @@
         summary: '上传文件，异步解析并建立索引。',
         args: 'knowledge_base_id* · filename* · content_base64*',
         returns: '{ document_id, name, is_duplicate, note }',
-        example: '{"knowledge_base_id": "kb_9f3c", "filename": "部署手册-NAS.pdf", "content_base64": "<base64>"}',
+        example: '{"knowledge_base_id": "kb_9f3c", "filename": "部署手册.pdf", "content_base64": "<base64>"}',
         note: 'MCP 单次 32 MB；REST 上传上限 200 MB。',
       },
       {

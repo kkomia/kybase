@@ -17,11 +17,11 @@ the material actually answers the question). Same order as MCP, so `fit=none` re
 "the base cannot answer this" rather than being buried under a dozen passages.
 
 Usage:
-    python kylab_query.py --query "眼轴怎么监测"
-    python kylab_query.py --query "..." --kb kb_abc123 --top-k 8
-    python kylab_query.py --query "..." --top-k 50 --offset 10   # 翻页
-    python kylab_query.py --list                      # which libraries exist
-    python kylab_query.py --query "..." --json        # machine-readable
+    python kybase_query.py --query "眼轴怎么监测"
+    python kybase_query.py --query "..." --kb kb_abc123 --top-k 8
+    python kybase_query.py --query "..." --top-k 50 --offset 10   # 翻页
+    python kybase_query.py --list                      # which libraries exist
+    python kybase_query.py --query "..." --json        # machine-readable
 
 Exit codes: 0 success (even with zero hits — that is a valid finding),
 1 usage/transport error, 2 authentication required.

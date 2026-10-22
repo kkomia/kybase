@@ -5,7 +5,7 @@
  * 传进来拼好。密钥明文只活在 `AccessPanel` 的组件内存里（`issued`），到这里只是
  * 变成字符串——不落 localStorage、不进 URL、不打日志。
  *
- * 写法照 `docs/MCP接入-Codex-v0.1.md` 里那几段（`[mcp_servers.kybase]` +
+ * 写法照 `docs/外部接入指南-v0.1.md` 里那几段（`[mcp_servers.kybase]` +
  * `bearer_token_env_var`，或 `http_headers = { "Authorization" = "Bearer …" }`），
  * 与《外部接入指南》的口径一致；服务端事实（地址、鉴权头）以 `GET /tools` 给的为准，
  * 所以地址一律插值，**不在源码里写死任何一个地址**。

@@ -121,7 +121,7 @@
           <div class="thread">
             <div class="msg msg-user">
               <span class="who">你</span>
-              <p class="bubble">把「产品手册.docx」和「部署手册-NAS.pdf」收进产品库，然后回答：嵌入模型怎么标定？</p>
+              <p class="bubble">把「产品手册.docx」和「部署手册.pdf」收进产品库，然后回答：嵌入模型怎么标定？</p>
             </div>
 
             <div class="msg msg-tool" data-call>
@@ -130,7 +130,7 @@
             </div>
             <div class="msg msg-tool" data-call>
               <span class="who">调用</span>
-              <div class="call"><span class="fn">upload_document</span><span class="res">部署手册-NAS.pdf → <em>doc_1c7e</em> · is_duplicate <b>false</b></span></div>
+              <div class="call"><span class="fn">upload_document</span><span class="res">部署手册.pdf → <em>doc_1c7e</em> · is_duplicate <b>false</b></span></div>
             </div>
             <div class="msg msg-tool" data-call>
               <span class="who">调用</span>
@@ -143,7 +143,7 @@
 
             <div class="hit" data-hit>
               <div class="hit-top">
-                <span class="hit-doc">部署手册-NAS.pdf</span>
+                <span class="hit-doc">部署手册.pdf</span>
                 <span class="hit-page">p.7 · similarity 0.712</span>
               </div>
               <p class="hit-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
@@ -152,7 +152,7 @@
 
             <div class="msg msg-agent">
               <span class="who">Agent</span>
-              <p class="bubble">答案是：<b>建议不超过 2000，推荐 1024</b>，超过后建不了 HNSW。<br /><span class="cite">来源：部署手册-NAS.pdf，p.7，五、嵌入模型与维度</span><span class="caret" aria-hidden="true"></span></p>
+              <p class="bubble">答案是：<b>建议不超过 2000，推荐 1024</b>，超过后建不了 HNSW。<br /><span class="cite">来源：部署手册.pdf，p.7，五、嵌入模型与维度</span><span class="caret" aria-hidden="true"></span></p>
             </div>
           </div>
 
@@ -287,7 +287,7 @@
           <div class="pblock" data-block="hits">
             <span class="pkey">hits</span>
             <ol class="payload-hits">
-              <li class="on"><span class="r">01</span><span class="d">部署手册-NAS.pdf</span><span class="pg">p.7</span><span class="sc">0.712</span><span class="bs">vector</span></li>
+              <li class="on"><span class="r">01</span><span class="d">部署手册.pdf</span><span class="pg">p.7</span><span class="sc">0.712</span><span class="bs">vector</span></li>
               <li><span class="r">02</span><span class="d">检索设计-v2.md</span><span class="pg">p.3</span><span class="sc">0.664</span><span class="bs">vector</span></li>
               <li><span class="r">03</span><span class="d">产品手册.docx</span><span class="pg">—</span><span class="sc">0.588</span><span class="bs">vector</span></li>
               <li><span class="r">04</span><span class="d">评测-检索质量.md</span><span class="pg">—</span><span class="sc">0.551</span><span class="bs">fulltext</span></li>
@@ -346,7 +346,7 @@
           <div class="stage" data-stage>
             <div class="stage-item stage-doc is-active" data-stage-item="0">
               <div class="doc-mock" aria-hidden="true">
-                <div class="doc-head"><span>部署手册-NAS.pdf</span><span>第 7 页</span></div>
+                <div class="doc-head"><span>部署手册.pdf</span><span>第 7 页</span></div>
                 <h3>五、嵌入模型与维度</h3>
                 <p>模型身份由模型注册表管理，建库之前先登记。</p>
                 <p class="doc-mark">&lt;!-- page:7 --&gt;</p>
@@ -371,7 +371,7 @@
             <div class="stage-item stage-hit" data-stage-item="2">
               <div class="return-card" aria-hidden="true">
                 <div class="rc-query"><span>QUERY</span>嵌入模型怎么标定？</div>
-                <div class="rc-row"><span class="rc-doc">部署手册-NAS.pdf</span><span class="rc-pg">p.7</span><span class="rc-sc">0.712</span></div>
+                <div class="rc-row"><span class="rc-doc">部署手册.pdf</span><span class="rc-pg">p.7</span><span class="rc-sc">0.712</span></div>
                 <p class="rc-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW，检索会退化成精确扫描。</p>
                 <div class="rc-meta"><span>heading 五、嵌入模型与维度</span><span>chunk doc_1c7e#00007</span></div>
                 <span class="rc-stamp">已核 P.7</span>
@@ -427,7 +427,7 @@
           <div class="fmt-pane is-active" data-pane="original">
             <div class="orig-file">
               <div class="orig-icon" aria-hidden="true"><span>PDF</span></div>
-              <div class="orig-meta"><b>部署手册-NAS.pdf</b><span>23 页 · 2.4 MB · 内容哈希存储</span></div>
+              <div class="orig-meta"><b>部署手册.pdf</b><span>23 页 · 2.4 MB · 内容哈希存储</span></div>
               <span class="orig-badge">original</span>
             </div>
               <div class="orig-page" aria-hidden="true">
@@ -671,7 +671,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
       <div class="cta-evidence" aria-hidden="true">
         <span class="ce-stamp">已核 P.7</span>
         <p class="ce-slice">嵌入维度建议不超过 2000，推荐 1024。超过之后 pgvector 建不了 HNSW。</p>
-        <p class="ce-meta">部署手册-NAS.pdf · p.7 · similarity 0.712</p>
+        <p class="ce-meta">部署手册.pdf · p.7 · similarity 0.712</p>
       </div>
     </div>
   </section>

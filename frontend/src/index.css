@@ -52,7 +52,7 @@
   --font-mono: var(--font-mono);
 
   /* 字号不走 `--text-*` 那个命名（会与 tokens.css 里同名的辅助类撞车、被它抢走，
-     见 `src/ui/README.md` 的两个真坑）：组件里一律写
+     见 `src/styles/tokens.css` 的两个真坑）：组件里一律写
      `text-[length:var(--text-meta-size)]`，Tailwind 只当它是任意值。 */
 }
 
@@ -76,7 +76,7 @@ body,
  *
  * 1. `src/ui/` 那十几份共享原语（弹窗 / 抽屉 / 菜单 / 气泡 / 骨架屏…）里的
  *    `animate-in` / `animate-out` / `animate-spin` / `animate-pulse` 全部来自上游，
- *    而 `src/ui/README.md` 明写"上游那套原样保留，不必再动 `ui/` 里的文件"——
+ *    而 `src/styles/tokens.css` 明写"上游那套原样保留，不必再动 `ui/` 里的文件"——
  *    于是它们一直无视这个开关（量过：`src/ui/` 下 `motion-reduce` 零命中）；
  * 2. 组件是**跨域共用**的：对话、知识库、笔记、设置挂的是同一批弹窗。逐个组件补
  *    等于同一件事写十几遍，而且以后新引一个上游原语又会漏一处；

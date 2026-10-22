@@ -1,52 +1,41 @@
-# kybase 一键起（v0.1.0）：PostgreSQL + MinIO + 后端 + 前端 四件套。
+# kybase 完整栈：PostgreSQL + MinIO + 后端 + MCP + 前端。
 #
-# **这一份是给"干净机器"的**：它连 PG 与 MinIO 一起建，起来就能用。
-# NAS 上那份（`deploy/nas/docker-compose.yml`）**不含存储层**——那台机器上的
-# PG 与 MinIO 早就跑着了，而且是与旧 kylab-app 共用的同一套（见那份的文件头）。
+# **这份 compose 在仓库根目录之外启动**：
+#   docker compose -f deploy/docker-compose.yml up -d --build
 #
-# **部分已验证**：这台开发机没有 docker，所以这份 compose 整体仍未经"一键起"实测。
-# 但其中的 postgres 服务**已按同一份定义在真实部署服务器上跑通**——NAS 上那个
-# `kylab-postgres` 跑的就是 `pgvector/pgvector:pg17-trixie`（PG 17.11 + pgvector 0.8.6，
-# schema 由应用自检引导成功，HNSW + KNN 实测可用）。minio 相关 service 与整体编排仍待实测。
-# 两档部署的完整口径见 `docs/部署指南-v0.1.md`。
+# 启动后：
+#   管理台      http://localhost:8080
+#   REST        http://localhost:8080/api/v1
+#   MCP         http://localhost:8765/mcp
+#   健康检查    http://localhost:8080/api/v1/health
+#   MinIO 控制台 http://localhost:9001
 #
-# schema 由 **应用** 在启动时拥有（单一属主，避免两个真相来源）。现在可直接用
-# 应用自带的自检入口引导/校验，不必手工 psql：
-#   python -m app.storage.postgres_impl.validate
+# 首次打开管理台会进入管理员创建向导；登录后在「模型」页登记嵌入模型，
+# 在「API 密钥」页创建 Key。完整步骤与变量说明见 `docs/部署指南-v0.1.md`。
 #
-#   docker compose -f deploy/docker-compose.yml up -d
+# 默认口令和桶名只适合本地试跑。对公网或多人使用前，请通过环境变量
+# （或同目录 `.env`）覆盖 `KYLAB_PG_PASSWORD`、`KYLAB_S3_ACCESS_KEY`、
+# `KYLAB_S3_SECRET_KEY` 与 `KYLAB_URL_SIGNING_SECRET`。
 #
-# 起来之后：
-#   界面        http://localhost:8080
-#   API         http://localhost:8080/api/v1/health
-#   MinIO 控制台 http://localhost:9001（账号密码同 KYLAB_S3_ACCESS_KEY/SECRET_KEY）
-#
-# 存储分工（架构设计 v0.2 §8）：
-#   postgres  元数据 + 向量(pgvector) + 全文(tsvector)
-#   minio     原件 / Markdown 产物 / 图片
+# 存储分工：
+#   postgres    元数据 + 向量（pgvector）+ 全文（tsvector）
+#   minio       原件 / Markdown 产物 / 图片
 #   kybase-data 卷  DuckDB 表格副本（以及未配 S3 时的原件回退目录）
 #
-# **这一份里的库名 / 桶名 / 卷名/凭据都是这套 compose 自己建的**（`kybase` 一族），
-# 与 NAS 那份刻意不同：那边共用的是 kylab 的库与桶（数据零迁移），这边是全新的机器
-# 与全新的存储，用同名反而会让人以为两边是同一套。
+# 说明：schema 由应用在启动时校验并补齐，不需要手工执行 SQL。
 name: kybase
 
 services:
   # ---- PostgreSQL（含 pgvector）----
   #
-  # 官方 pgvector 镜像：只带 vector 一个扩展，许可证是 PostgreSQL License，
-  # 镜像干净、版本可预期。
+  # 官方 pgvector 镜像：只带 vector 一个扩展，版本可预期。
   #
-  # 选 pg17 而不是 pg18：**NAS 上生产跑的就是这一个镜像**（PG 17.11 + pgvector 0.8.6），
-  # 同一版本、同一扩展，避免"开发能跑、部署行为不同"这类最难查的问题。
-  #
-  # 要升大版本（如 pg18-trixie）必须按 PostgreSQL 的版本升级流程处理数据目录，
-  # 不是改一行 tag 的事。
+  # 选 pg17：与当前 schema 和测试环境一致；升大版本要按 PostgreSQL 的升级流程
+  # 处理数据目录，不能只改 tag。
   #
   # 若需要 BM25 全文检索（pg_search）或 PostGIS，可换 paradedb/paradedb：
-  # 它自带这些扩展，但**社区版是 AGPLv3**，且会在 public 下建
-  # spatial_ref_sys（PostGIS）等与项目无关的对象。当前 schema 用的是
-  # 内建 tsvector，不需要它。
+  # 它自带这些扩展，但社区版是 AGPLv3，且会在 public 下建与项目无关的对象。
+  # 当前 schema 用的是内建 tsvector，不需要它。
   postgres:
     image: pgvector/pgvector:pg17-trixie
     restart: unless-stopped
@@ -94,9 +83,6 @@ services:
       retries: 5
 
   # 一次性任务：建桶。MinIO 不会自动建桶，没桶后端启动校验就会失败。
-  #
-  # **只有一个桶**：知识库桶（原件 / Markdown / 图片）。备份快照桶 `kybase-backup` 与
-  # 它的 `/backup/*` 一族随 Agent 侧代码拆除了（备份归 Agent 侧），这里不再建。
   # `mc mb` 幂等，重复跑不报错。
   minio-init:
     image: minio/mc:latest
@@ -128,9 +114,7 @@ services:
     environment:
       # 数据都落在挂载卷里，容器重建不丢
       KYLAB_DATA_DIR: /data
-      # **时区显式设出来**：日志时间戳与 /tasks 上的时刻按服务器本地时间落下来，
-      # 而容器默认是 UTC——不设这一行，NAS 上看到的"14:23"与手机上对不上，
-      # 而这种现象几乎不会被归因到"容器的时区"。换别的时区改这一行即可。
+      # 日志时间戳按服务器本地时间落下来；容器默认是 UTC。
       TZ: ${TZ:-Asia/Shanghai}
       # ---- 存储后端 ----
       # 库与对象存储只走内网服务名；宿主机不暴露端口
@@ -152,9 +136,9 @@ services:
       KYLAB_CORS_ORIGINS: ${KYLAB_CORS_ORIGINS:-http://localhost:8080}
       # 内嵌消费线程：**单容器部署要留着它**，否则上传后没人处理队列
       KYLAB_RUN_WORKER: ${KYLAB_RUN_WORKER:-true}
-      # ---- 对外地址（只有部署方才知道，见 deploy/nas/docker-compose.yml 文件头）----
+      # ---- 对外地址（部署方填写）----
       # 填了管理台「接入」页才会给出可直接粘贴的客户端片段，MCP 的 download_url /
-      # image_url 也才是绝对地址；留空只降级、不报错（服务端不猜、不拼）
+      # image_url 也才是绝对地址；留空只降级、不报错。
       KYLAB_MCP_PUBLIC_URL: ${KYLAB_MCP_PUBLIC_URL:-}
       KYLAB_PUBLIC_BASE_URL: ${KYLAB_PUBLIC_BASE_URL:-}
     volumes:
@@ -177,11 +161,58 @@ services:
       start_period: 20s
       retries: 3
 
-  # **MCP 不在这份里**：它要与 backend 共用同一份数据目录（DuckDB 单写者），
-  # 而它的对外面只有知识库那张工具表（见 `app/mcp_server/server.py` 模块头）。
-  # 要开 MCP 就照 `deploy/nas/docker-compose.yml` 里那个 mcp 服务加一节——
-  # 同一镜像、`command` 换成 `python -m app.mcp_server.server --transport http`、
-  # 把 8765 发布出来，环境变量与 backend 逐字相同。
+  # MCP（Streamable HTTP）。与 backend 同一个镜像，只换入口命令。
+  # 独立进程便于单独重启和限制端口；凭据与 backend 一致，不另建账号体系。
+  # 每个请求都要 Authorization: Bearer <API Key>。
+  mcp:
+    image: kybase-backend:${KYLAB_VERSION:-0.1.0}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - app.mcp_server.server
+      - --transport
+      - http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+    environment:
+      KYLAB_DATA_DIR: /data
+      TZ: ${TZ:-Asia/Shanghai}
+      KYLAB_DATABASE_URL: postgresql://${KYLAB_PG_USER:-kybase}:${KYLAB_PG_PASSWORD:-kybase-dev-secret}@postgres:5432/${KYLAB_PG_DB:-kybase}
+      KYLAB_S3_ENDPOINT: http://minio:9000
+      KYLAB_S3_ACCESS_KEY: ${KYLAB_S3_ACCESS_KEY:-kybase}
+      KYLAB_S3_SECRET_KEY: ${KYLAB_S3_SECRET_KEY:-kybase-dev-secret}
+      KYLAB_S3_BUCKET: ${KYLAB_S3_BUCKET:-kybase}
+      KYLAB_S3_REGION: ${KYLAB_S3_REGION:-us-east-1}
+      KYLAB_S3_SECURE: "false"
+      KYLAB_URL_SIGNING_SECRET: ${KYLAB_URL_SIGNING_SECRET:-}
+      KYLAB_PUBLIC_BASE_URL: ${KYLAB_PUBLIC_BASE_URL:-}
+      KYLAB_MCP_PUBLIC_URL: ${KYLAB_MCP_PUBLIC_URL:-}
+      # MCP 不跑摄入队列，队列消费者只属于 backend。
+      KYLAB_RUN_WORKER: "false"
+    volumes:
+      - kybase-data:/data
+    ports:
+      - "${KYLAB_MCP_PORT:-8765}:8765"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex(('127.0.0.1', 8765)) == 0 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
   frontend:
     build:
       context: ../frontend
@@ -198,7 +229,7 @@ services:
 volumes:
   kybase-data:
     # 具名卷由 docker 管理，位置随平台而变。
-    # 要固定到某个路径（比如挂到 NAS）就换成 bind mount：
+    # 要固定到某个磁盘路径就换成 bind mount：
     #   driver_opts: { type: none, device: /srv/kybase, o: bind }
   kybase-pg:
     # PG 数据目录。**备份要在这里做**（pg_dump），不能靠拷文件：

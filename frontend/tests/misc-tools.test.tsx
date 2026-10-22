@@ -81,9 +81,9 @@ function toolCatalog(overrides: Partial<ToolCatalog> = {}): ToolCatalog {
     mcp_endpoint: ENDPOINT,
     surface_fingerprint: FINGERPRINT,
     skill: {
-      name: 'kylab-knowledge-base',
+      name: 'kybase-knowledge-base',
       summary: '在你的知识库里检索原文段落',
-      path: 'skills/kylab-knowledge-base',
+      path: 'skills/kybase-knowledge-base',
       transports: ['mcp', 'rest'],
     },
     ...overrides,
@@ -473,11 +473,11 @@ describe('工具档', () => {
 
     expect(screen.getByText(FINGERPRINT)).toBeInTheDocument()
     expect(screen.getByText('工具面一变此值就变。')).toBeInTheDocument()
-    expect(screen.getByText('kylab-knowledge-base')).toBeInTheDocument()
+    expect(screen.getByText('kybase-knowledge-base')).toBeInTheDocument()
     // 通路上界面是大写那一档（后端给的是 mcp / rest）
     expect(screen.getByText('MCP')).toBeInTheDocument()
     expect(screen.getByText('REST')).toBeInTheDocument()
-    expect(screen.getByText('skills/kylab-knowledge-base')).toBeInTheDocument()
+    expect(screen.getByText('skills/kybase-knowledge-base')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '复制工具面指纹' }))
     expect(copyTextMock).toHaveBeenCalledWith(FINGERPRINT)

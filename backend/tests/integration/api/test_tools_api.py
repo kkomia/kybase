@@ -25,7 +25,7 @@ from tests.conftest import admin_client as admin_session
 
 #: 一条像样的 MCP 接入地址（局域网里那台机器，**另一个端口**）。**带尾斜杠**：
 #: 用户很可能这么填，而摆出去的地址不该带着它。
-MCP_URL = "http://192.168.31.18:8765/mcp/"
+MCP_URL = "http://127.0.0.1:8765/mcp/"
 
 
 @pytest.fixture
@@ -83,8 +83,8 @@ def test_skill_is_the_bundled_one(locked: TestClient) -> None:
     """技能那一块报的是仓库里那份的身份（名字 / 路径 / 两条传输）。"""
     skill = locked.get("/api/v1/tools").json()["skill"]
 
-    assert skill["name"] == "kylab-knowledge-base"
-    assert skill["path"] == "skills/kylab-knowledge-base"
+    assert skill["name"] == "kybase-knowledge-base"
+    assert skill["path"] == "skills/kybase-knowledge-base"
     assert skill["transports"] == ["mcp", "rest"]
     assert skill["summary"].strip()
 
@@ -111,14 +111,14 @@ def test_mcp_endpoint_is_the_configured_url(monkeypatch) -> None:
     finally:
         get_settings.cache_clear()
 
-    assert body["mcp_endpoint"] == "http://192.168.31.18:8765/mcp"
+    assert body["mcp_endpoint"] == "http://127.0.0.1:8765/mcp"
 
 
 def test_mcp_endpoint_does_not_reuse_the_rest_base(monkeypatch) -> None:
     """只配 REST 基址**不会**让 MCP 地址冒出来：那是另一个监听，端口不同。"""
     from app.core.config import get_settings
 
-    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", "http://192.168.31.18:8081")
+    monkeypatch.setenv("KYLAB_PUBLIC_BASE_URL", "http://127.0.0.1:8081")
     monkeypatch.setenv("KYLAB_MCP_PUBLIC_URL", "")
     get_settings.cache_clear()
     try:

@@ -1,20 +1,13 @@
 # 前端镜像（React 19 + Vite + pnpm）——kybase 知识库管理台。
 #
-# `deploy/nas/docker-compose.yml` 的 frontend 服务用它，构建上下文是
-# **本目录**（`context: ../src/frontend`，NAS 上就是 …/kybase/src/frontend）：
-# package.json / pnpm-lock.yaml / pnpm-workspace.yaml / src 都在这儿，构建自足。
+# 构建上下文是 frontend/ 目录：package.json / pnpm-lock.yaml / pnpm-workspace.yaml
+# / src 都在这儿，构建自足。
 #
-# 走 pnpm 的理由：本目录的依赖树按 pnpm 解析（`pnpm-workspace.yaml` 里给 esbuild
-# 放行安装脚本，缺了它 vite 起不来）。
+# 走 pnpm 的理由：依赖树按 pnpm 解析（`pnpm-workspace.yaml` 给 esbuild 放行安装脚本，
+# 缺了它 vite 起不来）。
 FROM node:22-slim AS builder
 
-# npm 源**可参数化**，默认官方源（行为不变）。
-# 为什么需要它：NAS 那台机器到境外的带宽极差（kylab 侧实测——后端 `uv sync` 从
-# pythonhosted 拉 wheel 跑到 700 秒仍在下载，最后给 compose 加了
-# `UV_INDEX_URL` 指阿里云）。前端同构：`deploy/nas/docker-compose.yml` 把
-# `NPM_REGISTRY` 指到 registry.npmmirror.com。
-# `COREPACK_NPM_REGISTRY` 也要一起给：corepack 下载 pnpm 本身走的是它，
-# 不给的话"依赖装得挺快、卡在装 pnpm"会让人以为镜像是坏的。
+# npm 源可参数化，默认官方源；网络受限时可通过构建参数换镜像。
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV COREPACK_NPM_REGISTRY=$NPM_REGISTRY
 
@@ -37,9 +30,8 @@ FROM nginx:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# NAS 的 /vol1 文件系统会把个别文件报成 000（源文件 `favicon.svg` 就是），
-# COPY 原样带进镜像后 nginx 读不了、请求返回 403（页面能开、标签页图标是坏的）。
-# 与后端 Dockerfile 的 `chmod -R a+rX /app` 同一个理由，作用在静态产物根上。
+# 某些挂载文件系统会把源文件报成 000，COPY 进镜像后 nginx 读不了会返回 403
+# （页面能开、图标是坏的）。与后端 Dockerfile 的 `chmod -R a+rX /app` 同一理由。
 RUN chmod -R a+rX /usr/share/nginx/html
 
 EXPOSE 80

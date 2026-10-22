@@ -22,9 +22,9 @@ const CATALOG = {
   mcp_endpoint: 'http://nas:8000/mcp',
   surface_fingerprint: '7d10b9d1586e',
   skill: {
-    name: 'kylab-knowledge-base',
+    name: 'kybase-knowledge-base',
     summary: '在你的知识库里检索原文段落',
-    path: 'skills/kylab-knowledge-base',
+    path: 'skills/kybase-knowledge-base',
     transports: ['mcp', 'rest'],
   },
 }

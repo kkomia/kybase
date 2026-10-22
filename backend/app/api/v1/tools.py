@@ -38,12 +38,12 @@ from app.services.tools import TOOL_META, TOOL_NAMES, surface_fingerprint, tool_
 
 router = APIRouter(tags=["tools"])
 
-#: 随服务一起发出去的那份技能（``skills/kylab-knowledge-base/``）。
+#: 随服务一起发出去的那份技能（``skills/kybase-knowledge-base/``）。
 #:
 #: 只登记身份与路径，**不读那个目录**：服务进程跑在容器里、技能文件在仓库里，
 #: 读它就得猜部署时的路径——而猜错的表现是"这个端点偶尔 500"。
-SKILL_NAME = "kylab-knowledge-base"
-SKILL_PATH = "skills/kylab-knowledge-base"
+SKILL_NAME = "kybase-knowledge-base"
+SKILL_PATH = "skills/kybase-knowledge-base"
 SKILL_SUMMARY = "在你的知识库里检索原文段落，给出可追溯出处的回答"
 SKILL_TRANSPORTS = ["mcp", "rest"]
 

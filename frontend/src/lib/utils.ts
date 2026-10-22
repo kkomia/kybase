@@ -22,7 +22,7 @@
  * 注意这里扩展的 `text-meta` / `text-micro` 两个名字**同时还有一个层叠陷阱**：
  * `tokens.css` 里有同名的遗留辅助类（无 `@layer`，会压过 Tailwind 的 utilities、
  * 连 `color` 一起改掉）。`src/ui/**` 因此一律走带 `length:` 提示的任意值写法，
- * 详见 `src/ui/README.md` §1.1。
+ * 详见 `src/styles/tokens.css` §1.1。
  */
 import { clsx, type ClassValue } from 'clsx'
 import { extendTailwindMerge } from 'tailwind-merge'
